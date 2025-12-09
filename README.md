@@ -1,226 +1,501 @@
-# VTK Multi-Field Slice Viewer
+# VTK 2D Slice Viewer - Setup Instructions
 
-A configuration-driven Dash/Plotly application for visualizing multiple VTK files across scientific fields (phase field, temperature, mechanics, plasticity, ...).
+Complete guide to set up the VTK 2D Slice Viewer application on your system.
 
-## Features
+---
 
-- Load VTK files (.vtk, .vti, .vtp, .vtr, .vts)
-- Automatic detection of 2D/3D data
-- Automatic detection of newest snapshots inside `VTK/` per dataset (no manual dropdowns)
-- Configuration-driven tabs (Phase Field, Temperature, Mechanics, Plasticity by default)
-- Shared two-click range selection logic per tab with manual overrides
-- Dropdown-based color presets for below/above threshold (no manual typing needed)
-- Consistent light theme with glass cards and top map titles
-- Slice slider + number input (auto-hidden for 2D data) with cached interpolation for smooth rendering
-- Reset button restores defaults for the active tab/file combination
+## Prerequisites
 
-## Installation
+- Python 3.12 or 3.13 (Python 3.14 is NOT compatible with VTK)
+- pip (Python package installer)
+- Internet connection for downloading packages
 
-### Prerequisites
+---
 
-- Python 3.12 or higher (recommended)
-- Windows/Linux/macOS
+## Option 1: Quick Setup (Linux/macOS/WSL)
 
-### Setup
+### Step-by-Step Commands
 
-1. Create a virtual environment:
 ```bash
-python -m venv venv
-```
+# 1. Navigate to the project directory
+cd /path/to/Dash
 
-2. Activate the virtual environment:
+# 2. Check available Python versions
+python3 --version
+python3.13 --version  # Or python3.12
 
-**Windows:**
-```bash
-venv\Scripts\activate
-```
+# 3. Create virtual environment with Python 3.13 (recommended)
+# If you have Python 3.13 from Homebrew:
+/home/linuxbrew/.linuxbrew/bin/python3.13 -m venv myenv
 
-**Linux/macOS:**
-```bash
-source venv/bin/activate
-```
+# OR if you have system Python 3.13:
+python3.13 -m venv myenv
 
-3. Install dependencies:
-```bash
+# OR if you have Python 3.12:
+python3.12 -m venv myenv
+
+# 4. Activate the virtual environment
+source myenv/bin/activate
+
+# 5. Upgrade pip to latest version
+pip install --upgrade pip
+
+# 6. Install all dependencies from requirements.txt
 pip install -r requirements.txt
-```
 
-## Generating Sample Data
+# 7. Verify installation
+python -c "import dash, plotly, pyvista, vtk; print('All packages installed successfully!')"
 
-Generate synthetic VTI test files:
-
-```bash
-python sample_data/generate_sample_vti.py
-```
-
-This creates:
-- `sample_data/sample_3d.vti` - 3D dataset (50x40x30)
-- `sample_data/sample_2d.vti` - 2D dataset (100x80)
-- `sample_data/phase_field.vti` - Phase field simulation (60x50x40)
-
-## Running the Application
-
-```bash
+# 8. Run the application
 python app.py
 ```
 
-Then open your browser to: **http://127.0.0.1:8050**
+### Access the Application
 
-## Usage
+Open your browser and navigate to: **http://127.0.0.1:8050**
 
-### Controls
+---
 
-**Left Panel (per dataset):**
-- **Scalar Field Dropdown** – switch between available arrays inside the selected VTK file
-- **Color Presets** – choose colors for below/above threshold without typing codes
-- **Range Inputs** – set min/max numerically or by selecting two points on the heatmap
-- **Slice Slider/Input** – for 3D data; hidden automatically for 2D files
-- **Reset Button** – restore defaults (colors, range, slice, threshold)
+## Option 2: Quick Setup (Windows)
 
-**Right Panel:**
-- **Heatmap** – 2D visualization with white transition at the threshold and smoothing
-- **Map Title** – Displays the active scalar and units (e.g., `σxx (MPa)`)
-- **Click Helper** – Reminds when the viewer is waiting for the second click or shows the selected range
+### Step-by-Step Commands
 
-### Loading Your Own VTK Files
+```cmd
+# 1. Navigate to the project directory
+cd C:\path\to\Dash
 
-1. Place your VTK files in the `VTK/` directory, preferably with a numbered suffix (e.g., `PhaseField_00005000.vts`).
-2. In `app.py`, add or edit a dataset entry inside the relevant tab and set its `file_glob` (e.g., `"file_glob": "VTK/MyData_*.vts"`).
-3. Restart the app – it automatically loads the most recent file that matches each glob. If no file matches, the dataset block is omitted.
+# 2. Check available Python versions
+python --version
+py -3.13 --version
 
-### Adding/Customizing Tabs
+# 3. Create virtual environment with Python 3.13
+py -3.13 -m venv myenv
 
-Tabs are declared in `app.py` via `TAB_CONFIGS`. Each tab defines one or more dataset blocks by specifying a unique `id`, display `label`, and `file_glob`:
+# OR with default Python:
+python -m venv myenv
 
-```python
-{
-    "id": "mechanics",
-    "label": "Mechanics",
-    "datasets": [
-        {
-            "id": "stresses",
-            "label": "Stress Tensor",
-            "file_glob": "VTK/Stresses_*.vts",
-            "scale": 1e-6,
-            "units": "MPa",
-            "scalars": [
-                {"label": "Pressure", "array": "Pressure"},
-                {"label": "von Mises", "array": "von Mises"},
-                {"label": "σ_xx", "array": "Stresses", "component": 0}
-            ]
-        },
-        {
-            "id": "elastic",
-            "label": "Elastic Strains",
-            "file_glob": "VTK/ElasticStrains_*.vts",
-            "scalars": [{"label": "ε_xx", "array": "ElasticStrains", "component": 0}]
-        }
-    ]
-}
+# 4. Activate the virtual environment
+myenv\Scripts\activate
+
+# 5. Upgrade pip
+python -m pip install --upgrade pip
+
+# 6. Install all dependencies
+pip install -r requirements.txt
+
+# 7. Verify installation
+python -c "import dash, plotly, pyvista, vtk; print('All packages installed successfully!')"
+
+# 8. Run the application
+python app.py
 ```
 
-Each dataset inherits the shared controls (color presets, range selection, slice slider). If a glob matches no files the block is skipped automatically.
+### Access the Application
 
-## Project Structure
+Open your browser and navigate to: **http://127.0.0.1:8050**
 
+---
+
+## Option 3: One-Line Installation Script
+
+### For Linux/macOS/WSL
+
+Create a file called `setup.sh`:
+
+```bash
+#!/bin/bash
+
+# VTK 2D Slice Viewer - Setup Script
+
+echo "========================================"
+echo "VTK 2D Slice Viewer - Setup"
+echo "========================================"
+
+# Check if Python 3.13 is available
+if command -v python3.13 &> /dev/null; then
+    PYTHON_CMD=python3.13
+    echo "✓ Found Python 3.13"
+elif command -v /home/linuxbrew/.linuxbrew/bin/python3.13 &> /dev/null; then
+    PYTHON_CMD=/home/linuxbrew/.linuxbrew/bin/python3.13
+    echo "✓ Found Python 3.13 (Homebrew)"
+elif command -v python3.12 &> /dev/null; then
+    PYTHON_CMD=python3.12
+    echo "✓ Found Python 3.12"
+else
+    echo "✗ ERROR: Python 3.12 or 3.13 not found!"
+    echo "  Please install Python 3.12 or 3.13"
+    exit 1
+fi
+
+echo "Using: $PYTHON_CMD ($($PYTHON_CMD --version))"
+echo ""
+
+# Create virtual environment
+echo "Creating virtual environment..."
+$PYTHON_CMD -m venv myenv
+if [ $? -ne 0 ]; then
+    echo "✗ ERROR: Failed to create virtual environment"
+    exit 1
+fi
+echo "✓ Virtual environment created"
+
+# Activate virtual environment
+echo "Activating virtual environment..."
+source myenv/bin/activate
+echo "✓ Virtual environment activated"
+
+# Upgrade pip
+echo "Upgrading pip..."
+pip install --upgrade pip
+echo "✓ pip upgraded"
+
+# Install requirements
+echo "Installing dependencies (this may take several minutes)..."
+echo "  - Downloading packages..."
+echo "  - Installing: dash, plotly, numpy, scipy, pyvista, vtk, and others"
+pip install -r requirements.txt
+if [ $? -ne 0 ]; then
+    echo "✗ ERROR: Failed to install dependencies"
+    exit 1
+fi
+echo "✓ All dependencies installed"
+
+# Verify installation
+echo ""
+echo "Verifying installation..."
+python -c "import dash, plotly, pyvista, vtk; print('✓ All packages verified successfully!')"
+
+echo ""
+echo "========================================"
+echo "Setup Complete!"
+echo "========================================"
+echo ""
+echo "To run the application:"
+echo "  1. Activate the virtual environment:"
+echo "     source myenv/bin/activate"
+echo ""
+echo "  2. Run the app:"
+echo "     python app.py"
+echo ""
+echo "  3. Open your browser to:"
+echo "     http://127.0.0.1:8050"
+echo ""
+echo "========================================"
 ```
-Dash/
-│
-├── app.py                          # Main Dash application & tab configuration
-├── requirements.txt                # Python dependencies
-├── README.md                       # This file
-├── viewer/
-│   ├── __init__.py                 # Exposes ViewerPanel
-│   ├── defaults.py                 # Shared defaults for all tabs
-│   ├── layout.py                   # Control/graph builders
-│   ├── panel.py                    # ViewerPanel class (callbacks + layout)
-│   └── state.py                    # Dataclass used in dcc.Store
-│
-├── utils/
-│   ├── __init__.py
-│   └── vtk_reader.py              # Cached VTK file loading/slicing
-│
-├── sample_data/
-│   ├── generate_sample_vti.py     # Sample data generator
-│   ├── sample_3d.vti              # Generated 3D test file
-│   ├── sample_2d.vti              # Generated 2D test file
-│   └── phase_field.vti            # Generated phase field data
-│
-└── assets/
-    └── style.css                   # Custom CSS styling
+
+Make it executable and run:
+
+```bash
+chmod +x setup.sh
+./setup.sh
 ```
 
-## Technical Details
+### For Windows
 
-### Two-Color Threshold Logic
+Create a file called `setup.bat`:
 
-Each tab shares the same Plotly `zmid` logic: colors below threshold use `colorA`, above threshold use `colorB`, and white at the midpoint for a crisp two-tone view. Thresholds automatically follow the currently selected data range (two-click selection or manual inputs).
+```batch
+@echo off
+ECHO ========================================
+ECHO VTK 2D Slice Viewer - Setup
+ECHO ========================================
 
-### Viewer Package
+REM Check for Python
+where python >nul 2>nul
+IF %ERRORLEVEL% NEQ 0 (
+    ECHO ERROR: Python not found!
+    ECHO Please install Python 3.12 or 3.13
+    EXIT /B 1
+)
 
-- `ViewerPanel` owns layout + callbacks per tab.
-- `ViewerState` is stored in `dcc.Store`, ensuring each tab/user keeps isolated settings.
-- Shared behaviours (range selection, color updates, click helper) reside in `viewer/panel.py`.
+python --version
+ECHO.
 
-### Efficient Slicing
+REM Create virtual environment
+ECHO Creating virtual environment...
+python -m venv myenv
+IF %ERRORLEVEL% NEQ 0 (
+    ECHO ERROR: Failed to create virtual environment
+    EXIT /B 1
+)
+ECHO Virtual environment created
 
-- `VTKReader.get_interpolated_slice` caches interpolated grids per (scalar, axis, slice, resolution) making quick tab switching inexpensive.
-- Slice origins respect dataset bounds, so structured/rectilinear grids that do not start at zero are handled correctly.
+REM Activate virtual environment
+ECHO Activating virtual environment...
+CALL myenv\Scripts\activate
+ECHO Virtual environment activated
 
-### Data Flow
+REM Upgrade pip
+ECHO Upgrading pip...
+python -m pip install --upgrade pip
+ECHO pip upgraded
 
-1. **Load VTK** → `VTKReader` (per file with caching)
-2. **Tab Initialization** → Each tab merges shared defaults with overrides and instantiates `ViewerState`
-3. **Slice Extraction** → PyVista slice + SciPy interpolation (cached)
-4. **Dash Callback** → Shared handler updates state, figure, and click helper text
-5. **Visualization** → Plotly heatmap per tab, all reusing the same controls logic
+REM Install requirements
+ECHO Installing dependencies (this may take several minutes)...
+ECHO   - Downloading packages...
+ECHO   - Installing: dash, plotly, numpy, scipy, pyvista, vtk, and others
+pip install -r requirements.txt
+IF %ERRORLEVEL% NEQ 0 (
+    ECHO ERROR: Failed to install dependencies
+    EXIT /B 1
+)
+ECHO All dependencies installed
+
+REM Verify installation
+ECHO.
+ECHO Verifying installation...
+python -c "import dash, plotly, pyvista, vtk; print('All packages verified successfully!')"
+
+ECHO.
+ECHO ========================================
+ECHO Setup Complete!
+ECHO ========================================
+ECHO.
+ECHO To run the application:
+ECHO   1. Activate the virtual environment:
+ECHO      myenv\Scripts\activate
+ECHO.
+ECHO   2. Run the app:
+ECHO      python app.py
+ECHO.
+ECHO   3. Open your browser to:
+ECHO      http://127.0.0.1:8050
+ECHO.
+ECHO ========================================
+PAUSE
+```
+
+Run it:
+
+```cmd
+setup.bat
+```
+
+---
+
+## Installed Packages
+
+The `requirements.txt` installs the following packages:
+
+### Core Dependencies
+- **dash** (3.3.0) - Web application framework
+- **dash-mantine-components** (2.4.0) - UI components
+- **plotly** (6.5.0) - Interactive plotting library
+- **numpy** (2.3.5) - Numerical computing
+- **scipy** (1.16.3) - Scientific computing
+- **pyvista** (0.46.4) - 3D visualization toolkit
+- **vtk** (9.5.2) - Visualization Toolkit (112 MB)
+- **markdown** (3.10) - Markdown support
+- **kaleido** (1.2.0) - Static image export
+
+### Additional Dependencies (48 packages total)
+Including: Flask, Werkzeug, matplotlib, pillow, pytest, and many others
+
+**Total Download Size:** ~200 MB
+**Installation Time:** 3-5 minutes (depending on internet speed)
+
+---
 
 ## Troubleshooting
 
-### VTK Import Error
+### Issue 1: Python Version Incompatibility
 
-If you see `ModuleNotFoundError: No module named 'vtk'`:
+**Error:** `ERROR: Could not find a version that satisfies the requirement vtk`
 
-1. Ensure you're using Python 3.12 (VTK compatibility issue with 3.14)
-2. Reinstall VTK: `pip install --force-reinstall vtk`
-3. Check virtual environment is activated
+**Solution:**
+- VTK does not support Python 3.14
+- Use Python 3.12 or 3.13
+- Check your Python version: `python --version`
 
-### File Not Found
+### Issue 2: Missing venv Module
 
-If sample files are missing:
+**Error:** `The virtual environment was not created successfully because ensurepip is not available`
+
+**Solution (Linux/Ubuntu):**
 ```bash
-python sample_data/generate_sample_vti.py
+sudo apt update
+sudo apt install python3.13-venv
 ```
 
-### Port Already in Use
+**Solution (macOS):**
+```bash
+# Install Python 3.13 via Homebrew
+brew install python@3.13
+```
 
-Change the port in `app.py`:
+### Issue 3: Port 8050 Already in Use
+
+**Solution:** Change the port in `app.py` (line 489):
 ```python
-app.run_server(debug=True, host='127.0.0.1', port=8051)  # Change port
+app.run(debug=True, host='127.0.0.1', port=8051)
 ```
 
-## Dependencies
+### Issue 4: Slow Installation (WSL/Linux)
 
-- **dash** >= 2.14.0 - Web framework
-- **plotly** >= 5.18.0 - Interactive plotting
-- **pyvista** >= 0.43.0 - VTK file handling
-- **numpy** >= 1.24.0 - Numerical arrays
-- **scipy** >= 1.11.0 - Interpolation
-- **vtk** >= 9.2.0 - VTK backend
+**Reason:** Large packages like VTK (112 MB) take time to extract and install
 
-## Future Enhancements
+**Solution:** Be patient, the installation will complete in 3-5 minutes
 
-Possible extensions now that the viewer is modular:
-- Runtime file picker per tab
-- Volume rendering / 3D scenes in separate tabs
-- Axis selection dropdowns (leveraging the shared state object)
-- Export (PNG/GIF) utilities layered on top of the shared viewer hooks
-- Custom per-tab controls (e.g., units switch for temperature) without duplicating layout logic
+### Issue 5: Import Error After Installation
 
-## License
+**Solution:**
+```bash
+# Make sure virtual environment is activated
+source myenv/bin/activate  # Linux/macOS
+myenv\Scripts\activate     # Windows
 
-This project is open-source and available for educational and research purposes.
+# Verify packages are installed
+pip list | grep dash
+pip list | grep vtk
+```
 
-## Contact
+---
 
-For issues or questions, please open an issue in the project repository.
+## Verifying Successful Installation
+
+Run these commands to verify everything is working:
+
+```bash
+# Activate environment
+source myenv/bin/activate  # Linux/macOS
+# OR
+myenv\Scripts\activate     # Windows
+
+# Test imports
+python -c "import dash; print(f'Dash version: {dash.__version__}')"
+python -c "import plotly; print(f'Plotly version: {plotly.__version__}')"
+python -c "import vtk; print(f'VTK version: {vtk.vtkVersion.GetVTKVersion()}')"
+python -c "import pyvista; print(f'PyVista version: {pyvista.__version__}')"
+
+# List all installed packages
+pip list
+```
+
+Expected output:
+```
+Dash version: 3.3.0
+Plotly version: 6.5.0
+VTK version: 9.5.2
+PyVista version: 0.46.4
+```
+
+---
+
+## Daily Usage
+
+### Starting the Application
+
+```bash
+# 1. Navigate to project directory
+cd /path/to/Dash
+
+# 2. Activate virtual environment
+source myenv/bin/activate  # Linux/macOS
+# OR
+myenv\Scripts\activate     # Windows
+
+# 3. Run the application
+python app.py
+
+# 4. Open browser to http://127.0.0.1:8050
+```
+
+### Stopping the Application
+
+Press `Ctrl+C` in the terminal
+
+### Deactivating Virtual Environment
+
+```bash
+deactivate
+```
+
+---
+
+## Updating Dependencies
+
+To update all packages to their latest versions:
+
+```bash
+# Activate environment
+source myenv/bin/activate
+
+# Update all packages
+pip install --upgrade -r requirements.txt
+
+# Or update specific package
+pip install --upgrade dash
+```
+
+---
+
+## Uninstalling
+
+To completely remove the installation:
+
+```bash
+# Deactivate virtual environment (if active)
+deactivate
+
+# Remove virtual environment directory
+rm -rf myenv  # Linux/macOS
+# OR
+rmdir /s myenv  # Windows
+```
+
+---
+
+## System Requirements
+
+- **OS:** Linux, macOS, Windows (including WSL)
+- **Python:** 3.12 or 3.13 (NOT 3.14)
+- **RAM:** Minimum 2 GB (4 GB recommended)
+- **Disk Space:** ~500 MB for virtual environment and packages
+- **Internet:** Required for initial package download
+
+---
+
+## Support
+
+For issues or questions:
+1. Check the troubleshooting section above
+2. Review `README.md` for application usage
+3. Review `CLAUDE.md` for development details
+4. Check VTK file compatibility
+
+---
+
+## Quick Reference Card
+
+```
+╔════════════════════════════════════════════╗
+║  VTK 2D Slice Viewer - Quick Reference     ║
+╠════════════════════════════════════════════╣
+║  Create Environment:                       ║
+║    python3.13 -m venv myenv                ║
+║                                            ║
+║  Activate (Linux/Mac):                     ║
+║    source myenv/bin/activate               ║
+║                                            ║
+║  Activate (Windows):                       ║
+║    myenv\Scripts\activate                  ║
+║                                            ║
+║  Install Packages:                         ║
+║    pip install -r requirements.txt         ║
+║                                            ║
+║  Run Application:                          ║
+║    python app.py                           ║
+║                                            ║
+║  Access:                                   ║
+║    http://127.0.0.1:8050                   ║
+║                                            ║
+║  Stop: Ctrl+C                              ║
+║  Deactivate: deactivate                    ║
+╚════════════════════════════════════════════╝
+```
+
+---
+
+**Last Updated:** 2025-12-08
+**Python Version:** 3.13 (recommended)
+**VTK Version:** 9.5.2
