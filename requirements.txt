@@ -1,0 +1,10 @@
+## Install with: pip install -r requirements.txt
+dash
+dash-mantine-components
+plotly
+numpy
+scipy
+pyvista
+vtk
+markdown
+kaleido

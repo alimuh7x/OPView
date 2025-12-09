@@ -1,0 +1,91 @@
+======================================
+VTK 2D Slice Viewer - Quick Install
+======================================
+
+OPTION 1: Automated Setup (Recommended)
+========================================
+
+Linux/macOS/WSL:
+    ./setup.sh
+
+Windows:
+    setup.bat
+
+
+OPTION 2: Manual Setup
+=======================
+
+Linux/macOS/WSL:
+-----------------
+python3.13 -m venv myenv
+source myenv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+python app.py
+
+Windows:
+--------
+python -m venv myenv
+myenv\Scripts\activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+python app.py
+
+
+OPTION 3: One-Line Command
+===========================
+
+Linux/macOS/WSL:
+-----------------
+python3.13 -m venv myenv && source myenv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt
+
+Windows (PowerShell):
+---------------------
+python -m venv myenv; myenv\Scripts\activate; pip install --upgrade pip; pip install -r requirements.txt
+
+
+ACCESS THE APP
+==============
+Open browser: http://127.0.0.1:8050
+
+
+REQUIREMENTS
+============
+- Python 3.12 or 3.13 (NOT 3.14!)
+- Internet connection
+- ~500 MB disk space
+- 2-4 GB RAM
+
+
+TROUBLESHOOTING
+===============
+
+Error: "Could not find a version that satisfies the requirement vtk"
+→ Use Python 3.12 or 3.13, NOT 3.14
+
+Error: "ensurepip is not available"
+→ Linux: sudo apt install python3.13-venv
+→ macOS: brew install python@3.13
+
+Port 8050 in use
+→ Change port in app.py line 489
+
+
+DAILY USAGE
+===========
+
+Start:
+    Linux/macOS:  source myenv/bin/activate
+    Windows:      myenv\Scripts\activate
+    Then:         python app.py
+
+Stop:
+    Press Ctrl+C
+
+Deactivate:
+    deactivate
+
+
+FULL DOCUMENTATION
+==================
+See SETUP.md for complete instructions
