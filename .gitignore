@@ -25,11 +25,11 @@ build/
 *~
 
 # Large simulation outputs
-sample_data/*.vti
-*.vts
-*.vtk
-*.vtp
-*.vtr
+# sample_data/*.vti
+# *.vts
+# *.vtk
+# *.vtp
+# *.vtr
 
 # OS files
 .DS_Store

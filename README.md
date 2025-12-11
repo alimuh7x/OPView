@@ -1,6 +1,5 @@
 # VTK 2D Slice Viewer
 
-
 ## Start the app (Linux / macOS / WSL)
 
 ```bash
