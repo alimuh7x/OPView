@@ -2,7 +2,7 @@
 
 DEFAULTS = {
     "axis": "y",
-    "interpolation_resolution": 800,
+    "interpolation_resolution": 400,
     "colorA": "blue",
     "colorB": "red",
     "zsmooth": "best",

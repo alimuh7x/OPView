@@ -1,6 +1,9 @@
 """Viewer panel: layout + callbacks for each tab."""
 from __future__ import annotations
 
+import fnmatch
+import os
+import traceback
 from dataclasses import replace
 from pathlib import Path
 
@@ -20,6 +23,9 @@ def _formatted_range_value(value):
     if abs_val == 0 or 1e-6 <= abs_val < 1e4:
         return float(f"{value:.6f}")
     return float(f"{value:.6e}")
+
+_REGISTERED_PANEL_CALLBACKS: set[str] = set()
+_REGISTERED_DOWNLOAD_CALLBACKS: set[str] = set()
 
 
  
@@ -178,15 +184,18 @@ class ViewerPanel:
         )
         # Time-step handling: list of all files for this dataset
         self.files = tab_config.get("files") or []
+        self.files_by_project = tab_config.get("files_by_project") or {}
+        self.file_pattern = tab_config.get("file_pattern")
+        self.enable_project_picker = bool(tab_config.get("enable_project_picker"))
+        self.project_options = [] if self.enable_project_picker else None
+        self.project_value = tab_config.get("project_value")
         self.file_path = tab_config.get("file")
-        if not self.file_path and self.files:
-            self.file_path = self.files[-1]
         self.dataset_units = tab_config.get("units")
         self.dataset_scale = tab_config.get("scale", 1.0)
         self.enable_line_scan = tab_config.get("enable_line_scan", True)  # Enable by default
         self.theme_input_id = None
 
-        self.reader = self.reader_factory(self.file_path)
+        self.reader = self.reader_factory(self.file_path) if self.file_path else None
         self.scalar_defs = self._build_scalar_definitions(tab_config.get("scalars"))
         self.scalar_options = [{'label': d['label'], 'value': d['value']} for d in self.scalar_defs]
         self.scalar_map = {d['value']: d for d in self.scalar_defs}
@@ -194,15 +203,39 @@ class ViewerPanel:
 
         # Build time-step options (one per file), if multiple files are available
         self.time_options = self._build_time_options(self.files)
-        self.time_value = self.file_path if self.file_path else (self.time_options[-1]['value'] if self.time_options else None)
+        self.time_value = self.file_path
 
         if not self.scalar_defs:
             raise ValueError(f"No scalar definitions available for dataset {self.id}")
 
         initial_scalar = self.scalar_defs[0]['value']
-        self.base_state = self._build_state(self.reader, self.file_path, initial_scalar)
-        self.initial_slider_max = self._max_slice_index(self.reader)
-        self.initial_slider_disabled = not self.reader.is_3d
+        if self.reader and self.file_path:
+            self.base_state = self._build_state(self.reader, self.file_path, initial_scalar)
+            self.initial_slider_max = self._max_slice_index(self.reader)
+            self.initial_slider_disabled = not self.reader.is_3d
+            # Precompute an initial figure bundle so dynamically inserted layouts render immediately
+            # (Dash does not always fire callbacks on first mount for newly added components).
+            try:
+                self.initial_heatmap_bundle = self._build_heatmap_figures(self.reader, self.base_state, self.file_path)
+            except Exception:
+                self.initial_heatmap_bundle = {"figure": go.Figure(), "colorbar": go.Figure(), "scaled_stats": {"min": 0.0, "max": 1.0}, "fig_width": 600}
+        else:
+            self.base_state = initial_state(
+                scalar_key=initial_scalar,
+                scalar_label=self.scalar_defs[0]['label'],
+                axis=self.axis,
+                slice_index=0,
+                stats={"min": 0.0, "max": 1.0},
+                colorA=self.color_defaults[0],
+                colorB=self.color_defaults[1],
+                file_path="",
+                scale=(self.scalar_map.get(initial_scalar) or {}).get("scale", self.dataset_scale or 1.0) or 1.0,
+                units=(self.scalar_map.get(initial_scalar) or {}).get("units", self.dataset_units),
+                palette="aqua-fire",
+            )
+            self.initial_slider_max = 0
+            self.initial_slider_disabled = True
+            self.initial_heatmap_bundle = {"figure": go.Figure(), "colorbar": go.Figure(), "scaled_stats": {"min": 0.0, "max": 1.0}, "fig_width": 600}
 
         self.register_callbacks()
 
@@ -213,25 +246,17 @@ class ViewerPanel:
     def _build_time_options(self, files):
         """Return dropdown options for available time-step files.
 
-        Labels show only the numeric time step extracted from the filename,
-        while values remain full file paths.
+        Labels show filenames, while values are absolute paths.
         """
         options = []
         for path in sorted(files):
-            name = Path(path).name
-            stem = name.split(".")[0]
-            # Extract trailing digit block from stem, e.g. PhaseField_00001000 → "00001000"
-            trailing_digits = ""
-            for ch in reversed(stem):
-                if ch.isdigit():
-                    trailing_digits = ch + trailing_digits
-                elif trailing_digits:
-                    break
-            if trailing_digits:
-                label = trailing_digits.lstrip("0") or trailing_digits
-            else:
-                label = name
-            options.append({"label": label, "value": path})
+            p = Path(path)
+            name = p.name
+            try:
+                value = str(p.resolve())
+            except OSError:
+                value = str(p)
+            options.append({"label": name, "value": value})
         return options
 
     def _colorscale_params(self, Z_grid, state: ViewerState):
@@ -282,6 +307,99 @@ class ViewerPanel:
 
         return colorscale, Z_grid_display, zmin_display, zmax_display, zmid_display
 
+    def _build_colorbar_figure(self, zmin_display, zmax_display, colorscale, state: ViewerState):
+        if not np.isfinite(zmin_display) or not np.isfinite(zmax_display) or zmax_display == zmin_display:
+            tick_vals = [zmin_display]
+            tick_text = [f"{zmin_display:.3g}" if np.isfinite(zmin_display) else ""]
+        else:
+            tick_vals = np.linspace(zmin_display, zmax_display, 5)
+            tick_text = [f"{v:.3g}" for v in tick_vals]
+
+        colorbar_fig = go.Figure()
+        colorbar_fig.add_trace(
+            go.Scatter(
+                x=[0, 0],
+                y=[0, 1],
+                mode="markers",
+                marker=dict(
+                    size=0.1,
+                    color=[zmin_display, zmax_display],
+                    colorscale=colorscale,
+                    showscale=True,
+                    cmin=zmin_display,
+                    cmax=zmax_display,
+                    colorbar=dict(
+                        title=dict(
+                            text=state.scalar_label + (f" ({state.units})" if state.units else ""),
+                            side="right",
+                            font=dict(
+                                size=20,
+                                family="Montserrat, Arial, sans-serif",
+                                color="#0f1b2b",
+                            ),
+                        ),
+                        len=0.9,
+                        thickness=20,
+                        thicknessmode="pixels",
+                        x=0.5,
+                        xanchor="center",
+                        tickmode="array",
+                        tickvals=tick_vals,
+                        ticktext=tick_text,
+                        ticks="outside",
+                        tickfont=dict(
+                            size=16,
+                            family="Montserrat, Arial, sans-serif",
+                            color="#0f1b2b",
+                        ),
+                    ),
+                ),
+                hoverinfo="skip",
+            )
+        )
+        colorbar_fig.update_layout(
+            width=90,
+            height=380,
+            margin=dict(l=0, r=0, t=40, b=0),
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff",
+        )
+        return colorbar_fig
+
+    def _build_heatmap_figures(self, reader, state: ViewerState, file_path: str, slice_data=None):
+        descriptor = self.scalar_map.get(state.scalar_key) or self.scalar_defs[0]
+        if slice_data is None:
+            slice_data = reader.get_interpolated_slice(
+                axis=state.axis,
+                index=state.slice_index,
+                scalar_name=descriptor['array'],
+                component=descriptor.get('component'),
+                resolution=self.config["interpolation_resolution"]
+            )
+        X_grid, Y_grid, Z_grid, stats = slice_data
+        scale = descriptor.get('scale', 1.0) or 1.0
+        Z_grid = Z_grid * scale
+        colorscale, Z_display, zmin_display, zmax_display, zmid_display = self._colorscale_params(Z_grid, state)
+        nx, ny = self._slice_dimensions(reader, state.axis)
+        effective_height = 380 - 40
+        aspect = nx / max(ny, 1)
+        fig_width = max(100, min(1200, int(effective_height * aspect)))
+        figure = self._build_figure(
+            X_grid, Y_grid, Z_display, state,
+            colorscale, zmin_display, zmax_display, zmid_display,
+            fig_width
+        )
+        colorbar_fig = self._build_colorbar_figure(zmin_display, zmax_display, colorscale, state)
+        scaled_stats = {k: stats[k] * scale for k in stats}
+        return {
+            "figure": figure,
+            "colorbar": colorbar_fig,
+            "scaled_stats": scaled_stats,
+            "fig_width": fig_width,
+        }
+
     def _slice_dimensions(self, reader, axis: str):
         """Return (nx, ny) for the current slice based on the original mesh dimensions.
 
@@ -319,10 +437,14 @@ class ViewerPanel:
             slider_max=self.initial_slider_max,
             axis_label=self.axis_label,
             palette_options=self.palette_options,
-             time_options=self.time_options,
-             time_value=self.time_value,
+            project_options=self.project_options,
+            project_value=self.project_value,
+            time_options=self.time_options,
+            time_value=self.time_value,
             include_range_section=True,
-            include_hidden_line_toggle=not self.enable_line_scan
+            include_hidden_line_toggle=not self.enable_line_scan,
+            initial_figure=(self.initial_heatmap_bundle or {}).get("figure"),
+            initial_colorbar=(self.initial_heatmap_bundle or {}).get("colorbar"),
         )
 
     def build_line_scan_card(self):
@@ -337,6 +459,48 @@ class ViewerPanel:
 
     def register_callbacks(self):
         """Register Dash callbacks for this dataset panel."""
+
+        # Panels (especially in Comparison) can be rebuilt multiple times as the layout changes.
+        # Dash does not allow registering the same Output more than once, so we guard by panel id.
+        # Note: callbacks close over `self`; panel ids are designed to be stable per dataset/config.
+        if self.id in _REGISTERED_PANEL_CALLBACKS:
+            return
+        _REGISTERED_PANEL_CALLBACKS.add(self.id)
+
+        if self.enable_project_picker:
+            @self.app.callback(
+                Output(self.cid('project'), 'options'),
+                Output(self.cid('project'), 'value'),
+                Output(self.cid('time'), 'options'),
+                Output(self.cid('time'), 'value'),
+                Input('projects-store', 'data'),
+                Input(self.cid('project'), 'value'),
+                State(self.cid('time'), 'value'),
+            )
+            def _sync_project_and_files(projects_store, selected_project, selected_file):
+                store = projects_store or {}
+                names = store.get('names') or []
+                active = store.get('active')
+                files_by_project = store.get('files_by_project') or {}
+
+                project_options = [{'label': name, 'value': name} for name in names]
+
+                project_value = selected_project if selected_project in names else None
+                if project_value is None and active in names:
+                    project_value = active
+                if project_value is None and names:
+                    project_value = names[0]
+
+                files = files_by_project.get(project_value) or []
+                if self.file_pattern:
+                    files = [p for p in files if fnmatch.fnmatchcase(Path(p).name, self.file_pattern)]
+
+                time_options = self._build_time_options(files)
+                allowed = {opt.get('value') for opt in time_options}
+                time_value = selected_file if selected_file in allowed else None
+
+                self.project_value = project_value
+                return project_options, project_value, time_options, time_value
 
         # Build outputs list - conditionally include DMC Switch outputs
         outputs = [
@@ -415,6 +579,7 @@ class ViewerPanel:
             State(self.cid('state'), 'data'),
         )
         def _update_viewer(*args):
+            debug = bool(os.environ.get("OPVIEW_DEBUG"))
             # Parse args based on whether line scan is enabled
             if self.enable_line_scan:
                 (time_value, scalar_value, palette_value, slice_value, slice_input_value, reset_clicks,
@@ -435,7 +600,127 @@ class ViewerPanel:
                 state_data = stored_state or {}
                 file_path = state_data.get('file_path') or self.file_path
 
-            reader = self.reader_factory(file_path)
+            if debug:
+                print(
+                    f"[OPVIEW_DEBUG] panel={self.id} triggered={ctx.triggered_id!r} time_value={time_value!r} file_path={file_path!r}",
+                    flush=True,
+                )
+
+            if not file_path:
+                # No file chosen yet: keep controls visible, but show empty plots.
+                state_data = stored_state or {}
+                default_scalar = self.scalar_defs[0]['value']
+                fallback_value = state_data.get('scalar_key', default_scalar)
+                if fallback_value not in self.scalar_map:
+                    fallback_value = default_scalar
+                descriptor = self.scalar_map.get(fallback_value) or self.scalar_defs[0]
+                fallback_state = ViewerState.from_dict(
+                    stored_state,
+                    initial_state(
+                        scalar_key=fallback_value,
+                        scalar_label=descriptor.get('label'),
+                        axis=self.axis,
+                        slice_index=0,
+                        stats={"min": 0.0, "max": 1.0},
+                        colorA=self.color_defaults[0],
+                        colorB=self.color_defaults[1],
+                        file_path="",
+                        scale=descriptor.get('scale', self.dataset_scale or 1.0) or 1.0,
+                        units=descriptor.get('units', self.dataset_units),
+                        palette=palette_value or "aqua-fire",
+                    ),
+                )
+                empty_fig = go.Figure()
+                empty_colorbar = go.Figure()
+                heatmap_style = {'width': '600px', 'height': '380px'}
+                slice_container_style = {'display': 'none'}
+                outputs_base = [
+                    empty_fig,
+                    "Select a file to view.",
+                    None,
+                    fallback_state.to_dict(),
+                    fallback_state.scalar_key,
+                    0,
+                    _formatted_range_value(fallback_state.range_min),
+                    _formatted_range_value(fallback_state.range_max),
+                    fallback_state.palette,
+                    0,
+                    0,
+                    True,
+                    slice_container_style,
+                    0,
+                    True,
+                    _formatted_range_value(fallback_state.range_min),
+                    _formatted_range_value(fallback_state.range_max),
+                    [fallback_state.range_min, fallback_state.range_max],
+                    fallback_state.range_min,
+                    fallback_state.range_max,
+                    False,
+                    True,
+                    heatmap_style,
+                    empty_colorbar,
+                    bool(fallback_state.interfaces_overlay_visible),
+                ]
+                if self.enable_line_scan:
+                    outputs_base.extend([
+                        False,
+                        bool(fallback_state.line_overlay_visible),
+                        fallback_state.line_scan_direction or 'horizontal',
+                    ])
+                return tuple(outputs_base)
+
+            try:
+                reader = self.reader_factory(file_path)
+                # Keep panel in sync so auxiliary callbacks (line scan/histogram) use
+                # the currently selected file.
+                self.reader = reader
+                self.file_path = file_path
+            except Exception:
+                if debug:
+                    print(f"[OPVIEW_DEBUG] panel={self.id} reader_factory failed for {file_path!r}", flush=True)
+                    print(traceback.format_exc(), flush=True)
+                # Return an "empty" view while surfacing the error in the title.
+                err = traceback.format_exc().splitlines()[-1]
+                fallback = ViewerState.from_dict(stored_state, self.base_state)
+                empty_fig = go.Figure()
+                empty_colorbar = go.Figure()
+                heatmap_style = {'width': '600px', 'height': '380px'}
+                slice_container_style = {'display': 'none'}
+                outputs_base = [
+                    empty_fig,
+                    f"Error loading file: {err}",
+                    _click_box(f"Error: {err}", "#842029", "#f8d7da"),
+                    fallback.to_dict(),
+                    fallback.scalar_key,
+                    0,
+                    _formatted_range_value(fallback.range_min),
+                    _formatted_range_value(fallback.range_max),
+                    fallback.palette,
+                    0,
+                    0,
+                    True,
+                    slice_container_style,
+                    0,
+                    True,
+                    _formatted_range_value(fallback.range_min),
+                    _formatted_range_value(fallback.range_max),
+                    [fallback.range_min, fallback.range_max],
+                    fallback.range_min,
+                    fallback.range_max,
+                    False,
+                    True,
+                    heatmap_style,
+                    empty_colorbar,
+                    bool(fallback.interfaces_overlay_visible),
+                ]
+                if self.enable_line_scan:
+                    outputs_base.extend([
+                        False,
+                        bool(fallback.line_overlay_visible),
+                        fallback.line_scan_direction or 'horizontal',
+                    ])
+                return tuple(outputs_base)
+
             state_data = stored_state or {}
             default_value = self.scalar_defs[0]['value']
             fallback_value = state_data.get('scalar_key', default_value)
@@ -472,6 +757,9 @@ class ViewerPanel:
             if triggered == self.cid('time') and time_value:
                 # When file changes, reset slice index and ranges to new dataset stats
                 state.file_path = file_path
+                self.time_value = time_value
+                if debug:
+                    print(f"[OPVIEW_DEBUG] panel={self.id} selected_file={file_path!r}", flush=True)
                 state.slice_index = 0
                 range_needs_reset = True
 
@@ -524,13 +812,65 @@ class ViewerPanel:
             scale = descriptor.get('scale', 1.0) or 1.0
             units = descriptor.get('units')
 
-            X_grid, Y_grid, Z_grid, stats = reader.get_interpolated_slice(
-                axis=state.axis,
-                index=state.slice_index,
-                scalar_name=descriptor['array'],
-                component=descriptor.get('component'),
-                resolution=self.config["interpolation_resolution"]
-            )
+            try:
+                X_grid, Y_grid, Z_grid, stats = reader.get_interpolated_slice(
+                    axis=state.axis,
+                    index=state.slice_index,
+                    scalar_name=descriptor['array'],
+                    component=descriptor.get('component'),
+                    resolution=self.config["interpolation_resolution"]
+                )
+            except Exception:
+                if debug:
+                    print(
+                        f"[OPVIEW_DEBUG] panel={self.id} get_interpolated_slice failed file={file_path!r} scalar={descriptor.get('array')!r}",
+                        flush=True,
+                    )
+                    print(traceback.format_exc(), flush=True)
+                err = traceback.format_exc().splitlines()[-1]
+                state.clicked_message = None
+                state.click_count = 0
+                state.first_click = None
+                empty_fig = go.Figure()
+                empty_colorbar = go.Figure()
+                heatmap_style = {'width': '600px', 'height': '380px'}
+                slice_container_style = {'display': 'none'}
+                formatted_min = _formatted_range_value(state.range_min)
+                formatted_max = _formatted_range_value(state.range_max)
+                base_return = (
+                    empty_fig,
+                    f"Error rendering: {err}",
+                    _click_box(f"Error: {err}", "#842029", "#f8d7da"),
+                    state.to_dict(),
+                    state.scalar_key,
+                    state.slice_index,
+                    formatted_min,
+                    formatted_max,
+                    state.palette,
+                    state.slice_index,
+                    0,
+                    True,
+                    slice_container_style,
+                    0,
+                    True,
+                    "" if formatted_min is None else f"{formatted_min:.6f}",
+                    "" if formatted_max is None else f"{formatted_max:.6f}",
+                    [formatted_min, formatted_max] if formatted_min is not None and formatted_max is not None else [0.0, 1.0],
+                    0.0,
+                    1.0,
+                    state.colorscale_mode == 'dynamic',
+                    state.click_mode == 'range',
+                    heatmap_style,
+                    empty_colorbar,
+                    state.interfaces_overlay_visible,
+                )
+                if self.enable_line_scan:
+                    return base_return + (
+                        state.click_mode == 'linescan',
+                        state.line_overlay_visible,
+                        state.line_scan_direction
+                    )
+                return base_return
             Z_grid = Z_grid * scale
             scaled_stats = {k: stats[k] * scale for k in stats}
 
@@ -565,28 +905,18 @@ class ViewerPanel:
             # We reserve 40px of top margin inside the figure for the
             # modebar, so use the *effective* plot height when computing
             # the width to keep the image square and avoid side gaps.
-            nx, ny = self._slice_dimensions(reader, state.axis)
-
-            # HEAD: Calculating width of the image ---------------------------------------
-
-            effective_height = 380 - 40  # fig_height - top_margin
-            aspect = nx / max(ny, 1)
-            fig_width = max(100, min(1200, int(effective_height * aspect)))
-            
-
-            # Colorscale parameters shared between main heatmap and colorbar
-            colorscale, Z_display, zmin_display, zmax_display, zmid_display = self._colorscale_params(Z_grid, state)
-
-            figure = self._build_figure(X_grid, Y_grid, Z_display, state,
-                                        colorscale, zmin_display, zmax_display, zmid_display,
-                                        fig_width)
+            heatmap_data = self._build_heatmap_figures(reader, state, file_path)
+            figure = heatmap_data["figure"]
+            colorbar_fig = heatmap_data["colorbar"]
+            scaled_stats = heatmap_data["scaled_stats"]
+            card_style = {
+                "width": f"{heatmap_data['fig_width']}px",
+                "height": "380px",
+            }
 
             # Optional: add Interfaces (band) overlay on top of any field.
             if state.interfaces_overlay_visible:
                 try:
-                    # Always derive interfaces from the Phase Field VTK and reuse
-                    # that geometry as an overlay across all viewers. Prefer the
-                    # PhaseField file that matches the current timestep.
                     phase_file = self._phase_overlay_file(file_path)
                     phase_reader = self.reader_factory(phase_file)
                     X_i, Y_i, Z_i, _ = phase_reader.get_interpolated_slice(
@@ -612,89 +942,16 @@ class ViewerPanel:
                         hovertemplate=None,
                     ))
                 except Exception:
-                    # If Interfaces array is not available for this dataset,
-                    # silently skip the overlay.
                     pass
             map_title = self._build_map_title(state)
             click_info = self._build_click_info(state)
 
             store_data = state.to_dict()
 
-            # Format display values
             formatted_min = _formatted_range_value(state.range_min)
             formatted_max = _formatted_range_value(state.range_max)
             min_display = f"{formatted_min:.6f}" if formatted_min is not None else ""
             max_display = f"{formatted_max:.6f}" if formatted_max is not None else ""
-
-            # Style for middle heatmap card
-            card_style = {
-                "width": f"{fig_width}px",
-                "height": "380px",
-            }
-
-            # Separate colorbar figure (fixed card width ~90px).
-            # Use an invisible scatter with a colorbar so only one bar is visible.
-            # Build explicit tick positions so min/max are always shown.
-            if np.isfinite(zmin_display) and np.isfinite(zmax_display) and zmax_display != zmin_display:
-                tick_vals = np.linspace(zmin_display, zmax_display, 5)
-                tick_text = [f"{v:.3g}" for v in tick_vals]
-            else:
-                tick_vals = [zmin_display]
-                tick_text = [f"{zmin_display:.3g}"]
-
-            colorbar_fig = go.Figure()
-            colorbar_fig.add_trace(
-                go.Scatter(
-                    x=[0, 0],
-                    y=[0, 1],
-                    mode="markers",
-                    marker=dict(
-                        size=0.1,
-                        color=[zmin_display, zmax_display],
-                        colorscale=colorscale,
-                        showscale=True,
-                        cmin=zmin_display,
-                        cmax=zmax_display,
-                        colorbar=dict(
-                            title=dict(
-                                text=state.scalar_label + (f" ({state.units})" if state.units else ""),
-                                side="right",
-                                font=dict(
-                                    size=20,
-                                    family="Montserrat, Arial, sans-serif",
-                                    color="#0f1b2b",
-                                ),
-                            ),
-                            len=0.9,
-                            thickness=20,
-                            thicknessmode="pixels",
-                            x=0.5,
-                            xanchor="center",
-                            tickmode="array",
-                            tickvals=tick_vals,
-                            ticktext=tick_text,
-                            ticks="outside",
-                            tickfont=dict(
-                                size=16,
-                                family="Montserrat, Arial, sans-serif",
-                                color="#0f1b2b",
-                            ),
-                        ),
-                    ),
-                    hoverinfo="skip",
-                )
-            )
-            colorbar_fig.update_layout(
-                width=90,
-                height=380,
-                # Match the top margin of the main heatmap figure
-                # so the colorbar aligns vertically within its card.
-                margin=dict(l=0, r=0, t=40, b=0),
-                xaxis=dict(visible=False),
-                yaxis=dict(visible=False),
-                paper_bgcolor="#ffffff",
-                plot_bgcolor="#ffffff",
-            )
 
             # Build base return tuple
             base_return = (
@@ -751,6 +1008,9 @@ class ViewerPanel:
             def _update_line_scan(click_data, scan_direction_value, click_mode_range_checked, click_mode_line_checked, stored_state):
                 state_data = stored_state or {}
                 state = ViewerState.from_dict(state_data, self.base_state)
+                if not state.file_path:
+                    return go.Figure(), "Select a file first.", state.to_dict()
+                reader = self.reader_factory(state.file_path)
 
                 # Update scan direction from segmented control value
                 state.line_scan_direction = scan_direction_value or 'horizontal'
@@ -773,7 +1033,7 @@ class ViewerPanel:
 
                 # Get current data
                 descriptor = self.scalar_map.get(state.scalar_key, self.scalar_defs[0])
-                X_grid, Y_grid, Z_grid, stats = self.reader.get_interpolated_slice(
+                X_grid, Y_grid, Z_grid, stats = reader.get_interpolated_slice(
                     axis=state.axis,
                     index=state.slice_index,
                     scalar_name=descriptor['array'],
@@ -801,6 +1061,8 @@ class ViewerPanel:
             def _update_histogram(scalar_value, histogram_field, bins, stored_state):
                 state_data = stored_state or {}
                 state = ViewerState.from_dict(state_data, self.base_state)
+                if not state.file_path:
+                    return go.Figure(), self.scalar_options, histogram_field
 
                 # Update histogram field options based on available scalars
                 field_options = self.scalar_options
@@ -811,7 +1073,8 @@ class ViewerPanel:
 
                 # Get histogram data
                 descriptor = self.scalar_map.get(histogram_field, self.scalar_defs[0])
-                X_grid, Y_grid, Z_grid, stats = self.reader.get_interpolated_slice(
+                reader = self.reader_factory(state.file_path)
+                X_grid, Y_grid, Z_grid, stats = reader.get_interpolated_slice(
                     axis=state.axis,
                     index=state.slice_index,
                     scalar_name=descriptor['array'],
@@ -832,6 +1095,10 @@ class ViewerPanel:
 
     def _register_download_callback(self):
         """Register client-side download handler to save heatmap + logo + colorbar."""
+        # Avoid duplicate Output registration if panels are rebuilt/recreated.
+        if self.id in _REGISTERED_DOWNLOAD_CALLBACKS:
+            return
+        _REGISTERED_DOWNLOAD_CALLBACKS.add(self.id)
         self.app.clientside_callback(
             f"""
             function(n_clicks) {{
@@ -1160,10 +1427,10 @@ class ViewerPanel:
             pass
         return state
 
-    def _build_state(self, reader, file_path, scalar_key):
+    def _build_state(self, reader, file_path, scalar_key, *, return_slice=False):
         descriptor = self.scalar_map.get(scalar_key, self.scalar_defs[0])
         slice_index = self._default_slice_index(reader)
-        _, _, _, stats = reader.get_interpolated_slice(
+        X_grid, Y_grid, Z_grid, stats = reader.get_interpolated_slice(
             axis=self.axis,
             index=slice_index,
             scalar_name=descriptor['array'],
@@ -1172,7 +1439,7 @@ class ViewerPanel:
         )
         scale = descriptor.get('scale', 1.0) or 1.0
         scaled_stats = {k: stats[k] * scale for k in stats}
-        return initial_state(
+        state = initial_state(
             scalar_key=descriptor['value'],
             scalar_label=descriptor['label'],
             axis=self.axis,
@@ -1185,6 +1452,9 @@ class ViewerPanel:
             scale=scale,
             units=descriptor.get('units')
         )
+        if return_slice:
+            return state, (X_grid, Y_grid, Z_grid, stats), scaled_stats
+        return state
 
     def compute_real_heatmap_edge(self, fig_w, fig_h, data_w, data_h, domain):
         data_aspect = data_w / data_h
@@ -1221,7 +1491,7 @@ class ViewerPanel:
         return max(0, min(max_idx, value))
 
     def _build_scalar_definitions(self, scalar_specs):
-        available = set(self.reader.scalar_fields)
+        available = set(self.reader.scalar_fields) if self.reader is not None else None
         definitions = []
         default_scale = self.dataset_scale or 1.0
         default_units = self.dataset_units
@@ -1229,7 +1499,9 @@ class ViewerPanel:
         if scalar_specs:
             for spec in scalar_specs:
                 array_name = spec.get('array') or spec.get('name') or spec.get('label')
-                if not array_name or array_name not in available:
+                if not array_name:
+                    continue
+                if available is not None and array_name not in available:
                     continue
                 component = spec.get('component')
                 label = spec.get('label') or (f"{array_name} [{component}]" if component is not None else array_name)
@@ -1244,6 +1516,8 @@ class ViewerPanel:
                 })
 
         if not definitions:
+            if available is None:
+                return definitions
             for array_name in available:
                 definitions.append({
                     'label': array_name,
@@ -1264,7 +1538,7 @@ class ViewerPanel:
         Pick the PhaseField file that matches the active timestep if available,
         otherwise fall back to the first file.
         """
-        default = "VTK/PhaseField_00000000.vts"
+        default = str(self._vtk_dir() / "PhaseField_00000000.vts")
         if not active_file:
             return default
 
@@ -1284,11 +1558,21 @@ class ViewerPanel:
                 break
 
         if digits:
-            candidate = Path("VTK") / f"PhaseField_{digits}.vts"
+            candidate = self._vtk_dir() / f"PhaseField_{digits}.vts"
             if candidate.exists():
                 return str(candidate)
 
         return default
+
+    def _vtk_dir(self) -> Path:
+        """
+        Prefer a VTK directory in the current working directory; otherwise fall back
+        to the repo VTK directory adjacent to this file.
+        """
+        cwd_vtk = Path.cwd() / "VTK"
+        if cwd_vtk.exists():
+            return cwd_vtk
+        return Path(__file__).resolve().parent.parent / "VTK"
 
 
 def _click_box(message, color, background):

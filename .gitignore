@@ -2,39 +2,10 @@
 __pycache__/
 .pytest_cache/
 venv*/
-myenv/
 *.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-*.egg
-*.egg-info/
-dist/
-build/
 
 # Dash artifacts
 .DS_Store
-*.log
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
 
 # Large simulation outputs
-# sample_data/*.vti
-# *.vts
-# *.vtk
-# *.vtp
-# *.vtr
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Environment files
-.env
-.env.local
+sample_data/*.vti
