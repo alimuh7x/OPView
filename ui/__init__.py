@@ -45,6 +45,8 @@ from .flex_components import (
     # Components
     Dropdown,
     Slider,
+    RangeSlider,
+    TextInput,
     Button,
     Graph,
     Label,
@@ -89,6 +91,8 @@ __all__ = [
     # OOP API - Components
     'Dropdown',
     'Slider',
+    'RangeSlider',
+    'TextInput',
     'Button',
     'Graph',
     'Label',

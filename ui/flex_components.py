@@ -175,6 +175,20 @@ class Flex(Component):
         self.add(slide)
         return slide
 
+    def range_slider(self, component_id: str, min_val: float, max_val: float,
+                    value: List[float] = None, **kwargs) -> 'RangeSlider':
+        """Create and add a range slider"""
+        rslide = RangeSlider(component_id, min_val, max_val, value=value, **kwargs)
+        self.add(rslide)
+        return rslide
+
+    def text_input(self, component_id: str, value: str = '',
+                  placeholder: str = '', **kwargs) -> 'TextInput':
+        """Create and add a text input"""
+        tinput = TextInput(component_id, value=value, placeholder=placeholder, **kwargs)
+        self.add(tinput)
+        return tinput
+
     def button(self, component_id: str, label: str, **kwargs) -> 'Button':
         """Create and add a button"""
         btn = Button(component_id, label, **kwargs)
@@ -422,6 +436,90 @@ class Label(Component):
         return html.Label(
             self.text,
             style=self._build_style(),
+            className=self._build_class_name(),
+            **self.kwargs
+        )
+
+
+class TextInput(Component):
+    """Text input component"""
+
+    DEFAULT_WIDTH = '200px'
+    DEFAULT_MARGIN = '5px'
+
+    def __init__(self, component_id: str, value: str = '',
+                 placeholder: str = '', input_type: str = 'text', **kwargs):
+        """
+        Initialize text input.
+
+        Args:
+            component_id: Unique component ID
+            value: Default value
+            placeholder: Placeholder text
+            input_type: Input type (text, number, password, email, etc.)
+            **kwargs: Additional dcc.Input arguments
+        """
+        super().__init__()
+        self.id = component_id
+        self.value = value
+        self.placeholder = placeholder
+        self.input_type = input_type
+        self.kwargs = kwargs
+        self.className = CSS.INPUT
+
+    def build(self) -> dcc.Input:
+        """Build text input component"""
+        return dcc.Input(
+            id=self.id,
+            type=self.input_type,
+            value=self.value,
+            placeholder=self.placeholder,
+            style=self._build_style(),
+            className=self._build_class_name(),
+            **self.kwargs
+        )
+
+
+class RangeSlider(Component):
+    """Range slider component for selecting min/max values"""
+
+    DEFAULT_WIDTH = '250px'
+    DEFAULT_MARGIN = '10px 5px'
+
+    def __init__(self, component_id: str, min_val: float, max_val: float,
+                 value: List[float] = None, step: float = 1,
+                 marks: Dict = None, **kwargs):
+        """
+        Initialize range slider.
+
+        Args:
+            component_id: Unique component ID
+            min_val: Minimum value
+            max_val: Maximum value
+            value: Default range [min, max]
+            step: Step size
+            marks: Slider marks
+            **kwargs: Additional dcc.RangeSlider arguments
+        """
+        super().__init__()
+        self.id = component_id
+        self.min = min_val
+        self.max = max_val
+        self.value = value if value is not None else [min_val, max_val]
+        self.step = step
+        self.marks = marks
+        self.kwargs = kwargs
+        self.className = CSS.SLIDER
+
+    def build(self) -> dcc.RangeSlider:
+        """Build range slider component"""
+        return dcc.RangeSlider(
+            id=self.id,
+            min=self.min,
+            max=self.max,
+            value=self.value,
+            step=self.step,
+            marks=self.marks,
             className=self._build_class_name(),
             **self.kwargs
         )
