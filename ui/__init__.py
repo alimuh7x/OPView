@@ -23,8 +23,8 @@ from .components import (
     format_time_options,
     create_tensor_component_options,
 
-    # Builder
-    CardBuilder,
+    # High-level helpers
+    build_simple_card,
 )
 
 __all__ = [
@@ -40,5 +40,5 @@ __all__ = [
     'graph',
     'format_time_options',
     'create_tensor_component_options',
-    'CardBuilder',
+    'build_simple_card',
 ]

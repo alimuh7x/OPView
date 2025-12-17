@@ -309,72 +309,44 @@ def create_tensor_component_options(prefix: str = 'σ') -> List[Dict[str, str]]:
 
 
 # ============================================================================
-# Card Builder Class (for complex cards)
+# High-Level Card Building Helpers
 # ============================================================================
 
-class CardBuilder:
+def build_simple_card(title: str, controls: List = None,
+                     graphs: List = None) -> html.Div:
     """
-    Fluent API for building cards with controls and graphs.
+    Build a complete card with controls and graphs.
+
+    This is a simple helper that combines card_container, controls_section,
+    and your components. Use this for straightforward cards.
+
+    Args:
+        title: Card title
+        controls: List of control components (dropdowns, sliders, etc.)
+        graphs: List of graph components
+
+    Returns:
+        Complete card component
 
     Example:
-        >>> card = (CardBuilder("Grain Details")
-        ...     .add_time_dropdown('time-select', times)
-        ...     .add_chart_style_radio('chart-mode')
-        ...     .add_graph('main-graph')
-        ...     .build())
+        >>> build_simple_card(
+        ...     title="Grain Details",
+        ...     controls=[
+        ...         time_dropdown('time', times),
+        ...         chart_style_radio('mode')
+        ...     ],
+        ...     graphs=[
+        ...         graph('main-plot'),
+        ...         graph('secondary-plot')
+        ...     ]
+        ... )
     """
+    content = []
 
-    def __init__(self, title: str):
-        """Initialize with card title."""
-        self.title = title
-        self.controls = []
-        self.graphs = []
+    if controls:
+        content.append(controls_section(controls))
 
-    def add_control(self, control_component) -> 'CardBuilder':
-        """Add a control to the card."""
-        self.controls.append(control_component)
-        return self
+    if graphs:
+        content.extend(graphs)
 
-    def add_time_dropdown(self, component_id: str, times: List[float],
-                         default_index: int = 0) -> 'CardBuilder':
-        """Add a time dropdown control."""
-        self.controls.append(time_dropdown(component_id, times, default_index))
-        return self
-
-    def add_bins_slider(self, component_id: str, min_bins: int = 5,
-                       max_bins: int = 50, step: int = 5,
-                       default: int = 15) -> 'CardBuilder':
-        """Add a bins slider control."""
-        self.controls.append(bins_slider(component_id, min_bins, max_bins,
-                                        step, default))
-        return self
-
-    def add_chart_style_radio(self, component_id: str) -> 'CardBuilder':
-        """Add a chart style radio control."""
-        self.controls.append(chart_style_radio(component_id))
-        return self
-
-    def add_component_checklist(self, component_id: str,
-                               options: List[Dict[str, str]],
-                               default_values: List[str],
-                               label: str = 'Components') -> 'CardBuilder':
-        """Add a component checklist control."""
-        self.controls.append(component_checklist(component_id, options,
-                                                default_values, label))
-        return self
-
-    def add_graph(self, component_id: str, figure=None) -> 'CardBuilder':
-        """Add a graph to the card."""
-        self.graphs.append(graph(component_id, figure))
-        return self
-
-    def build(self) -> html.Div:
-        """Build the complete card."""
-        content = []
-
-        if self.controls:
-            content.append(controls_section(self.controls))
-
-        content.extend(self.graphs)
-
-        return card_container(self.title, content)
+    return card_container(title, content)

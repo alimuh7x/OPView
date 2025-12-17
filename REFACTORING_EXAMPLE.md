@@ -66,22 +66,22 @@ def build_size_details_card():
     ], className='dataset-block textdata-card')
 ```
 
-### ✅ AFTER (16 lines - 71% reduction!)
+### ✅ AFTER (13 lines - 77% reduction!)
 
 ```python
-from ui.components import CardBuilder
+from ui.components import build_simple_card, time_dropdown, chart_style_radio, graph
 
 def build_size_details_card():
     data = SIZE_DETAILS_DATA
     if not data or not data.get('labels'):
         return None
 
-    return (CardBuilder("Grain Details")
-        .add_time_dropdown('size-card-time', data['times'])
-        .add_chart_style_radio('size-card-mode')
-        .add_graph('size-card-main')
-        .add_graph('size-card-line')
-        .build())
+    return build_simple_card(
+        title="Grain Details",
+        controls=[time_dropdown('size-card-time', data['times']),
+                 chart_style_radio('size-card-mode')],
+        graphs=[graph('size-card-main'), graph('size-card-line')]
+    )
 ```
 
 **Benefits:**
@@ -153,24 +153,24 @@ def build_grain_distribution_card():
     ], className='dataset-block textdata-card')
 ```
 
-### ✅ AFTER (18 lines - 70% reduction!)
+### ✅ AFTER (14 lines - 77% reduction!)
 
 ```python
-from ui.components import CardBuilder
+from ui.components import build_simple_card, time_dropdown, bins_slider, graph
 
 def build_grain_distribution_card():
     data = SIZE_DETAILS_DATA
     if not data or not data.get('times'):
         return None
 
-    default_time_val = data['times'][0]
-    default_fig, _ = build_grain_histogram(default_time_val, 15)
+    default_fig, _ = build_grain_histogram(data['times'][0], 15)
 
-    return (CardBuilder("Grain Distribution")
-        .add_time_dropdown('grain-dist-time', data['times'])
-        .add_bins_slider('grain-dist-bins', default=15)
-        .add_graph('grain-dist-fig', figure=default_fig)
-        .build())
+    return build_simple_card(
+        title="Grain Distribution",
+        controls=[time_dropdown('grain-dist-time', data['times']),
+                 bins_slider('grain-dist-bins', default=15)],
+        graphs=[graph('grain-dist-fig', figure=default_fig)]
+    )
 ```
 
 **Benefits:**
