@@ -3036,13 +3036,10 @@ strain_data.load()
 crss_data.load()
 
 # Grain Size Callbacks
+# Multi-output callback for size details (main + line charts) - uses legacy data
 if SIZE_DETAILS_DATA:
-    # Multi-output callback for size details (main + line charts)
-    # Note: This still uses adapter pattern for complex multi-output
-    from data.adapters import SizeDetailsMultiAdapter
-
     def build_size_figures(time, mode):
-        """Wrapper for size details figures"""
+        """Wrapper for size details figures using legacy SIZE_DETAILS_DATA"""
         data = SIZE_DETAILS_DATA
         times = data['times']
         labels = data['labels']
@@ -3103,9 +3100,9 @@ if SIZE_DETAILS_DATA:
         callback_func=build_size_figures
     )
 
-    # Histogram callback for grain distribution using OOP data source
-    if grain_data.is_available:
-        create_histogram_callback(app, grain_data, 'grain-dist')
+# Histogram callback for grain distribution using OOP data source
+if grain_data.is_available:
+    create_histogram_callback(app, grain_data, 'grain-dist')
 
 
 # Stress-Strain Callbacks using OOP data sources
