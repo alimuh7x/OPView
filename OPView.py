@@ -32,6 +32,14 @@ ViewerPanel = None  # Lazy import later
 
 print(f"[{time.time()-_start_time:.2f}s] Local imports done (ViewerPanel deferred)")
 
+# Callback factory system
+from data.adapters import create_adapters
+from ui.callbacks import (
+    create_histogram_callback,
+    create_component_selection_callback,
+    create_multi_output_callback,
+)
+
 APP_TITLE = "OPView"
 TENSOR_COMPONENTS = ['xx', 'yy', 'zz', 'xy', 'yz', 'zx']
 BASE_DIR = Path(__file__).resolve().parent
@@ -3000,175 +3008,55 @@ def render_active_tab(active_tab, comparison_files, _active_project, _loaded_pro
         classes,
     )
 # ===== END SECTION 3 =====
+
+
+# ===== SECTION 4: Main Tab Callbacks (Simplified with Factories) =====
+
+# Create data adapters that bridge existing data to callback system
+adapters = create_adapters(globals())
+
+# Grain Size Callbacks
 if SIZE_DETAILS_DATA:
-
-    @app.callback(
-        Output('size-card-main', 'figure'),
-        Output('size-card-line', 'figure'),
-        Input('size-card-time', 'value'),
-        Input('size-card-mode', 'value')
+    # Multi-output callback for size details (main + line charts)
+    create_multi_output_callback(
+        app,
+        outputs=[('size-card-main', 'figure'), ('size-card-line', 'figure')],
+        inputs=[('size-card-time', 'value'), ('size-card-mode', 'value')],
+        callback_func=adapters['size_details'].build_detail_figures
     )
-    def update_size_details(selected_time, chart_mode):
-        data = SIZE_DETAILS_DATA
-        times = data['times']
-        labels = data['labels']
-        values = data['values']
-        if not times or not labels:
-            return go.Figure(), go.Figure()
-        try:
-            time_value = float(selected_time)
-        except (TypeError, ValueError):
-            time_value = times[0]
-        row_index = min(range(len(times)), key=lambda idx: abs(times[idx] - time_value))
-        row_values = values[row_index]
 
-        if chart_mode not in {'line', 'bar'}:
-            chart_mode = 'bar'
-
-        main_fig = go.Figure()
-        if chart_mode == 'bar':
-            main_fig.add_bar(x=labels, y=row_values, marker_color='#183568')
-        else:
-            main_fig.add_scatter(x=labels, y=row_values, mode='lines+markers', line=dict(color='#183568'))
-        main_fig.update_layout(
-            margin=dict(l=50, r=30, t=40, b=60),
-            height=320,
-            template='plotly_white'
-        )
-        axis_title_font = dict(size=16, family='Montserrat, Arial, sans-serif', color='#12294f')
-        tick_font = dict(size=16, family='Montserrat, Arial, sans-serif', color='#0f1b2b')
-        main_fig.update_xaxes(title="Grain Number", title_font=axis_title_font, tickfont=tick_font)
-        main_fig.update_yaxes(title="Grain Size", title_font=axis_title_font, tickfont=tick_font)
-
-        if SIZE_AVERAGE_DATA:
-            avg_times = SIZE_AVERAGE_DATA['times']
-            avg_values = SIZE_AVERAGE_DATA['averages']
-        else:
-            avg_times = times
-            avg_values = [
-                sum(row) / len(row) if row else 0
-                for row in values
-            ]
-        line_fig = go.Figure(
-            data=[go.Scatter(x=avg_times, y=avg_values, mode='lines+markers', line=dict(color='#c50623'))]
-        )
-        line_fig.update_layout(
-            margin=dict(l=50, r=30, t=40, b=60),
-            height=320,
-            template='plotly_white'
-        )
-        line_fig.update_xaxes(title="Time Step", title_font=axis_title_font, tickfont=tick_font)
-        line_fig.update_yaxes(title="Average Grain Size", title_font=axis_title_font, tickfont=tick_font)
-
-        return main_fig, line_fig
-
-    @app.callback(
-        Output('grain-dist-fig', 'figure'),
-        Output('grain-dist-summary', 'children'),
-        Input('grain-dist-time', 'value'),
-        Input('grain-dist-bins', 'value'),
-        Input('grain-dist-fit', 'value')
-    )
-    def update_grain_distribution(selected_time, bins, fit_value):
-        fit_enabled = bool(fit_value and 'fit' in fit_value)
-        fig, summary = build_grain_histogram(selected_time, bins, fit=fit_enabled)
-        return fig, summary
+    # Histogram callback for grain distribution
+    create_histogram_callback(app, adapters['grain_hist'], 'grain-dist')
 
 
+# Stress-Strain Callbacks
 if STRESS_STRAIN_DATA:
-
-    @app.callback(
-        Output('stress-strain-fig', 'figure'),
-        Input('stress-components', 'value')
+    # Component selection for stress-strain curves
+    create_component_selection_callback(
+        app,
+        adapters['stress_strain'],
+        'stress-strain-fig',
+        'stress-components'
     )
-    def update_stress_strain(components):
-        data = STRESS_STRAIN_DATA
-        # Convert engineering strain to percent for display
-        strain = np.array(data['strain']) * 100.0
-        comp_map = data['components']
-        labels = {
-            "Sigma_xx": "σ_xx",
-            "Sigma_yy": "σ_yy",
-            "Sigma_zz": "σ_zz",
-            "Mises": "von Mises",
-        }
-        default_components = ['Sigma_xx', 'Mises']
-        selected = components or default_components
-        traces = []
-        for comp in selected:
-            values = comp_map.get(comp)
-            if values is None:
-                continue
-            traces.append(go.Scatter(
-                x=strain,
-                y=np.array(values) / 1e6,
-                mode='lines',
-                line=dict(width=2),
-                name=labels.get(comp, comp)
-            ))
-        fig = go.Figure(data=traces)
-        fig.update_layout(
-            margin=dict(l=50, r=30, t=90, b=60),
-            height=320,
-            template='plotly_white',
-            legend=dict(
-                orientation='h',
-                x=0,
-                xanchor='left',
-                y=1.18,
-                yanchor='bottom',
-                bgcolor='rgba(255,255,255,0.8)',
-                bordercolor='rgba(24,53,104,0.15)',
-                borderwidth=1
-            )
-        )
-        fig.update_xaxes(
-            title="ε_xx (%)",
-            title_font=dict(size=16, family='Inter, sans-serif', color='#12294f'),
-            tickfont=dict(size=13, family='Inter, sans-serif', color='#0f1b2b')
-        )
-        fig.update_yaxes(
-            title="Stress (MPa)",
-            title_font=dict(size=16, family='Inter, sans-serif', color='#12294f'),
-            tickfont=dict(size=13, family='Inter, sans-serif', color='#0f1b2b')
-        )
-        return fig
 
-    @app.callback(
-        Output('stress-hist-fig', 'figure'),
-        Output('stress-hist-summary', 'children'),
-        Input('stress-hist-component', 'value'),
-        Input('stress-hist-bins', 'value'),
-        Input('stress-hist-fit', 'value')
-    )
-    def update_stress_hist(selected_component, bins, fit_value):
-        values = stress_series_values(selected_component)
-        fit_enabled = bool(fit_value and 'fit' in fit_value)
-        fig, summary = build_histogram_figure(values, "Stress (MPa)", bins, fit=fit_enabled)
-        return fig, summary
+    # Histogram for stress distribution
+    create_histogram_callback(app, adapters['stress_hist'], 'stress-hist')
 
-    @app.callback(
-        Output('strain-hist-fig', 'figure'),
-        Output('strain-hist-summary', 'children'),
-        Input('strain-hist-component', 'value'),
-        Input('strain-hist-bins', 'value'),
-        Input('strain-hist-fit', 'value')
-    )
-    def update_strain_hist(selected_component, bins, fit_value):
-        values = strain_series_values(selected_component)
-        fit_enabled = bool(fit_value and 'fit' in fit_value)
-        fig, summary = build_histogram_figure(values, "Strain (%)", bins, fit=fit_enabled)
-        return fig, summary
+    # Histogram for strain distribution
+    create_histogram_callback(app, adapters['strain_hist'], 'strain-hist')
 
 
+# CRSS Callbacks
 if CRSS_DATA:
-
-    @app.callback(
-        Output('crss-avg-fig', 'figure'),
-        Input('crss-component-select', 'value')
+    # Component selection for CRSS evolution
+    create_component_selection_callback(
+        app,
+        adapters['crss'],
+        'crss-avg-fig',
+        'crss-component-select'
     )
-    def update_crss_plot(selected_components):
-        return build_crss_figure(selected_components)
+
+# ===== END SECTION 4 =====
 
 
 
