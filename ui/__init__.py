@@ -4,6 +4,7 @@ UI components module for OPView.
 Provides both functional and object-oriented APIs for building UI:
 - Functional API: Simple functions for quick layouts (backward compatible)
 - OOP API: Flexible component classes with full control over styling
+- Callback API: Factory functions for creating reusable callbacks
 """
 
 # Functional API (backward compatible)
@@ -62,6 +63,16 @@ from .flex_components import (
 # CSS constants
 from .styles import CSS
 
+# Callback factories
+from .callbacks import (
+    create_histogram_callback,
+    create_time_series_callback,
+    create_component_selection_callback,
+    create_multi_output_callback,
+    CallbackRegistry,
+    register_all_callbacks,
+)
+
 __all__ = [
     # Functional API
     'card_header',
@@ -106,4 +117,12 @@ __all__ = [
 
     # CSS
     'CSS',
+
+    # Callback API
+    'create_histogram_callback',
+    'create_time_series_callback',
+    'create_component_selection_callback',
+    'create_multi_output_callback',
+    'CallbackRegistry',
+    'register_all_callbacks',
 ]
