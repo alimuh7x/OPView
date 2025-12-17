@@ -928,6 +928,11 @@ def strain_series_values(component):
 
 
 def build_grain_histogram(time_value, bins, fit=False):
+    """LEGACY - Replaced by grain_data.get_histogram_data()
+
+    This function still uses the global SIZE_DETAILS_DATA dict.
+    Use grain_data.get_histogram_data(time_value, bins, fit) instead.
+    """
     data = SIZE_DETAILS_DATA
     if not data:
         return go.Figure(), "_No data available._"
@@ -2300,17 +2305,25 @@ print(f"[{time.time()-_start_time:.2f}s] Found {len(discovered_project_folders)}
 
 
 def build_size_details_card():
-    data = SIZE_DETAILS_DATA
-    if not data:
+    """Build size details card using OOP structure"""
+    if not grain_data.is_available:
         return None
+
+    # Get time steps from OOP data source
+    times = grain_data.get_time_steps()
+    if not times:
+        return None
+
     time_options = []
-    for t in data['times']:
+    for t in times:
         if t.is_integer():
             label = str(int(t))
         else:
             label = f"{t:.3f}".rstrip('0').rstrip('.')
         time_options.append({'label': label, 'value': str(t)})
-    value_labels = data['labels']
+
+    # Get grain labels from OOP data source
+    value_labels = grain_data._data.get('labels', [])
     if not value_labels:
         return None
     default_time = time_options[0]['value'] if time_options else None
@@ -2356,12 +2369,15 @@ def build_size_details_card():
 
 
 def build_grain_distribution_card():
-    data = SIZE_DETAILS_DATA
-    if not data:
+    """Build grain distribution card using OOP structure"""
+    if not grain_data.is_available:
         return None
-    times = data['times']
+
+    # Get time steps from OOP data source
+    times = grain_data.get_time_steps()
     if not times:
         return None
+
     time_options = []
     for t in times:
         if t.is_integer():
@@ -2369,10 +2385,17 @@ def build_grain_distribution_card():
         else:
             label = f"{t:.3f}".rstrip('0').rstrip('.')
         time_options.append({'label': label, 'value': str(t)})
+
     default_time = time_options[0]['value']
     default_time_val = float(default_time)
-    default_bins = 15
-    default_fig, default_summary = build_grain_histogram(default_time_val, default_bins)
+    default_bins = grain_data.default_bins
+
+    # Use OOP data source to get histogram
+    default_fig, default_summary = grain_data.get_histogram_data(
+        time_value=default_time_val,
+        bins=default_bins,
+        fit=False
+    )
     return html.Div([
         html.Div([
             html.Span(className='dataset-accent'),
@@ -2420,9 +2443,11 @@ def build_grain_distribution_card():
 
 
 def build_stress_strain_card():
-    data = STRESS_STRAIN_DATA
-    if not data:
+    """Build stress-strain card using OOP structure"""
+    if not stress_strain_data.is_available:
         return None
+
+    # Use new OOP data source to get options
     options = [
         {'label': 'σ_xx', 'value': 'Sigma_xx'},
         {'label': 'σ_yy', 'value': 'Sigma_yy'},
@@ -2441,7 +2466,7 @@ def build_stress_strain_card():
                 dcc.Checklist(
                     id='stress-components',
                     options=options,
-                    value=['Sigma_xx', 'Mises'],
+                    value=stress_strain_data.get_default_components(),
                     className='textdata-radio',
                     labelStyle={'display': 'inline-flex', 'alignItems': 'center', 'marginRight': '12px'},
                     inputStyle={'marginRight': '4px'}
@@ -2464,19 +2489,15 @@ def build_strain_hist_card():
 
 
 def build_crss_card():
-    data = CRSS_DATA
-    if not data:
+    """Build CRSS card using OOP structure"""
+    if not crss_data.is_available:
         return None
-    series = data.get('series') or {}
 
-    def sort_key(name):
-        digits = ''.join(ch for ch in name if ch.isdigit())
-        return int(digits) if digits else name
+    # Use OOP data source to get options
+    options = crss_data.get_component_options()
+    default_components = crss_data.get_default_components()
+    fig = crss_data.build_figure(default_components)
 
-    options = [{'label': 'Average', 'value': 'Average'}]
-    for name in sorted(series.keys(), key=sort_key):
-        options.append({'label': name.replace('ss_', 'SS ').upper(), 'value': name})
-    fig = build_crss_figure()
     return html.Div([
         html.Div([
             html.Span(className='dataset-accent'),
@@ -2489,7 +2510,7 @@ def build_crss_card():
                 dcc.Checklist(
                     id='crss-component-select',
                     options=options,
-                    value=['Average'],
+                    value=default_components,
                     className='crss-checklist'
                 )
             ], className='textdata-control crss-control')
@@ -2499,14 +2520,26 @@ def build_crss_card():
     ], className='dataset-block textdata-card')
 
 
+# =============================================================================
+# LEGACY FUNCTIONS - Replaced by OOP data sources
+# =============================================================================
+# The following functions are no longer used. They have been replaced by:
+# - crss_data.build_figure() for building CRSS charts
+# - crss_data.get_histogram_data() for histogram generation
+# Keeping for reference during migration period.
+# =============================================================================
+
 def build_crss_hist_card():
+    """LEGACY - Incomplete function, not used. Use build_crss_card() instead."""
     data = CRSS_DATA
     if not data:
         return None
     series = data.get('series') or {}
+    # NOTE: This function was never completed
 
 
 def build_crss_figure(selected=None):
+    """LEGACY - Replaced by crss_data.build_figure()"""
     data = CRSS_DATA
     if not data:
         return go.Figure()
@@ -2567,6 +2600,11 @@ def build_crss_figure(selected=None):
 
 
 def build_plastic_strain_card():
+    """Build plastic strain card.
+
+    NOTE: This still uses legacy PLASTIC_STRAIN_DATA global dict.
+    TODO: Migrate to PlasticStrainData OOP source once load() is implemented.
+    """
     data = PLASTIC_STRAIN_DATA
     if not data:
         return None
