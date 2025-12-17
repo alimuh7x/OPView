@@ -1,9 +1,12 @@
 """
 UI components module for OPView.
 
-Provides reusable components for building consistent UI cards and controls.
+Provides both functional and object-oriented APIs for building UI:
+- Functional API: Simple functions for quick layouts (backward compatible)
+- OOP API: Flexible component classes with full control over styling
 """
 
+# Functional API (backward compatible)
 from .components import (
     # Card structure
     card_header,
@@ -27,7 +30,38 @@ from .components import (
     build_simple_card,
 )
 
+# Object-Oriented API (new component system)
+from .flex_components import (
+    # Base classes
+    Component,
+    Flex,
+
+    # Layout variants
+    Row,
+    Column,
+    MainTabFlex,
+    ComparisonTabFlex,
+
+    # Components
+    Dropdown,
+    Slider,
+    Button,
+    Graph,
+    Label,
+    RadioItems,
+    Checklist,
+    Card,
+
+    # Helpers
+    LabeledComponent,
+    labeled,
+)
+
+# CSS constants
+from .styles import CSS
+
 __all__ = [
+    # Functional API
     'card_header',
     'card_container',
     'controls_section',
@@ -41,4 +75,31 @@ __all__ = [
     'format_time_options',
     'create_tensor_component_options',
     'build_simple_card',
+
+    # OOP API - Base
+    'Component',
+    'Flex',
+
+    # OOP API - Layouts
+    'Row',
+    'Column',
+    'MainTabFlex',
+    'ComparisonTabFlex',
+
+    # OOP API - Components
+    'Dropdown',
+    'Slider',
+    'Button',
+    'Graph',
+    'Label',
+    'RadioItems',
+    'Checklist',
+    'Card',
+
+    # OOP API - Helpers
+    'LabeledComponent',
+    'labeled',
+
+    # CSS
+    'CSS',
 ]
