@@ -269,3 +269,185 @@ class HistogramDataSource(DataSource):
             Tuple of (figure, summary)
         """
         pass
+
+
+class ScalarDataSource(TimeSeriesDataSource, HistogramDataSource):
+    """
+    Base class for scalar field data sources.
+
+    Use for single-value fields like Temperature, Diffusion Coefficient,
+    Electric Potential, Magnetic Field Magnitude, Concentration, etc.
+
+    Subclasses only need to define:
+    - scalar_name: Name of the scalar field
+    - scalar_unit: Physical unit
+    - scalar_symbol: Display symbol (optional)
+    - file_pattern: File pattern to load
+    - display_name: Human-readable name
+    - load(): Loading logic
+    """
+
+    @property
+    @abstractmethod
+    def scalar_name(self) -> str:
+        """Name of the scalar field (e.g., 'Temperature', 'Diffusion')"""
+        pass
+
+    @property
+    @abstractmethod
+    def scalar_unit(self) -> str:
+        """
+        Physical unit of the scalar (e.g., 'K', 'm²/s', 'V', 'mol/m³').
+        Return empty string if dimensionless.
+        """
+        pass
+
+    @property
+    def scalar_symbol(self) -> str:
+        """
+        Symbol for the scalar (e.g., 'T', 'D', 'φ', 'C').
+        Defaults to scalar_name if not overridden.
+        """
+        return self.scalar_name
+
+    @property
+    def scalar_key(self) -> str:
+        """Internal key for accessing data (lowercase of name)"""
+        return self.scalar_name.lower().replace(' ', '_')
+
+    def get_component_options(self) -> List[Dict[str, str]]:
+        """
+        Get component options for scalar field.
+
+        Returns:
+            Single option with formatted label
+        """
+        label = self.scalar_symbol
+        if self.scalar_unit:
+            label += f" ({self.scalar_unit})"
+
+        return [{'label': label, 'value': self.scalar_key}]
+
+    def get_default_components(self) -> List[str]:
+        """Default to the scalar component"""
+        return [self.scalar_key]
+
+    def _get_component_values(self, component: str) -> Optional[np.ndarray]:
+        """
+        Get values for the scalar component.
+
+        Args:
+            component: Component name (should match scalar_key)
+
+        Returns:
+            Array of scalar values
+        """
+        if not self.is_available:
+            return None
+
+        # Access scalar data from loaded data
+        data = self._data.get('data', {})
+        return np.array(data.get(component, [])) if component in data else None
+
+
+class VectorDataSource(TimeSeriesDataSource):
+    """
+    Base class for vector field data sources.
+
+    Use for vector fields like Velocity, Electric Field, Magnetic Field,
+    Force, Displacement, etc.
+
+    Subclasses only need to define:
+    - vector_symbol: Symbol for the vector (v, E, B, F, u, etc.)
+    - vector_unit: Physical unit
+    - file_pattern: File pattern to load
+    - display_name: Human-readable name
+    - load(): Loading logic
+    """
+
+    @property
+    @abstractmethod
+    def vector_symbol(self) -> str:
+        """
+        Symbol for the vector field (e.g., 'v' for velocity, 'E' for electric field).
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def vector_unit(self) -> str:
+        """
+        Physical unit of the vector (e.g., 'm/s', 'V/m', 'T', 'N').
+        Return empty string if dimensionless.
+        """
+        pass
+
+    @property
+    def vector_name(self) -> str:
+        """Name derived from symbol (can be overridden)"""
+        return self.vector_symbol
+
+    @property
+    def has_magnitude(self) -> bool:
+        """Whether to include magnitude component (default: True)"""
+        return True
+
+    def get_component_options(self) -> List[Dict[str, str]]:
+        """
+        Get component options for vector field.
+
+        Returns:
+            Options for x, y, z components and magnitude
+        """
+        symbol = self.vector_symbol
+        unit_str = f" ({self.vector_unit})" if self.vector_unit else ""
+
+        options = [
+            {'label': f'{symbol}_x{unit_str}', 'value': f'{symbol}_x'},
+            {'label': f'{symbol}_y{unit_str}', 'value': f'{symbol}_y'},
+            {'label': f'{symbol}_z{unit_str}', 'value': f'{symbol}_z'},
+        ]
+
+        if self.has_magnitude:
+            options.append({
+                'label': f'|{symbol}|{unit_str}',
+                'value': f'{symbol}_mag'
+            })
+
+        return options
+
+    def get_default_components(self) -> List[str]:
+        """Default to magnitude if available, else x-component"""
+        symbol = self.vector_symbol
+        if self.has_magnitude:
+            return [f'{symbol}_mag']
+        return [f'{symbol}_x']
+
+    def _get_component_values(self, component: str) -> Optional[np.ndarray]:
+        """
+        Get values for a vector component.
+
+        Args:
+            component: Component name (e.g., 'v_x', 'v_mag')
+
+        Returns:
+            Array of component values
+        """
+        if not self.is_available:
+            return None
+
+        data = self._data.get('data', {})
+
+        # If requesting magnitude, compute it from x, y, z components
+        if component.endswith('_mag'):
+            symbol = self.vector_symbol
+            x = np.array(data.get(f'{symbol}_x', []))
+            y = np.array(data.get(f'{symbol}_y', []))
+            z = np.array(data.get(f'{symbol}_z', []))
+
+            if len(x) > 0 and len(y) > 0 and len(z) > 0:
+                return np.sqrt(x**2 + y**2 + z**2)
+            return None
+
+        # Return component directly
+        return np.array(data.get(component, [])) if component in data else None

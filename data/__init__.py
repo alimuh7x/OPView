@@ -9,6 +9,8 @@ from .base import (
     TensorDataSource,
     TimeSeriesDataSource,
     HistogramDataSource,
+    ScalarDataSource,
+    VectorDataSource,
 )
 
 from .sources import (
@@ -26,6 +28,8 @@ __all__ = [
     'TensorDataSource',
     'TimeSeriesDataSource',
     'HistogramDataSource',
+    'ScalarDataSource',
+    'VectorDataSource',
 
     # Concrete sources
     'StressStrainData',
