@@ -32,8 +32,16 @@ ViewerPanel = None  # Lazy import later
 
 print(f"[{time.time()-_start_time:.2f}s] Local imports done (ViewerPanel deferred)")
 
+# OOP Data Sources
+from data import (
+    StressStrainData,
+    StressData,
+    StrainData,
+    CRSSData,
+    GrainSizeData,
+)
+
 # Callback factory system
-from data.adapters import create_adapters
 from ui.callbacks import (
     create_histogram_callback,
     create_component_selection_callback,
@@ -3010,48 +3018,121 @@ def render_active_tab(active_tab, comparison_files, _active_project, _loaded_pro
 # ===== END SECTION 3 =====
 
 
-# ===== SECTION 4: Main Tab Callbacks (Simplified with Factories) =====
+# ===== SECTION 4: Main Tab Callbacks (OOP Data Sources) =====
 
-# Create data adapters that bridge existing data to callback system
-adapters = create_adapters(globals())
+# Initialize OOP data sources
+data_dir = Path('TextData')
+grain_data = GrainSizeData(data_dir)
+stress_strain_data = StressStrainData(data_dir)
+stress_data = StressData(data_dir)
+strain_data = StrainData(data_dir)
+crss_data = CRSSData(data_dir)
+
+# Load data
+grain_data.load()
+stress_strain_data.load()
+stress_data.load()
+strain_data.load()
+crss_data.load()
 
 # Grain Size Callbacks
 if SIZE_DETAILS_DATA:
     # Multi-output callback for size details (main + line charts)
+    # Note: This still uses adapter pattern for complex multi-output
+    from data.adapters import SizeDetailsMultiAdapter
+
+    def build_size_figures(time, mode):
+        """Wrapper for size details figures"""
+        data = SIZE_DETAILS_DATA
+        times = data['times']
+        labels = data['labels']
+        values = data['values']
+        if not times or not labels:
+            return go.Figure(), go.Figure()
+        try:
+            time_value = float(time)
+        except (TypeError, ValueError):
+            time_value = times[0]
+        row_index = min(range(len(times)), key=lambda idx: abs(times[idx] - time_value))
+        row_values = values[row_index]
+
+        if mode not in {'line', 'bar'}:
+            mode = 'bar'
+
+        main_fig = go.Figure()
+        if mode == 'bar':
+            main_fig.add_bar(x=labels, y=row_values, marker_color='#183568')
+        else:
+            main_fig.add_scatter(x=labels, y=row_values, mode='lines+markers',
+                               line=dict(color='#183568'))
+        main_fig.update_layout(
+            margin=dict(l=50, r=30, t=40, b=60),
+            height=320,
+            template='plotly_white'
+        )
+        axis_title_font = dict(size=16, family='Montserrat, Arial, sans-serif', color='#12294f')
+        tick_font = dict(size=16, family='Montserrat, Arial, sans-serif', color='#0f1b2b')
+        main_fig.update_xaxes(title="Grain Number", title_font=axis_title_font, tickfont=tick_font)
+        main_fig.update_yaxes(title="Grain Size", title_font=axis_title_font, tickfont=tick_font)
+
+        if SIZE_AVERAGE_DATA:
+            avg_times = SIZE_AVERAGE_DATA['times']
+            avg_values = SIZE_AVERAGE_DATA['averages']
+        else:
+            avg_times = times
+            avg_values = [sum(row) / len(row) if row else 0 for row in values]
+
+        line_fig = go.Figure(
+            data=[go.Scatter(x=avg_times, y=avg_values, mode='lines+markers',
+                           line=dict(color='#c50623'))]
+        )
+        line_fig.update_layout(
+            margin=dict(l=50, r=30, t=40, b=60),
+            height=320,
+            template='plotly_white'
+        )
+        line_fig.update_xaxes(title="Time Step", title_font=axis_title_font, tickfont=tick_font)
+        line_fig.update_yaxes(title="Average Grain Size", title_font=axis_title_font, tickfont=tick_font)
+
+        return main_fig, line_fig
+
     create_multi_output_callback(
         app,
         outputs=[('size-card-main', 'figure'), ('size-card-line', 'figure')],
         inputs=[('size-card-time', 'value'), ('size-card-mode', 'value')],
-        callback_func=adapters['size_details'].build_detail_figures
+        callback_func=build_size_figures
     )
 
-    # Histogram callback for grain distribution
-    create_histogram_callback(app, adapters['grain_hist'], 'grain-dist')
+    # Histogram callback for grain distribution using OOP data source
+    if grain_data.is_available:
+        create_histogram_callback(app, grain_data, 'grain-dist')
 
 
-# Stress-Strain Callbacks
-if STRESS_STRAIN_DATA:
+# Stress-Strain Callbacks using OOP data sources
+if stress_strain_data.is_available:
     # Component selection for stress-strain curves
     create_component_selection_callback(
         app,
-        adapters['stress_strain'],
+        stress_strain_data,
         'stress-strain-fig',
         'stress-components'
     )
 
+if stress_data.is_available:
     # Histogram for stress distribution
-    create_histogram_callback(app, adapters['stress_hist'], 'stress-hist')
+    create_histogram_callback(app, stress_data, 'stress-hist')
 
+if strain_data.is_available:
     # Histogram for strain distribution
-    create_histogram_callback(app, adapters['strain_hist'], 'strain-hist')
+    create_histogram_callback(app, strain_data, 'strain-hist')
 
 
-# CRSS Callbacks
-if CRSS_DATA:
+# CRSS Callbacks using OOP data source
+if crss_data.is_available:
     # Component selection for CRSS evolution
     create_component_selection_callback(
         app,
-        adapters['crss'],
+        crss_data,
         'crss-avg-fig',
         'crss-component-select'
     )
