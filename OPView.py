@@ -195,108 +195,12 @@ main_panels_by_id = {}
 manual_panels_by_path = {}
 
 
-def _scan_vtk_dir(directory: Path):
-    """Scan a VTK directory for supported files."""
-    paths = []
-    if not directory or not directory.exists():
-        return paths
-    try:
-        for child in directory.rglob("*"):
-            if child.is_file() and child.suffix.lower() in ALLOWED_VTK_EXTENSIONS:
-                paths.append(str(child.resolve()))
-    except OSError:
-        return []
-    return sorted(paths)
-
-def get_project_folder_options():
-    """Convert discovered project folders to dropdown options."""
-    options = []
-    for folder_name, folder_info in sorted(discovered_project_folders.items()):
-        vtk_count = folder_info.get('vtk_file_count', 0)
-        textdata_count = folder_info.get('textdata_file_count', 0)
-        label = f"{folder_name} ({vtk_count} VTK, {textdata_count} TextData)"
-        options.append({'label': label, 'value': folder_name})
-    return options
+# Phase 7A: Removed duplicate functions - now imported from utils module
+# - _scan_vtk_dir() → utils.project_scanner._scan_vtk_dir()
+# - get_project_folder_options() → utils.project_scanner.get_project_folder_options()
 
 
-def scan_project_folders(base_path: Path = None):
-    """
-    Scan the current directory for folders containing VTK or TextData subdirectories.
-    Returns a dictionary mapping folder names to their contents.
-
-    Args:
-        base_path: Directory to scan (defaults to current working directory)
-
-    Returns:
-        Dictionary with structure:
-        {
-            'Project1': {
-                'path': Path object,
-                'has_vtk': True/False,
-                'has_textdata': True/False,
-                'vtk_path': Path to VTK folder or None,
-                'textdata_path': Path to TextData folder or None,
-                'vtk_file_count': number of VTK files,
-                'textdata_file_count': number of text data files
-            },
-            ...
-        }
-    """
-    if base_path is None:
-        base_path = Path.cwd()
-
-    project_folders = {}
-
-    # Scan only immediate subdirectories of the base path
-    for item in base_path.iterdir():
-        if not item.is_dir():
-            continue
-
-        # Skip hidden folders, virtual environments, and special folders
-        skip_folders = {'.git', '.vscode', '.claude', '.gemini', '__pycache__',
-                       'venv', 'venv312', 'venv_py312', 'assets', 'utils',
-                       'viewer', 'sample_data', 'node_modules'}
-        if item.name in skip_folders or item.name.startswith('.'):
-            continue
-
-        # Check for VTK and TextData subdirectories
-        vtk_path = item / "VTK"
-        textdata_variants = ["TextData", "Textdata", "textdata", "TEXTDATA"]
-        textdata_path = None
-
-        for variant in textdata_variants:
-            potential_path = item / variant
-            if potential_path.exists() and potential_path.is_dir():
-                textdata_path = potential_path
-                break
-
-        has_vtk = vtk_path.exists() and vtk_path.is_dir()
-        has_textdata = textdata_path is not None
-
-        # Only include folders that have at least VTK or TextData
-        if has_vtk or has_textdata:
-            # Count files
-            vtk_count = 0
-            if has_vtk:
-                vtk_count = sum(1 for f in vtk_path.iterdir()
-                              if f.is_file() and f.suffix.lower() in ALLOWED_VTK_EXTENSIONS)
-
-            textdata_count = 0
-            if has_textdata:
-                textdata_count = sum(1 for f in textdata_path.iterdir()
-                                   if f.is_file() and f.suffix.lower() in ('.txt', '.dat'))
-
-            project_folders[item.name] = {
-                'path': item,
-                'has_vtk': has_vtk,
-                'has_textdata': has_textdata,
-                'vtk_path': vtk_path if has_vtk else None,
-                'textdata_path': textdata_path,
-                'vtk_file_count': vtk_count,
-                'textdata_file_count': textdata_count
-            }
-
-    return project_folders
+# Phase 7A: Removed scan_project_folders() - now imported from utils.project_scanner
 
 
 # Cache for rendered heatmap rows to avoid rebuilding on tab switches
@@ -341,53 +245,10 @@ def comparison_data_dir() -> Path:
     return repo_dir
 
 
-def list_comparison_files():
-    """Return sorted filenames in the comparison folder filtered by allowed extensions."""
-    directory = comparison_data_dir()
-    files = [
-        child.name
-        for child in sorted(directory.iterdir())
-        if child.is_file() and child.suffix.lower() in ALLOWED_VTK_EXTENSIONS
-    ]
-    return files
-
-def resolve_vtk_path(pattern: str) -> Path:
-    """Resolve a file or glob pattern into the VTK data dir."""
-    p = Path(pattern)
-    if p.is_absolute():
-        return p
-    parts = p.parts
-    if parts and parts[0].lower() == "vtk":
-        p = Path(*parts[1:])
-    return vtk_data_dir() / p
-
-
-def get_reader(file_path):
-    """Return cached VTKReader for a given file path."""
-    debug = bool(os.environ.get("OPVIEW_DEBUG"))
-    if not file_path:
-        raise FileNotFoundError("VTK file not found: (empty path)")
-
-    # Accept both absolute and relative/basename values (Dash dropdowns may emit either).
-    resolved = Path(file_path)
-    if not resolved.is_absolute():
-        resolved = resolve_vtk_path(str(resolved))
-    resolved = resolved.resolve()
-
-    if not resolved.exists():
-        if debug:
-            print(
-                f"[OPVIEW_DEBUG] get_reader missing: input={file_path!r} resolved={str(resolved)!r} cwd={str(Path.cwd())!r}",
-                flush=True,
-            )
-        raise FileNotFoundError(f"VTK file not found: {file_path}")
-
-    key = str(resolved)
-    if key not in reader_cache:
-        if debug:
-            print(f"[OPVIEW_DEBUG] get_reader load: {key}", flush=True)
-        reader_cache[key] = VTKReader(key)
-    return reader_cache[key]
+# Phase 7A: Removed duplicate functions - now imported from utils module
+# - list_comparison_files() → utils.vtk_utils.list_comparison_files()
+# - resolve_vtk_path() → utils.path_utils.resolve_vtk_path() (also imported from utils)
+# - get_reader() → utils.vtk_utils.get_reader() (also imported from utils)
 
 
 
@@ -2753,7 +2614,7 @@ app.layout = dmc.MantineProvider(
                         html.Label("Projects:", className='project-folder-label', style={'marginRight': '8px'}),
                         dcc.Dropdown(
                             id='project-folder-dropdown',
-                            options=get_project_folder_options(),
+                            options=get_project_folder_options(discovered_project_folders),
                             placeholder="Load project folder(s)…",
                             clearable=True,
                             multi=True,
@@ -2955,7 +2816,9 @@ def handle_project_folder_selection(selected_folders, active_tab):
     files_by_project_dict = {}
     all_files = []
     for name, vtk_dir in zip(loaded_names, loaded_vtk_paths):
-        scanned = _scan_vtk_dir(Path(vtk_dir))
+        # Use imported list_vtk_files instead of _scan_vtk_dir
+        from utils.vtk_utils import list_vtk_files as scan_vtk
+        scanned = scan_vtk(Path(vtk_dir))
         files_by_project_dict[name] = scanned
         all_files.extend(scanned)
     all_files_sorted = sorted(set(all_files))
