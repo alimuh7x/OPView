@@ -173,6 +173,30 @@ TAB_CONFIGS = [
 app_context = None
 data_manager = None
 
+
+def get_legacy_data(data_type: str):
+    """
+    Get legacy data from DataManager if available, otherwise from globals.
+
+    Args:
+        data_type: One of 'size_details', 'size_averages', 'stress_strain', 'crss', 'plastic_strain'
+
+    Returns:
+        Data dict or None
+    """
+    if data_manager is not None:
+        return data_manager.get_legacy_data(data_type)
+
+    # Fall back to legacy globals
+    global SIZE_DETAILS_DATA, SIZE_AVERAGE_DATA, STRESS_STRAIN_DATA, CRSS_DATA, PLASTIC_STRAIN_DATA
+    return {
+        'size_details': SIZE_DETAILS_DATA,
+        'size_averages': SIZE_AVERAGE_DATA,
+        'stress_strain': STRESS_STRAIN_DATA,
+        'crss': CRSS_DATA,
+        'plastic_strain': PLASTIC_STRAIN_DATA,
+    }.get(data_type)
+
 # Legacy global variables (used when app_context is None for backwards compatibility)
 reader_cache = {}
 
@@ -266,61 +290,9 @@ PLASTIC_STRAIN_FILE = TEXTDATA_DIR / "PlasticStrainFile.txt"
 SIZE_AVERAGE_FILE   = TEXTDATA_DIR / "SizeAveInfo.dat"
 
 
-def load_size_details():
-    if not SIZE_DETAILS_FILE.exists():
-        return None
-    rows = []
-    try:
-        with SIZE_DETAILS_FILE.open() as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split()
-                try:
-                    rows.append([float(p) for p in parts])
-                except ValueError:
-                    continue
-    except OSError:
-        return None
-    if not rows:
-        return None
-    # Determine columns: first is time, second often count, rest are values
-    has_count = len(rows[0]) > 2
-    values_offset = 2 if has_count else 1
-    labels = [str(idx + 1) for idx in range(len(rows[0]) - values_offset)]
-    data_matrix = [row[values_offset:] for row in rows]
-    times = [row[0] for row in rows]
-    counts = [row[1] for row in rows] if has_count else None
-    return {
-        "times": times,
-        "counts": counts,
-        "labels": labels,
-        "values": data_matrix,
-    }
-
-
-def load_size_averages():
-    if not SIZE_AVERAGE_FILE.exists():
-        return None
-    times = []
-    averages = []
-    try:
-        with SIZE_AVERAGE_FILE.open() as fh:
-            for line in fh:
-                parts = line.strip().split()
-                if len(parts) < 3:
-                    continue
-                try:
-                    times.append(float(parts[0]))
-                    averages.append(float(parts[2]))
-                except ValueError:
-                    continue
-    except OSError:
-        return None
-    if not times:
-        return None
-    return {"times": times, "averages": averages}
+# Phase 7B: Removed duplicate data loader functions - now in data/loaders.py
+# - load_size_details() → data_manager.get_legacy_data('size_details')
+# - load_size_averages() → data_manager.get_legacy_data('size_averages')
 
 
 # Defer loading TextData files for fast startup - load only when needed
@@ -328,130 +300,9 @@ SIZE_DETAILS_DATA = None  # load_size_details()
 SIZE_AVERAGE_DATA = None  # load_size_averages()
 
 
-def load_stress_strain():
-    if not STRESS_STRAIN_FILE.exists():
-        return None
-    try:
-        with STRESS_STRAIN_FILE.open() as fh:
-            lines = [line.strip() for line in fh if line.strip()]
-    except OSError:
-        return None
-    if not lines:
-        return None
-    header = [token.strip() for token in lines[0].replace(',', ' ').split()]
-    rows = []
-    for line in lines[1:]:
-        parts = [token.strip() for token in line.replace(',', ' ').split()]
-        if len(parts) != len(header):
-            continue
-        try:
-            rows.append([float(p) for p in parts])
-        except ValueError:
-            continue
-    if not rows:
-        return None
-
-    columns = {name: [row[idx] for row in rows] for idx, name in enumerate(header)}
-
-    def col(*names):
-        for name in names:
-            if name in columns:
-                return columns[name]
-        return None
-
-    strain_components = {
-        name: columns[name]
-        for name in columns
-        if name.lower().startswith('epsilon')
-    }
-    strain = strain_components.get('Epsilon_xx') or strain_components.get('EpsilonXX')
-    if strain is None and strain_components:
-        strain = next(iter(strain_components.values()))
-    time = col('Time', 'TimeStep')
-    sigma_xx = col('Sigma_xx', 'SigmaXX')
-    sigma_yy = col('Sigma_yy', 'SigmaYY')
-    sigma_zz = col('Sigma_zz', 'SigmaZZ')
-    mises = col('Mises', 'VonMises')
-
-    stress_components = {
-        key: value for key, value in {
-            "Sigma_xx": sigma_xx,
-            "Sigma_yy": sigma_yy,
-            "Sigma_zz": sigma_zz,
-            "Mises": mises,
-        }.items() if value is not None
-    }
-
-    if not strain or not stress_components:
-        return None
-
-    return {
-        "strain": strain,
-        "time": time,
-        "components": stress_components,
-        "strain_components": strain_components
-    }
-
-
-def load_crss():
-    if not CRSS_FILE.exists():
-        return None
-    try:
-        with CRSS_FILE.open() as fh:
-            lines = [line.strip() for line in fh if line.strip()]
-    except OSError:
-        return None
-    if not lines:
-        return None
-    header = [h.strip() for h in lines[0].split(',')]
-    if 'Time' not in header:
-        return None
-    times = []
-    averages = []
-    time_idx = header.index('Time')
-    avg_idx = header.index('Average') if 'Average' in header else None
-    slip_columns = [
-        (idx, name)
-        for idx, name in enumerate(header)
-        if name.lower().startswith('ss_')
-    ]
-    series = {name: [] for _, name in slip_columns}
-    for line in lines[1:]:
-        parts = [p.strip() for p in line.split(',')]
-        if len(parts) <= time_idx:
-            continue
-        try:
-            time_val = float(parts[time_idx])
-        except ValueError:
-            continue
-        if avg_idx is not None and len(parts) > avg_idx:
-            try:
-                avg_val = float(parts[avg_idx])
-            except ValueError:
-                avg_val = None
-        else:
-            avg_val = None
-        row_series = {}
-        for idx, name in slip_columns:
-            if idx >= len(parts):
-                row_series = {}
-                break
-            try:
-                row_series[name] = float(parts[idx])
-            except ValueError:
-                row_series = {}
-                break
-        if not row_series:
-            continue
-        if avg_val is None:
-            avg_val = float(np.mean(list(row_series.values())))
-        times.append(time_val)
-        averages.append(avg_val)
-        for name in series:
-            series[name].append(row_series[name])
-    if not times:
-        return None
-    return {"times": times, "averages": averages, "series": series}
+# Phase 7B: Removed duplicate data loader functions - now in data/loaders.py
+# - load_stress_strain() → data_manager.get_legacy_data('stress_strain')
+# - load_crss() → data_manager.get_legacy_data('crss')
 
 
 # Defer loading TextData files for fast startup - load only when needed
@@ -460,49 +311,8 @@ CRSS_DATA = None  # load_crss()
 PLASTIC_STRAIN_DATA = None
 
 
-def load_plastic_strain():
-    if not PLASTIC_STRAIN_FILE.exists():
-        return None
-    try:
-        with PLASTIC_STRAIN_FILE.open() as fh:
-            lines = [line.strip() for line in fh if line.strip()]
-    except OSError:
-        return None
-    if not lines:
-        return None
-    header = [token.strip() for token in lines[0].replace(',', ' ').split()]
-    rows = []
-    for line in lines[1:]:
-        parts = [token.strip() for token in line.replace(',', ' ').split()]
-        if len(parts) != len(header):
-            continue
-        try:
-            rows.append([float(p) for p in parts])
-        except ValueError:
-            continue
-    if not rows:
-        return None
-    columns = {name: [row[idx] for row in rows] for idx, name in enumerate(header)}
-
-    def collect(prefix):
-        return {
-            name: columns[name]
-            for name in columns
-            if name.lower().startswith(prefix)
-        }
-
-    times = columns.get('time') or columns.get('Time')
-    if not times:
-        return None
-    epsilons = collect('epsilon')
-    if 'PEEQ' in columns:
-        epsilons['PEEQ'] = columns['PEEQ']
-    rates = collect('rate')
-    return {
-        "times": times,
-        "epsilons": epsilons,
-        "rates": rates
-    }
+# Phase 7B: Removed duplicate data loader function - now in data/loaders.py
+# - load_plastic_strain() → data_manager.get_legacy_data('plastic_strain')
 
 
 # Phase 7: Data loading moved to DataManager.load_all_legacy()
@@ -775,7 +585,7 @@ def build_histogram_figure(values, x_label, bins=None, fit=False):
 
 
 def crss_series_values(component):
-    data = CRSS_DATA
+    data = get_legacy_data('crss')
     if not data:
         return None
     if component == 'Average':
@@ -785,7 +595,7 @@ def crss_series_values(component):
 
 
 def stress_series_values(component):
-    data = STRESS_STRAIN_DATA
+    data = get_legacy_data('stress_strain')
     if not data:
         return None
     comps = data.get('components') or {}
@@ -797,7 +607,7 @@ def stress_series_values(component):
 
 
 def strain_series_values(component):
-    data = STRESS_STRAIN_DATA
+    data = get_legacy_data('stress_strain')
     if not data:
         return None
     comps = data.get('strain_components') or {}
@@ -811,10 +621,10 @@ def strain_series_values(component):
 def build_grain_histogram(time_value, bins, fit=False):
     """LEGACY - Replaced by grain_data.get_histogram_data()
 
-    This function still uses the global SIZE_DETAILS_DATA dict.
+    Uses get_legacy_data() to access SIZE_DETAILS_DATA.
     Use grain_data.get_histogram_data(time_value, bins, fit) instead.
     """
-    data = SIZE_DETAILS_DATA
+    data = get_legacy_data('size_details')
     if not data:
         return go.Figure(), "_No data available._"
     times = data['times']
@@ -2434,7 +2244,7 @@ def build_crss_card():
 
 def build_crss_hist_card():
     """LEGACY - Incomplete function, not used. Use build_crss_card() instead."""
-    data = CRSS_DATA
+    data = get_legacy_data('crss')
     if not data:
         return None
     series = data.get('series') or {}
@@ -2443,7 +2253,7 @@ def build_crss_hist_card():
 
 def build_crss_figure(selected=None):
     """LEGACY - Replaced by crss_data.build_figure()"""
-    data = CRSS_DATA
+    data = get_legacy_data('crss')
     if not data:
         return go.Figure()
     times = data['times']
@@ -2505,10 +2315,9 @@ def build_crss_figure(selected=None):
 def build_plastic_strain_card():
     """Build plastic strain card.
 
-    NOTE: This still uses legacy PLASTIC_STRAIN_DATA global dict.
-    TODO: Migrate to PlasticStrainData OOP source once load() is implemented.
+    Uses get_legacy_data() to access plastic strain data.
     """
-    data = PLASTIC_STRAIN_DATA
+    data = get_legacy_data('plastic_strain')
     if not data:
         return None
     strain_fig, rate_fig = build_plastic_strain_figures()
@@ -2525,7 +2334,7 @@ def build_plastic_strain_card():
 
 
 def build_plastic_strain_figures():
-    data = PLASTIC_STRAIN_DATA
+    data = get_legacy_data('plastic_strain')
     times = data['times']
     eps = data['epsilons']
     rates = data['rates']
@@ -2986,10 +2795,10 @@ def render_active_tab(active_tab, comparison_files, _active_project, _loaded_pro
 
 # Grain Size Callbacks
 # Multi-output callback for size details (main + line charts) - uses legacy data
-if SIZE_DETAILS_DATA:
+if get_legacy_data('size_details'):
     def build_size_figures(time, mode):
-        """Wrapper for size details figures using legacy SIZE_DETAILS_DATA"""
-        data = SIZE_DETAILS_DATA
+        """Wrapper for size details figures using legacy size_details data"""
+        data = get_legacy_data('size_details')
         times = data['times']
         labels = data['labels']
         values = data['values']
@@ -3021,9 +2830,10 @@ if SIZE_DETAILS_DATA:
         main_fig.update_xaxes(title="Grain Number", title_font=axis_title_font, tickfont=tick_font)
         main_fig.update_yaxes(title="Grain Size", title_font=axis_title_font, tickfont=tick_font)
 
-        if SIZE_AVERAGE_DATA:
-            avg_times = SIZE_AVERAGE_DATA['times']
-            avg_values = SIZE_AVERAGE_DATA['averages']
+        avg_data = get_legacy_data('size_averages')
+        if avg_data:
+            avg_times = avg_data['times']
+            avg_values = avg_data['averages']
         else:
             avg_times = times
             avg_values = [sum(row) / len(row) if row else 0 for row in values]
