@@ -48,6 +48,18 @@ from ui.callbacks import (
     create_multi_output_callback,
 )
 
+# Utility functions (extracted from this file - now imported)
+from utils import (
+    scan_project_folders,
+    get_reader,
+    list_vtk_files,
+    resolve_vtk_path,
+    latest_file,
+    reader_cache,
+)
+from utils.vtk_utils import list_comparison_files
+from utils.project_scanner import get_project_folder_options
+
 APP_TITLE = "OPView"
 TENSOR_COMPONENTS = ['xx', 'yy', 'zz', 'xy', 'yz', 'zx']
 BASE_DIR = Path(__file__).resolve().parent
@@ -156,6 +168,12 @@ TAB_CONFIGS = [
     },
 ]
 
+# Application context (injected by OPViewApp during initialization)
+# When running standalone, this will be None and fall back to legacy globals
+app_context = None
+data_manager = None
+
+# Legacy global variables (used when app_context is None for backwards compatibility)
 reader_cache = {}
 
 # Grid cache for comparison panel optimizations: key = (file_name, scalar, slice_index) → (figure, colorbar_figure)
@@ -284,11 +302,16 @@ def scan_project_folders(base_path: Path = None):
 # Cache for rendered heatmap rows to avoid rebuilding on tab switches
 def vtk_data_dir():
     """Return the VTK data directory preferring the selected project folder, else CWD/VTK, else repo VTK."""
-    global current_project_vtk_path
+    # Use app_context if available, otherwise fall back to legacy global
+    if app_context is not None:
+        vtk_path = app_context.current_project_vtk_path
+    else:
+        global current_project_vtk_path
+        vtk_path = current_project_vtk_path
 
     # If a project folder is selected, use its VTK path
-    if current_project_vtk_path and current_project_vtk_path.exists():
-        return current_project_vtk_path
+    if vtk_path and vtk_path.exists():
+        return vtk_path
 
     # Otherwise, use default behavior
     cwd_vtk = Path.cwd() / "VTK"
@@ -366,11 +389,6 @@ def get_reader(file_path):
         reader_cache[key] = VTKReader(key)
     return reader_cache[key]
 
-
-def latest_file(pattern: str):
-    """Return the most recent file matching the glob pattern."""
-    matches = sorted(glob(pattern))
-    return matches[-1] if matches else None
 
 
 print(f"[{time.time()-_start_time:.2f}s] Creating Dash app...")
@@ -626,7 +644,9 @@ def load_plastic_strain():
     }
 
 
-PLASTIC_STRAIN_DATA = load_plastic_strain()
+# Phase 7: Data loading moved to DataManager.load_all_legacy()
+# PLASTIC_STRAIN_DATA = load_plastic_strain()  # Removed - use data_manager.get_legacy_data('plastic_strain')
+PLASTIC_STRAIN_DATA = None  # Will be loaded by DataManager if needed
 
 
 DOCUMENTATION_FILE = Path("assets/Documentation.md")
@@ -1178,15 +1198,22 @@ def list_vtk_files(directory=None):
         directory: Optional directory to scan. If None, checks if a project folder is selected.
 
     NOTE: Returns empty list at startup for speed. Scans when directory is provided or folder selected."""
-    global current_project_vtk_path
+    # Use app_context if available, otherwise fall back to legacy globals
+    if app_context is not None:
+        vtk_files = app_context.loaded_project_vtk_files
+        vtk_path = app_context.current_project_vtk_path
+    else:
+        global current_project_vtk_path
+        vtk_files = loaded_project_vtk_files
+        vtk_path = current_project_vtk_path
 
     # If no directory specified, check if a project folder is selected
     if directory is None:
         # Multi-project mode: return union of loaded project files if present.
-        if loaded_project_vtk_files:
-            return sorted(set(loaded_project_vtk_files))
-        if current_project_vtk_path and current_project_vtk_path.exists():
-            directory = current_project_vtk_path
+        if vtk_files:
+            return sorted(set(vtk_files))
+        if vtk_path and vtk_path.exists():
+            directory = vtk_path
         else:
             # FAST STARTUP: Don't scan at import time
             return []
@@ -2303,6 +2330,21 @@ print(f"[{time.time()-_start_time:.2f}s] Scanning for project folders...")
 discovered_project_folders = scan_project_folders()
 print(f"[{time.time()-_start_time:.2f}s] Found {len(discovered_project_folders)} project folder(s)")
 
+# Initialize OOP data sources (before card builders)
+data_dir = Path('TextData')
+grain_data = GrainSizeData(data_dir)
+stress_strain_data = StressStrainData(data_dir)
+stress_data = StressData(data_dir)
+strain_data = StrainData(data_dir)
+crss_data = CRSSData(data_dir)
+
+# Load data
+grain_data.load()
+stress_strain_data.load()
+stress_data.load()
+strain_data.load()
+crss_data.load()
+
 
 def build_size_details_card():
     """Build size details card using OOP structure"""
@@ -2388,10 +2430,10 @@ def build_grain_distribution_card():
 
     default_time = time_options[0]['value']
     default_time_val = float(default_time)
-    default_bins = grain_data.default_bins
+    default_bins = 15
 
-    # Use OOP data source to get histogram
-    default_fig, default_summary = grain_data.get_histogram_data(
+    # Use legacy function for histogram (grain uses time-based, not component-based)
+    default_fig, default_summary = build_grain_histogram(
         time_value=default_time_val,
         bins=default_bins,
         fit=False
@@ -2884,48 +2926,69 @@ def handle_project_folder_selection(selected_folders, active_tab):
     - `project-folder-dropdown` loads one or more project folders.
     - Comparison can pick files from any loaded project without clearing selections.
     """
-    global current_project_vtk_path
+    # Use app_context if available, otherwise fall back to legacy globals
+    use_context = app_context is not None
+
+    if not use_context:
+        global current_project_vtk_path, loaded_project_vtk_files, loaded_project_names, loaded_project_vtk_files_by_project
 
     # Normalize
     if not selected_folders:
         selected_folders = []
     if isinstance(selected_folders, str):
         selected_folders = [selected_folders]
-    selected_folders = [f for f in selected_folders if f in discovered_project_folders]
+
+    # Get discovered folders from context or global
+    folders_dict = app_context.discovered_project_folders if use_context else discovered_project_folders
+    selected_folders = [f for f in selected_folders if f in folders_dict]
+
     # Update loaded VTK files union for comparison pickers.
     loaded_vtk_paths = []
     loaded_names = []
     for name in selected_folders:
-        info = discovered_project_folders.get(name) or {}
+        info = folders_dict.get(name) or {}
         if info.get('has_vtk') and info.get('vtk_path'):
             loaded_names.append(name)
             loaded_vtk_paths.append(info['vtk_path'])
 
-    global loaded_project_vtk_files, loaded_project_names, loaded_project_vtk_files_by_project
-    loaded_project_names = loaded_names
-    loaded_project_vtk_files_by_project = {}
+    # Build files_by_project mapping
+    files_by_project_dict = {}
     all_files = []
     for name, vtk_dir in zip(loaded_names, loaded_vtk_paths):
         scanned = _scan_vtk_dir(Path(vtk_dir))
-        loaded_project_vtk_files_by_project[name] = scanned
+        files_by_project_dict[name] = scanned
         all_files.extend(scanned)
-    loaded_project_vtk_files = sorted(set(all_files))
+    all_files_sorted = sorted(set(all_files))
+
+    # Update context or globals
+    if use_context:
+        app_context.loaded_project_names = loaded_names
+        app_context.loaded_project_vtk_files_by_project = files_by_project_dict
+        app_context.loaded_project_vtk_files = all_files_sorted
+    else:
+        loaded_project_names = loaded_names
+        loaded_project_vtk_files_by_project = files_by_project_dict
+        loaded_project_vtk_files = all_files_sorted
 
     # Choose active project (first loaded) for legacy paths and defaults.
     active_name = selected_folders[0] if selected_folders else None
     if not active_name:
-        current_project_vtk_path = None
+        if use_context:
+            app_context.current_project_vtk_path = None
+        else:
+            current_project_vtk_path = None
         msg = html.Div("No project loaded. Load one or more projects to enable Dash tabs and Comparison pickers.",
                        className='vtk-upload-feedback vtk-upload-feedback--error')
-        return selected_folders, None, msg, {'names': loaded_project_names, 'active': None, 'files_by_project': loaded_project_vtk_files_by_project}
+        return selected_folders, None, msg, {'names': loaded_names, 'active': None, 'files_by_project': files_by_project_dict}
 
-    folder_info = discovered_project_folders[active_name]
+    folder_info = folders_dict[active_name]
 
-    # Update the global VTK path to point to selected folder
-    if folder_info.get('has_vtk'):
-        current_project_vtk_path = folder_info['vtk_path']
+    # Update the VTK path to point to selected folder
+    vtk_path = folder_info['vtk_path'] if folder_info.get('has_vtk') else None
+    if use_context:
+        app_context.current_project_vtk_path = vtk_path
     else:
-        current_project_vtk_path = None
+        current_project_vtk_path = vtk_path
 
     # Main tabs are initialized at startup (no VTK reads). Selecting projects only
     # updates `projects-store`; panels react instantly without requiring a refresh.
@@ -3058,21 +3121,6 @@ def render_active_tab(active_tab, comparison_files, _active_project, _loaded_pro
 
 # ===== SECTION 4: Main Tab Callbacks (OOP Data Sources) =====
 
-# Initialize OOP data sources
-data_dir = Path('TextData')
-grain_data = GrainSizeData(data_dir)
-stress_strain_data = StressStrainData(data_dir)
-stress_data = StressData(data_dir)
-strain_data = StrainData(data_dir)
-crss_data = CRSSData(data_dir)
-
-# Load data
-grain_data.load()
-stress_strain_data.load()
-stress_data.load()
-strain_data.load()
-crss_data.load()
-
 # Grain Size Callbacks
 # Multi-output callback for size details (main + line charts) - uses legacy data
 if SIZE_DETAILS_DATA:
@@ -3138,9 +3186,23 @@ if SIZE_DETAILS_DATA:
         callback_func=build_size_figures
     )
 
-# Histogram callback for grain distribution using OOP data source
+# Histogram callback for grain distribution using legacy implementation
+# Note: Grain histogram uses time-based selection, so we use legacy callback
 if grain_data.is_available:
-    create_histogram_callback(app, grain_data, 'grain-dist')
+    @app.callback(
+        Output('grain-dist-fig', 'figure'),
+        Output('grain-dist-summary', 'children'),
+        Input('grain-dist-time', 'value'),
+        Input('grain-dist-bins', 'value'),
+        Input('grain-dist-fit', 'value')
+    )
+    def update_grain_histogram(time_value, bins, fit_value):
+        """Update grain histogram based on time, bins, and fit selection"""
+        fit_enabled = bool(fit_value and 'fit' in fit_value)
+        if time_value is None:
+            times = grain_data.get_time_steps()
+            time_value = times[0] if times else 0
+        return build_grain_histogram(float(time_value), bins or 15, fit=fit_enabled)
 
 
 # Stress-Strain Callbacks using OOP data sources

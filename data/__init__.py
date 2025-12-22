@@ -22,6 +22,9 @@ from .sources import (
     PlasticStrainData,
 )
 
+from .loaders import LegacyDataLoader
+from .manager import DataManager
+
 __all__ = [
     # Base classes
     'DataSource',
@@ -38,4 +41,8 @@ __all__ = [
     'CRSSData',
     'GrainSizeData',
     'PlasticStrainData',
+
+    # Loaders and managers
+    'LegacyDataLoader',
+    'DataManager',
 ]

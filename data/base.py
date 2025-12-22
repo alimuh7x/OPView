@@ -256,10 +256,11 @@ class HistogramDataSource(DataSource):
 
         return self._compute_histogram(time_value, bins)
 
-    @abstractmethod
     def _compute_histogram(self, time_value: float, bins: int) -> Tuple[Any, str]:
         """
         Internal method to compute histogram.
+
+        Subclasses should either implement this method OR override get_histogram_data() directly.
 
         Args:
             time_value: Time step
@@ -268,7 +269,10 @@ class HistogramDataSource(DataSource):
         Returns:
             Tuple of (figure, summary)
         """
-        pass
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement _compute_histogram() "
+            "or override get_histogram_data() directly"
+        )
 
 
 class ScalarDataSource(TimeSeriesDataSource, HistogramDataSource):
