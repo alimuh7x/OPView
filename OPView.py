@@ -59,6 +59,16 @@ from utils import (
 )
 from utils.vtk_utils import list_comparison_files
 from utils.project_scanner import get_project_folder_options
+from utils.chart_utils import (
+    compute_average_series,
+    fit_best_distribution,
+    format_fit_summary,
+    build_histogram_figure,
+    crss_series_values as _crss_series_values,
+    stress_series_values as _stress_series_values,
+    strain_series_values as _strain_series_values,
+)
+from utils.docs import render_docs as _render_docs
 
 # Config functions
 from config import comparison_data_dir
@@ -311,302 +321,33 @@ PLASTIC_STRAIN_DATA = None
 PLASTIC_STRAIN_DATA = None  # Will be loaded by DataManager if needed
 
 
-DOCUMENTATION_FILE = Path("assets/Documentation.md")
-
-
+# Phase 8: Documentation rendering - Flask route wrapper
 @app.server.route('/docs')
 def render_docs():
-    if not DOCUMENTATION_FILE.exists():
-        return render_template_string(
-            "<h1>Documentation</h1><p>Documentation file not found.</p>"
-        )
-    content = DOCUMENTATION_FILE.read_text(encoding='utf-8')
-    md = markdown.Markdown(extensions=['fenced_code', 'tables', 'toc'])
-    html_body = md.convert(content)
-    toc_html = md.toc
-    template = """
-    <!doctype html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>OpenPhase Documentation</title>
-        <link rel="stylesheet" href="/assets/style.css">
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-        <style>
-            body { background: var(--bg-gradient); }
-            .doc-article {
-                background: var(--surface);
-                border-radius: 18px;
-                padding: 32px 40px;
-                box-shadow: var(--shadow-lg);
-                line-height: 1.7;
-                color: var(--text-main);
-                word-wrap: break-word;
-            }
-            .doc-article h1, .doc-article h2, .doc-article h3 {
-                color: #183568;
-            }
-            .doc-article pre {
-                background: #0d2244;
-                color: #fff;
-                padding: 12px;
-                border-radius: 8px;
-                overflow-x: auto;
-            }
-            .doc-article code {
-                color: #c50623;
-            }
-            .doc-sidebar .sidebar-tabs {
-                overflow: visible;
-            }
-            .doc-sidebar .toc {
-                list-style: none;
-                padding: 0;
-                margin: 0;
-                display: flex;
-                flex-direction: column;
-                gap: 6px;
-            }
-            .doc-sidebar .toc ul {
-                list-style: none;
-                padding-left: 16px;
-                margin-top: 6px;
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-            }
-            .doc-sidebar .toc a {
-                color: rgba(255,255,255,0.75);
-                text-decoration: none;
-                font-weight: 600;
-                font-size: 14px;
-                display: block;
-                padding: 8px 12px;
-                border-radius: 12px;
-                transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-            }
-            .doc-sidebar .toc a:hover {
-                color: #fff;
-                background: rgba(255,255,255,0.1);
-            }
-            .doc-sidebar .toc a.active {
-                color: #fff;
-                background: rgba(255,255,255,0.15);
-                box-shadow: inset 3px 0 0 #c50623;
-            }
-            .doc-main {
-                max-width: 1080px;
-                width: 100%;
-                margin: 0 auto;
-            }
-            /* Ensure doc header logo matches main app sizing */
-            .app-logo {
-                width: 42px;
-                height: 42px;
-                object-fit: contain;
-            }
-        </style>
-        <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-        <script id="MathJax-script" async
-          src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-    </head>
-    <body>
-        <div id="app-container">
-            <div class="app-header">
-                <div class="top-bar">
-                    <div class="top-left">
-                        <img src="/assets/OP_Logo_main.png" class="app-logo" alt="OP logo">
-                        <h1 class="app-title">OPV<span class="app-title-sub">iew</span></h1>
-                    </div>
-                    <div class="top-right">
-                        <a class="doc-link" href="/">Back to App</a>
-                    </div>
-                </div>
-            </div>
-            <div class="layout-shell">
-                <div class="sidebar doc-sidebar" style="position: sticky; top: 0; max-height: 100vh; overflow-y: auto; width: 280px;">
-                    <span class="sidebar-title">Contents</span>
-                    <div class="sidebar-tabs">
-                        {{ toc|safe }}
-                    </div>
-                </div>
-                <div class="main-panel">
-                    <div class="doc-main">
-                        <article class="doc-article">
-                            {{ body|safe }}
-                        </article>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <script>
-            document.addEventListener('DOMContentLoaded', function () {
-                const tocLinks = Array.from(document.querySelectorAll('.doc-sidebar .toc a'));
-                if (!tocLinks.length) {
-                    return;
-                }
-                const headingMap = tocLinks.map(link => {
-                    const hash = decodeURIComponent(link.hash || '').replace('#', '');
-                    const target = document.getElementById(hash);
-                    return { link, target };
-                }).filter(item => item.target);
-
-                function setActive(link) {
-                    tocLinks.forEach(l => l.classList.remove('active'));
-                    if (link) {
-                        link.classList.add('active');
-                    }
-                }
-
-                tocLinks.forEach(link => {
-                    link.addEventListener('click', () => setActive(link));
-                });
-
-                const observer = new IntersectionObserver((entries) => {
-                    const visible = entries
-                        .filter(entry => entry.isIntersecting)
-                        .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-                    if (visible.length > 0) {
-                        const match = headingMap.find(item => item.target === visible[0].target);
-                        if (match) {
-                            setActive(match.link);
-                        }
-                    }
-                }, {
-                    rootMargin: '-150px 0px -60% 0px',
-                    threshold: [0.2, 0.4, 0.6]
-                });
-
-                headingMap.forEach(item => observer.observe(item.target));
-
-                // highlight first item initially
-                setActive(tocLinks[0]);
-            });
-        </script>
-    </body>
-    </html>
-    """
-    return render_template_string(template, body=html_body, toc=toc_html)
+    """Flask route for documentation page. Implementation in utils.docs."""
+    return _render_docs()
 
 
-def compute_average_series(series_dict):
-    """Return element-wise average across provided series."""
-    arrays = []
-    lengths = []
-    for values in series_dict.values():
-        if values is None:
-            continue
-        arr = np.asarray(values, dtype=float)
-        if arr.size == 0:
-            continue
-        arrays.append(arr)
-        lengths.append(arr.size)
-    if not arrays:
-        return None
-    min_len = min(lengths)
-    stacked = np.vstack([arr[:min_len] for arr in arrays])
-    return np.mean(stacked, axis=0)
+# Phase 8: Removed chart utility functions - now in utils/chart_utils.py
+# - compute_average_series()
+# - build_histogram_figure()
+# - fit_best_distribution()
+# - format_fit_summary()
 
-
-def build_histogram_figure(values, x_label, bins=None, fit=False):
-    if values is None:
-        return go.Figure(), "No data available"
-    arr = np.asarray(values, dtype=float)
-    if arr.size == 0:
-        return go.Figure(), "No data available"
-    if bins is None:
-        nbins = max(10, min(60, int(np.sqrt(arr.size) * 3)))
-    else:
-        nbins = max(5, min(100, int(bins)))
-    hist = go.Histogram(
-        x=arr,
-        nbinsx=nbins,
-        marker_color='#183568',
-        name='Histogram'
-    )
-
-    x_min, x_max = arr.min(), arr.max()
-    if np.isclose(x_min, x_max):
-        x_min -= 1
-        x_max += 1
-    x_vals = np.linspace(x_min, x_max, 400)
-    summary = "_Enable **Best-fit PDF** to evaluate distributions._"
-    traces = [hist]
-
-    if fit:
-        best_fit = fit_best_distribution(arr)
-        if best_fit:
-            pdf_vals = best_fit['dist'].pdf(x_vals, *best_fit['params'])
-            counts, edges = np.histogram(arr, bins=nbins)
-            bin_width = edges[1] - edges[0]
-            pdf_scaled = pdf_vals * arr.size * bin_width
-            pdf_line = go.Scatter(
-                x=x_vals,
-                y=pdf_scaled,
-                mode='lines',
-                line=dict(color='#0d2244', width=2),
-                name=f"{best_fit['name']} PDF"
-            )
-            traces.append(pdf_line)
-            summary = format_fit_summary(best_fit)
-        else:
-            summary = "_No valid fit available._"
-
-    fig = go.Figure(data=traces)
-    fig.update_layout(
-        margin=dict(l=50, r=20, t=30, b=50),
-        height=320,
-        template='plotly_white',
-        bargap=0.05
-    )
-    fig.update_xaxes(
-        title=x_label,
-        title_font=dict(size=16, family='Montserrat, Arial, sans-serif', color='#12294f'),
-        tickfont=dict(size=16, family='Montserrat, Arial, sans-serif', color='#0f1b2b')
-    )
-    fig.update_yaxes(
-        title="Frequency",
-        title_font=dict(size=16, family='Montserrat, Arial, sans-serif', color='#12294f'),
-        tickfont=dict(size=16, family='Montserrat, Arial, sans-serif', color='#0f1b2b')
-    )
-    fig.update_traces(showlegend=False, selector=lambda t: isinstance(t, go.Histogram))
-    return fig, summary
-
-
+# Wrapper functions for backwards compatibility
 def crss_series_values(component):
-    data = get_legacy_data('crss')
-    if not data:
-        return None
-    if component == 'Average':
-        return np.asarray(data['averages']) / 1e6
-    values = (data.get('series') or {}).get(component)
-    return np.asarray(values) / 1e6 if values is not None else None
+    """Wrapper for crss_series_values from chart_utils."""
+    return _crss_series_values(component, get_legacy_data)
 
 
 def stress_series_values(component):
-    data = get_legacy_data('stress_strain')
-    if not data:
-        return None
-    comps = data.get('components') or {}
-    if component == 'Average':
-        avg = compute_average_series(comps)
-        return avg / 1e6 if avg is not None else None
-    values = comps.get(component)
-    return np.asarray(values) / 1e6 if values is not None else None
+    """Wrapper for stress_series_values from chart_utils."""
+    return _stress_series_values(component, get_legacy_data)
 
 
 def strain_series_values(component):
-    data = get_legacy_data('stress_strain')
-    if not data:
-        return None
-    comps = data.get('strain_components') or {}
-    if component == 'Average':
-        avg = compute_average_series(comps)
-        return avg * 100.0 if avg is not None else None
-    values = comps.get(component)
-    return np.asarray(values) * 100.0 if values is not None else None
+    """Wrapper for strain_series_values from chart_utils."""
+    return _strain_series_values(component, get_legacy_data)
 
 
 def build_grain_histogram(time_value, bins, fit=False):
@@ -634,67 +375,8 @@ def build_grain_histogram(time_value, bins, fit=False):
     summary = f"**Time:** {times[row_index]:.3f}\n\n" + summary
     return fig, summary
 
-
-def fit_best_distribution(data):
-    """Fit candidate distributions and select best via BIC."""
-    if data is None:
-        return None
-    arr = np.asarray(data, dtype=float)
-    if arr.size < 3 or np.allclose(arr.std(), 0):
-        return None
-    candidates = {
-        "Normal": stats.norm,
-        "Lognormal": stats.lognorm,
-        "Weibull": stats.weibull_min,
-        "Gamma": stats.gamma
-    }
-    best = None
-    n = arr.size
-    for name, dist in candidates.items():
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                params = dist.fit(arr)
-        except Exception:
-            continue
-        try:
-            loglik = np.sum(dist.logpdf(arr, *params))
-        except Exception:
-            continue
-        k = len(params)
-        aic = 2 * k - 2 * loglik
-        bic = np.log(n) * k - 2 * loglik
-        if not best or bic < best['bic']:
-            best = {
-                "name": name,
-                "dist": dist,
-                "params": params,
-                "aic": aic,
-                "bic": bic
-            }
-    return best
-
-
-def format_fit_summary(best_fit):
-    if not best_fit:
-        return "_No valid fit available._"
-    label_map = {
-        "Normal": ["\\mu", "\\sigma"],
-        "Lognormal": ["s", "\\mu", "\\sigma"],
-        "Weibull": ["k", "\\lambda", "\\theta"],
-        "Gamma": ["k", "\\theta", "\\lambda"]
-    }
-    labels = label_map.get(best_fit["name"]) or [f"\\theta_{i+1}" for i in range(len(best_fit["params"]))]
-    param_lines = []
-    for label, value in zip(labels, best_fit["params"]):
-        param_lines.append(f"{label} &= {value:.3g}")
-    params_block = " \\\\ ".join(param_lines)
-    return (
-        f"**Best Fit:** $\\text{{{best_fit['name']}}}$\n\n"
-        f"$$\\begin{{aligned}}{params_block}\\end{{aligned}}$$\n\n"
-        f"$$\\mathrm{{AIC}} = {best_fit['aic']:.2f}\\quad "
-        f"\\mathrm{{BIC}} = {best_fit['bic']:.2f}$$"
-    )
+# Phase 8: fit_best_distribution() and format_fit_summary() removed
+# → Now imported from utils.chart_utils
 
 
 def initialize_tab_datasets_static():
@@ -2024,6 +1706,29 @@ strain_data.load()
 crss_data.load()
 
 
+# =============================================================================
+# UI CARD BUILDERS - To be extracted to ui/ui_manager.py in future
+# =============================================================================
+# The following UI card builder functions (~500 lines) remain in OPView.py:
+#   - build_tab_bar() - Main tab navigation bar
+#   - build_tab_children() - Tab content builder
+#   - build_size_details_card() - Grain size details card
+#   - build_grain_distribution_card() - Grain distribution histogram card
+#   - build_stress_strain_card() - Stress-strain curve card
+#   - build_stress_hist_card() - Stress histogram card
+#   - build_strain_hist_card() - Strain histogram card
+#   - build_crss_card() - CRSS analysis card
+#   - build_crss_hist_card() - CRSS histogram card
+#   - build_plastic_strain_card() - Plastic strain card
+#
+# Future extraction plan:
+#   1. Create ui/ui_manager.py with UIManager class
+#   2. Move all build_* functions as methods
+#   3. Inject data sources via constructor
+#   4. Update references in layout and callbacks
+# =============================================================================
+
+
 def build_size_details_card():
     """Build size details card using OOP structure"""
     if not grain_data.is_available:
@@ -2341,6 +2046,7 @@ def build_plastic_strain_card():
 
 
 def build_plastic_strain_figures():
+    """LEGACY - Helper for build_plastic_strain_card()"""
     data = get_legacy_data('plastic_strain')
     times = data['times']
     eps = data['epsilons']
