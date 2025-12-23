@@ -60,6 +60,9 @@ from utils import (
 from utils.vtk_utils import list_comparison_files
 from utils.project_scanner import get_project_folder_options
 
+# Config functions
+from config import comparison_data_dir
+
 APP_TITLE = "OPView"
 TENSOR_COMPONENTS = ['xx', 'yy', 'zz', 'xy', 'yz', 'zx']
 BASE_DIR = Path(__file__).resolve().parent
@@ -254,19 +257,7 @@ COMPARISON_FOLDER_NAME = "Comparison"
 ALLOWED_VTK_EXTENSIONS = ('.vtk', '.vti', '.vtp', '.vtr', '.vts')
 
 
-def comparison_data_dir() -> Path:
-    """
-    Return the comparison folder path, preferring the user's working directory.
-    The directory is created inside the repository when no working-copy folder exists.
-    """
-    cwd_dir = Path.cwd() / COMPARISON_FOLDER_NAME
-    repo_dir = BASE_DIR / COMPARISON_FOLDER_NAME
-    if cwd_dir.exists():
-        return cwd_dir
-    if repo_dir.exists():
-        return repo_dir
-    repo_dir.mkdir(parents=True, exist_ok=True)
-    return repo_dir
+# Phase 7C: Removed comparison_data_dir() - now imported from config.paths
 
 
 # Phase 7A: Removed duplicate functions - now imported from utils module
@@ -811,6 +802,22 @@ print(f"[{time.time()-_start_time:.2f}s] tab_datasets initialized")
 
 comparison_panels = {}
 
+
+# =============================================================================
+# COMPARISON FEATURE - To be fully extracted in future dedicated refactoring
+# =============================================================================
+# The following ~30 comparison functions (~850 lines) remain in OPView.py.
+# These functions handle the comparison tab functionality (uploading VTK files,
+# grouping by prefix, rendering heatmap grids with synchronized controls).
+#
+# Future work: Extract to comparisonmgr/ module:
+#   - Helper functions → comparisonmgr/helpers.py
+#   - UI builders → comparisonmgr/ui_builder.py
+#   - Callbacks → comparisonmgr/callbacks.py
+#
+# For now, these remain here as they're complex and interdependent. The
+# ComparisonManager (comparisonmgr/manager.py) currently wraps these functions.
+# =============================================================================
 
 def _comparison_panel_id(group: str) -> str:
     safe = re.sub(r'[^a-z0-9]+', '-', group.lower()).strip('-')
