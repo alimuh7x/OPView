@@ -74,6 +74,9 @@ from .cards import (
     build_crss_card,
 )
 
+# UI Manager
+from .ui_manager import UIManager
+
 # Callback factories
 from .callbacks import (
     create_histogram_callback,
@@ -137,6 +140,9 @@ __all__ = [
     'build_stress_strain_card',
     'build_grain_distribution_card',
     'build_crss_card',
+
+    # UI Manager
+    'UIManager',
 
     # Callback API
     'create_histogram_callback',

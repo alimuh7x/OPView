@@ -48,6 +48,9 @@ from ui.callbacks import (
     create_multi_output_callback,
 )
 
+# UI Manager
+from ui import UIManager
+
 # Utility functions (extracted from this file - now imported)
 from utils import (
     scan_project_folders,
@@ -349,31 +352,8 @@ def strain_series_values(component):
     """Wrapper for strain_series_values from chart_utils."""
     return _strain_series_values(component, get_legacy_data)
 
-
-def build_grain_histogram(time_value, bins, fit=False):
-    """LEGACY - Replaced by grain_data.get_histogram_data()
-
-    Uses get_legacy_data() to access SIZE_DETAILS_DATA.
-    Use grain_data.get_histogram_data(time_value, bins, fit) instead.
-    """
-    data = get_legacy_data('size_details')
-    if not data:
-        return go.Figure(), "_No data available._"
-    times = data['times']
-    values = data['values']
-    if not times or not values:
-        return go.Figure(), "_No data available._"
-    try:
-        time_value = float(time_value)
-    except (TypeError, ValueError):
-        time_value = times[0]
-    row_index = min(range(len(times)), key=lambda idx: abs(times[idx] - time_value))
-    row_values = values[row_index]
-    if not row_values:
-        return go.Figure(), "_No data available._"
-    fig, summary = build_histogram_figure(row_values, "Grain Size", bins, fit=fit)
-    summary = f"**Time:** {times[row_index]:.3f}\n\n" + summary
-    return fig, summary
+# Phase 9: build_grain_histogram() removed - now in ui/ui_manager.py
+# (Wrapper function exists later in the file)
 
 # Phase 8: fit_best_distribution() and format_fit_summary() removed
 # → Now imported from utils.chart_utils
@@ -1705,262 +1685,95 @@ stress_data.load()
 strain_data.load()
 crss_data.load()
 
+# Phase 9: Instantiate UIManager with data sources
+ui_manager = UIManager(
+    grain_data=grain_data,
+    stress_strain_data=stress_strain_data,
+    stress_data=stress_data,
+    strain_data=strain_data,
+    crss_data=crss_data,
+    get_legacy_data_fn=get_legacy_data,
+    build_histogram_figure_fn=build_histogram_figure
+)
+
 
 # =============================================================================
-# UI CARD BUILDERS - To be extracted to ui/ui_manager.py in future
+# UI CARD BUILDERS - Extracted to ui/ui_manager.py (Phase 9) ✅
 # =============================================================================
-# The following UI card builder functions (~500 lines) remain in OPView.py:
-#   - build_tab_bar() - Main tab navigation bar
-#   - build_tab_children() - Tab content builder
-#   - build_size_details_card() - Grain size details card
-#   - build_grain_distribution_card() - Grain distribution histogram card
-#   - build_stress_strain_card() - Stress-strain curve card
-#   - build_stress_hist_card() - Stress histogram card
-#   - build_strain_hist_card() - Strain histogram card
-#   - build_crss_card() - CRSS analysis card
-#   - build_crss_hist_card() - CRSS histogram card
-#   - build_plastic_strain_card() - Plastic strain card
+# Card builder functions have been extracted to UIManager class.
+# Wrapper functions below delegate to ui_manager methods for backward compatibility.
 #
-# Future extraction plan:
-#   1. Create ui/ui_manager.py with UIManager class
-#   2. Move all build_* functions as methods
-#   3. Inject data sources via constructor
-#   4. Update references in layout and callbacks
+# Extracted functions (10 card builders + 2 helpers):
+#   - build_size_details_card()
+#   - build_grain_distribution_card()
+#   - build_stress_strain_card()
+#   - build_stress_hist_card() (returns None)
+#   - build_strain_hist_card() (returns None)
+#   - build_crss_card()
+#   - build_crss_hist_card()
+#   - build_plastic_strain_card()
+#   - build_grain_histogram() (helper)
+#   - build_plastic_strain_figures() (helper)
+#
+# Still in OPView.py (too complex, tightly coupled to global state):
+#   - build_tab_bar() - Uses global TAB_ORDER
+#   - build_tab_children() - Uses global tab_datasets and ViewerPanels
 # =============================================================================
 
 
+# Wrapper functions for backward compatibility
 def build_size_details_card():
-    """Build size details card using OOP structure"""
-    if not grain_data.is_available:
-        return None
-
-    # Get time steps from OOP data source
-    times = grain_data.get_time_steps()
-    if not times:
-        return None
-
-    time_options = []
-    for t in times:
-        if t.is_integer():
-            label = str(int(t))
-        else:
-            label = f"{t:.3f}".rstrip('0').rstrip('.')
-        time_options.append({'label': label, 'value': str(t)})
-
-    # Get grain labels from OOP data source
-    value_labels = grain_data._data.get('labels', [])
-    if not value_labels:
-        return None
-    default_time = time_options[0]['value'] if time_options else None
-
-    return html.Div([
-        html.Div([
-            html.Span(className='dataset-accent'),
-            html.H3('Grain Details', className='dataset-title')
-        ], className='dataset-header'),
-        html.Div([
-            html.Div([
-                html.Div([
-                    html.Label('Time Step', className='textdata-label'),
-                    dcc.Dropdown(
-                        id='size-card-time',
-                        options=time_options,
-                        value=default_time,
-                        clearable=False,
-                        searchable=False,
-                        className='textdata-input'
-                    )
-                ], className='textdata-control'),
-                html.Div([
-                    html.Label('Chart Style', className='textdata-label'),
-                    dcc.RadioItems(
-                        id='size-card-mode',
-                        options=[
-                            {'label': 'Bar', 'value': 'bar'},
-                            {'label': 'Line', 'value': 'line'}
-                        ],
-                        value='bar',
-                        inline=True,
-                        className='textdata-radio',
-                        labelStyle={'display': 'inline-flex', 'alignItems': 'center', 'marginRight': '12px'},
-                        inputStyle={'marginRight': '4px'}
-                    )
-                ], className='textdata-control'),
-            ], className='textdata-controls'),
-            dcc.Graph(id='size-card-main', className='textdata-plot'),
-            dcc.Graph(id='size-card-line', className='textdata-plot')
-        ], className='textdata-graphs')
-    ], className='dataset-block textdata-card')
+    """Wrapper for UIManager.build_size_details_card()"""
+    return ui_manager.build_size_details_card()
 
 
 def build_grain_distribution_card():
-    """Build grain distribution card using OOP structure"""
-    if not grain_data.is_available:
-        return None
-
-    # Get time steps from OOP data source
-    times = grain_data.get_time_steps()
-    if not times:
-        return None
-
-    time_options = []
-    for t in times:
-        if t.is_integer():
-            label = str(int(t))
-        else:
-            label = f"{t:.3f}".rstrip('0').rstrip('.')
-        time_options.append({'label': label, 'value': str(t)})
-
-    default_time = time_options[0]['value']
-    default_time_val = float(default_time)
-    default_bins = 15
-
-    # Use legacy function for histogram (grain uses time-based, not component-based)
-    default_fig, default_summary = build_grain_histogram(
-        time_value=default_time_val,
-        bins=default_bins,
-        fit=False
-    )
-    return html.Div([
-        html.Div([
-            html.Span(className='dataset-accent'),
-            html.H3('Grain Distribution', className='dataset-title')
-        ], className='dataset-header'),
-        html.Div([
-            html.Div([
-                html.Div([
-                    html.Label('Time Step', className='textdata-label'),
-                    dcc.Dropdown(
-                        id='grain-dist-time',
-                        options=time_options,
-                        value=default_time,
-                        clearable=False,
-                        searchable=False,
-                        className='textdata-input'
-                    )
-                ], className='textdata-control'),
-                html.Div([
-                    html.Label('Number of Bins', className='textdata-label'),
-                    dcc.Slider(
-                        id='grain-dist-bins',
-                        min=5,
-                        max=50,
-                        step=5,
-                        value=default_bins,
-                        marks={10: '10', 25: '25', 40: '40'},
-                        tooltip={"placement": "bottom", "always_visible": False}
-                    )
-                ], className='textdata-control'),
-                html.Div([
-                    html.Label('Analysis', className='textdata-label'),
-                    dcc.Checklist(
-                        id='grain-dist-fit',
-                        options=[{'label': 'Show Best-fit PDF', 'value': 'fit'}],
-                        value=[],
-                        className='hist-toggle'
-                    )
-                ], className='textdata-control')
-            ], className='textdata-controls'),
-            dcc.Graph(id='grain-dist-fig', figure=default_fig, className='textdata-plot')
-        ], className='textdata-graphs'),
-        dcc.Markdown(default_summary, id='grain-dist-summary', className='hist-summary', mathjax=True)
-    ], className='dataset-block textdata-card')
+    """Wrapper for UIManager.build_grain_distribution_card()"""
+    return ui_manager.build_grain_distribution_card()
 
 
 def build_stress_strain_card():
-    """Build stress-strain card using OOP structure"""
-    if not stress_strain_data.is_available:
-        return None
-
-    # Use new OOP data source to get options
-    options = [
-        {'label': 'σ_xx', 'value': 'Sigma_xx'},
-        {'label': 'σ_yy', 'value': 'Sigma_yy'},
-        {'label': 'σ_zz', 'value': 'Sigma_zz'},
-        {'label': 'von Mises', 'value': 'Mises'},
-    ]
-    return html.Div([
-        html.Div([
-            html.Span(className='dataset-accent'),
-            html.H3('Stress–Strain Curves', className='dataset-title')
-        ], className='dataset-header'),
-        html.Div([
-        html.Div([
-            html.Div([
-                html.Label('Components', className='textdata-label'),
-                dcc.Checklist(
-                    id='stress-components',
-                    options=options,
-                    value=stress_strain_data.get_default_components(),
-                    className='textdata-radio',
-                    labelStyle={'display': 'inline-flex', 'alignItems': 'center', 'marginRight': '12px'},
-                    inputStyle={'marginRight': '4px'}
-                )
-            ], className='textdata-control')
-        ], className='textdata-controls'),
-            dcc.Graph(id='stress-strain-fig', className='textdata-plot')
-        ], className='textdata-graphs')
-    ], className='dataset-block textdata-card')
+    """Wrapper for UIManager.build_stress_strain_card()"""
+    return ui_manager.build_stress_strain_card()
 
 
 def build_stress_hist_card():
-    """Legacy PDF-based stress histogram card – hidden from UI."""
-    return None
+    """Wrapper for UIManager.build_stress_hist_card()"""
+    return ui_manager.build_stress_hist_card()
 
 
 def build_strain_hist_card():
-    """Legacy PDF-based strain histogram card – hidden from UI."""
-    return None
+    """Wrapper for UIManager.build_strain_hist_card()"""
+    return ui_manager.build_strain_hist_card()
 
 
 def build_crss_card():
-    """Build CRSS card using OOP structure"""
-    if not crss_data.is_available:
-        return None
+    """Wrapper for UIManager.build_crss_card()"""
+    return ui_manager.build_crss_card()
 
-    # Use OOP data source to get options
-    options = crss_data.get_component_options()
-    default_components = crss_data.get_default_components()
-    fig = crss_data.build_figure(default_components)
-
-    return html.Div([
-        html.Div([
-            html.Span(className='dataset-accent'),
-            html.H3('CRSS Evolution', className='dataset-title')
-        ], className='dataset-header'),
-        html.Div([
-        html.Div([
-            html.Div([
-                html.Label('Components', className='textdata-label'),
-                dcc.Checklist(
-                    id='crss-component-select',
-                    options=options,
-                    value=default_components,
-                    className='crss-checklist'
-                )
-            ], className='textdata-control crss-control')
-        ], className='textdata-controls'),
-            dcc.Graph(id='crss-avg-fig', figure=fig, className='textdata-plot')
-        ], className='textdata-graphs')
-    ], className='dataset-block textdata-card')
-
-
-# =============================================================================
-# LEGACY FUNCTIONS - Replaced by OOP data sources
-# =============================================================================
-# The following functions are no longer used. They have been replaced by:
-# - crss_data.build_figure() for building CRSS charts
-# - crss_data.get_histogram_data() for histogram generation
-# Keeping for reference during migration period.
-# =============================================================================
 
 def build_crss_hist_card():
-    """LEGACY - Incomplete function, not used. Use build_crss_card() instead."""
-    data = get_legacy_data('crss')
-    if not data:
-        return None
-    series = data.get('series') or {}
-    # NOTE: This function was never completed
+    """Wrapper for UIManager.build_crss_hist_card()"""
+    return ui_manager.build_crss_hist_card()
+
+
+def build_plastic_strain_card():
+    """Wrapper for UIManager.build_plastic_strain_card()"""
+    return ui_manager.build_plastic_strain_card()
+
+
+def build_grain_histogram(time_value, bins, fit=False):
+    """Wrapper for UIManager.build_grain_histogram()"""
+    return ui_manager.build_grain_histogram(time_value, bins, fit)
+
+
+def build_plastic_strain_figures():
+    """Wrapper for UIManager.build_plastic_strain_figures()"""
+    return ui_manager.build_plastic_strain_figures()
+
+
+# Phase 9: Original implementations removed - now in ui/ui_manager.py
+# =============================================================================
 
 
 def build_crss_figure(selected=None):
@@ -2022,82 +1835,6 @@ def build_crss_figure(selected=None):
         tickfont=dict(size=13, family='Inter, sans-serif', color='#0f1b2b')
     )
     return fig
-
-
-def build_plastic_strain_card():
-    """Build plastic strain card.
-
-    Uses get_legacy_data() to access plastic strain data.
-    """
-    data = get_legacy_data('plastic_strain')
-    if not data:
-        return None
-    strain_fig, rate_fig = build_plastic_strain_figures()
-    return html.Div([
-        html.Div([
-            html.Span(className='dataset-accent'),
-            html.H3('Plastic Strain Insights', className='dataset-title')
-        ], className='dataset-header'),
-        html.Div([
-            dcc.Graph(id='plastic-strain-eps', figure=strain_fig, className='textdata-plot'),
-            dcc.Graph(id='plastic-strain-rate', figure=rate_fig, className='textdata-plot')
-        ], className='textdata-graphs')
-    ], className='dataset-block textdata-card')
-
-
-def build_plastic_strain_figures():
-    """LEGACY - Helper for build_plastic_strain_card()"""
-    data = get_legacy_data('plastic_strain')
-    times = data['times']
-    eps = data['epsilons']
-    rates = data['rates']
-    strain_traces = []
-    for name, values in sorted(eps.items()):
-        display = name.replace('_', ' ').title()
-        strain_traces.append(go.Scatter(
-            x=times,
-            y=values,
-            mode='lines',
-            line=dict(width=2),
-            name=display
-        ))
-    rate_traces = []
-    for name, values in sorted(rates.items()):
-        display = name.replace('_', ' ').title()
-        rate_traces.append(go.Scatter(
-            x=times,
-            y=values,
-            mode='lines',
-            line=dict(width=2),
-            name=display
-        ))
-    strain_fig = go.Figure(data=strain_traces)
-    strain_fig.update_layout(
-        margin=dict(l=50, r=30, t=40, b=60),
-        height=320,
-        template='plotly_white',
-        legend=dict(orientation='h', yanchor='bottom', y=-0.3)
-    )
-    rate_fig = go.Figure(data=rate_traces)
-    rate_fig.update_layout(
-        margin=dict(l=50, r=30, t=40, b=60),
-        height=320,
-        template='plotly_white',
-        legend=dict(orientation='h', yanchor='bottom', y=-0.3)
-    )
-    for fig, y_title in ((strain_fig, "Strain"), (rate_fig, "Strain Rate")):
-        fig.update_xaxes(
-            title="Time",
-            title_font=dict(size=16, family='Inter, sans-serif', color='#12294f'),
-            tickfont=dict(size=13, family='Inter, sans-serif', color='#0f1b2b')
-        )
-        fig.update_yaxes(
-            title=y_title,
-            title_font=dict(size=16, family='Inter, sans-serif', color='#12294f'),
-            tickfont=dict(size=13, family='Inter, sans-serif', color='#0f1b2b')
-        )
-    return strain_fig, rate_fig
-
 
 print(f"[{time.time()-_start_time:.2f}s] Building app layout...")
 app.layout = dmc.MantineProvider(
