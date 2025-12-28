@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;600;700&display=swap');
 
 :root {
     /* Brand Colors (Preserved) */
@@ -34,7 +34,8 @@
 body {
     margin: 0;
     padding: 0;
-    font-family: 'Inter', sans-serif;
+    font-family: 'Roboto Condensed', sans-serif;
+    font-size: 16.5px;
     background: var(--bg-gradient);
     color: var(--text-main);
     min-height: 100vh;
@@ -85,6 +86,17 @@ body {
     display: flex;
     align-items: center;
     gap: 16px;
+}
+
+.app-title-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    padding: 6px 14px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 10px;
+    box-shadow: 0 6px 16px rgba(5, 10, 20, 0.18);
 }
 
 .top-right {
@@ -139,20 +151,21 @@ body {
 }
 
 .vtk-container {
-  display: flex;
-  align-items: center;
+    display: flex;
+    align-items: center;
 }
 
 .vtk-container-first {
-  flex: 1;
+    flex: 1;
 }
 
 .vtk-container-second {
-  margin-left: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end; /* right-aligned */
-  gap: 6px;
+    margin-left: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    /* right-aligned */
+    gap: 6px;
 }
 
 .vtk-folder-section {
@@ -261,7 +274,7 @@ body {
     box-shadow: none;
 }
 
-.vtk-tab + .vtk-tab {
+.vtk-tab+.vtk-tab {
     border-left: 1px solid #cbd3e2;
     padding-left: 14px !important;
     margin-left: 8px;
@@ -322,7 +335,7 @@ body {
     max-height: calc(100vh - 160px);
 }
 
-.doc-sidebar .toc > ul {
+.doc-sidebar .toc>ul {
     list-style: none;
     padding-left: 0;
     margin: 0;
@@ -331,7 +344,7 @@ body {
 .doc-sidebar .toc ul ul {
     list-style: none;
     padding-left: 18px;
-    border-left: 2px solid rgba(255,255,255,0.15);
+    border-left: 2px solid rgba(255, 255, 255, 0.15);
     margin-top: 6px;
 }
 
@@ -370,11 +383,11 @@ h1.app-title {
     flex: 1;
 }
 
-#app-container > .vtk-folder-section {
+#app-container>.vtk-folder-section {
     padding-bottom: 0;
 }
 
-#app-container > .vtk-folder-section + .layout-shell {
+#app-container>.vtk-folder-section+.layout-shell {
     margin-top: 0;
 }
 
@@ -386,7 +399,7 @@ h1.app-title {
     backdrop-filter: var(--glass-blur);
     border-right: 2px solid var(--surface-border);
     border-radius: 0;
-    padding: 24px 16px;
+    padding: 24px 20px;  /* Increased left/right padding to accommodate tab negative margins */
     box-shadow: 2px 0 12px rgba(24, 53, 104, 0.08);
     display: flex;
     flex-direction: column;
@@ -410,6 +423,11 @@ h1.app-title {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.folder-tabs {
+    padding-top: 6px;
+    padding-bottom: 8px;
 }
 
 /* Tabs */
@@ -493,10 +511,37 @@ h1.app-title {
 }
 
 /* Dataset Grid - 2x2 Layout */
+/* Dataset Grid - 2x2 Layout */
 .dataset-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    /* Use minmax(0, 1fr) to force equal width columns regardless of inner content size */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
+}
+
+/* ... (skipping unchanged blocks) ... */
+
+.control-pair {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 300px;
+    /* Increased from 260px: wider base size, wraps sooner */
+    min-width: 0;
+    /* Prevent flex items from overflowing container */
+}
+
+.control-pair .field-label {
+    margin-bottom: 0;
+    /* Override default field-label margin */
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
+.control-pair .dropdown-wrapper {
+    flex: 1;
+    min-width: 120px;
+    /* Increased from 170px: ensures dropdowns are not too small */
 }
 
 .dataset-block {
@@ -696,10 +741,13 @@ h1.app-title {
 
 .comparison-heatmap-title-spacer {
     width: 70px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .comparison-heatmap-remove {
-    border: 1px solid rgba(0,0,0,0.35);
+    border: 1px solid rgba(0, 0, 0, 0.35);
     background: transparent;
     color: inherit;
     border-radius: 4px;
@@ -708,6 +756,15 @@ h1.app-title {
     line-height: 18px;
     padding: 0;
     cursor: pointer;
+}
+
+.comparison-heatmap-download-all {
+    padding: 2px 6px;
+}
+
+.comparison-heatmap-download-all img.btn-icon {
+    width: 12px;
+    height: 12px;
 }
 
 .textdata-card .dataset-body {
@@ -1102,12 +1159,12 @@ h1.app-title {
     box-shadow: 0 2px 8px rgba(15, 27, 43, 0.2);
 }
 
-.fullscale-switch input:checked + span::before {
+.fullscale-switch input:checked+span::before {
     background: linear-gradient(120deg, #c50623, #fa6566);
     box-shadow: 0 4px 12px rgba(197, 6, 35, 0.35);
 }
 
-.fullscale-switch input:checked + span::after {
+.fullscale-switch input:checked+span::after {
     transform: translate(26px, -50%);
 }
 
@@ -1123,7 +1180,7 @@ h1.app-title {
     display: block;
 }
 
-.dropdown-wrapper > div {
+.dropdown-wrapper>div {
     width: 100%;
 }
 
@@ -1132,7 +1189,7 @@ h1.app-title {
     width: 100%;
     height: auto;
     font-size: 0.85rem;
-    font-family: 'Inter', sans-serif;
+    font-family: inherit;
 }
 
 .dropdown-wrapper .Select-control,
@@ -1141,7 +1198,7 @@ h1.app-title {
 .dropdown-wrapper .Select-option,
 .dropdown-wrapper .Select-placeholder {
     font-size: 0.85rem !important;
-    font-family: 'Inter', sans-serif !important;
+    font-family: inherit !important;
 }
 
 /* Hide selected pills in comparison file pickers.
@@ -1155,10 +1212,12 @@ h1.app-title {
     padding: 0 !important;
     margin: 0 !important;
 }
+
 .comparison-file-picker .Select-multi-value-wrapper {
     max-height: 0 !important;
     padding: 0 !important;
 }
+
 .comparison-file-picker .Select--multi .Select-input {
     margin-left: 0 !important;
     padding: 0 !important;
@@ -1171,6 +1230,7 @@ h1.app-title {
     display: none !important;
     visibility: hidden !important;
 }
+
 .comparison-file-picker [class*="Select__multi-value"] {
     display: none !important;
 }
@@ -1255,7 +1315,7 @@ h1.app-title {
 .range-value {
     font-size: 0.75rem;
     font-weight: 600;
-    font-family: 'Courier New', monospace;
+    font-family: inherit;
     padding: 2px 6px;
     border-radius: 4px;
     background: linear-gradient(135deg, #f0f4f8 0%, #ffffff 100%);
@@ -1299,7 +1359,7 @@ h1.app-title {
 
 /* Dash RangeSlider uses different class names */
 .range-slider-dual .rc-slider,
-.range-slider-dual > div {
+.range-slider-dual>div {
     height: 6px;
 }
 
@@ -1453,6 +1513,7 @@ h1.app-title {
 .inline-range .range-row {
     flex: 1;
 }
+
 .range-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
@@ -1538,7 +1599,7 @@ input[type="text"] {
 
 /* Prevent parent containers from clipping dropdown menus */
 .dropdown-wrapper,
-.dropdown-wrapper > div,
+.dropdown-wrapper>div,
 .comparison-control-row,
 .comparison-controls-grid,
 .controls-grid-row,
@@ -1661,10 +1722,13 @@ input:focus,
 
 .heatmap-wrapper {
     width: 100%;
-    flex: 1;                   /* fill all remaining space below header */
+    flex: 1;
+    /* fill all remaining space below header */
     display: flex;
-    justify-content: center;   /* center horizontally */
-    align-items: center;       /* center vertically */
+    justify-content: center;
+    /* center horizontally */
+    align-items: center;
+    /* center vertically */
 }
 
 
@@ -1677,6 +1741,7 @@ input:focus,
     gap: 8px;
     width: max-content;
 }
+
 .heatmap-logo-card,
 .heatmap-main-card,
 .heatmap-colorbar-card {
@@ -1709,12 +1774,14 @@ input:focus,
 
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;   /* puts the logo at the bottom */
+    justify-content: flex-end;
+    /* puts the logo at the bottom */
     align-items: flex-end;
 }
 
 .heatmap-logo {
-    width: 50%;     /* or 80%, or any size you want */
+    width: 50%;
+    /* or 80%, or any size you want */
     height: auto;
 }
 
@@ -1861,6 +1928,7 @@ input:focus,
 }
 
 @media (max-width: 1200px) {
+
     /* Hide tab labels, show only icons */
     .custom-tab .tab-label {
         display: none;
@@ -1938,14 +2006,279 @@ input:focus,
     }
 }
 
-/* Project folder dropdown styling */
-.project-folder-label {
-    color: #12294f;
-    font-size: 13px;
+/* Project folder dropdown styling - REMOVED Phase 14
+   Replaced by .project-checkboxes and related classes (see Projects Sidebar Section below) */
+
+/* ============================================================================
+   Projects Sidebar Section - Phase 14
+   ============================================================================ */
+
+.sidebar-projects-section {
+    margin-bottom: 24px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.sidebar-projects-title {
+    font-size: 0.85rem;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.6);
+    margin: 0 0 12px 0;
+}
+
+.project-checkboxes {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+    padding-right: 8px;
+    padding-left: 6px;
+}
+
+.project-checkboxes label {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 1.05rem;
+    padding: 4px 0;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.project-checkboxes label:hover {
+    color: rgba(255, 255, 255, 1);
+}
+
+.project-checkboxes input[type="checkbox"] {
+    margin-right: 10px;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 2px solid #c95a6a;
+    background: #ffffff;
+    box-shadow: none;
+    display: inline-grid;
+    place-content: center;
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.project-checkboxes input[type="checkbox"]:hover {
+    transform: scale(1.05);
+}
+
+.project-checkboxes input[type="checkbox"]:active {
+    transform: scale(0.95);
+}
+
+.project-checkboxes input[type="checkbox"]:focus {
+    outline: none;
+    box-shadow: 0 0 0 4px #f3c9cf;
+}
+
+.project-checkboxes input[type="checkbox"]:checked {
+    background: #c50623;
+    border-color: #c50623;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M5 12l4 4L19 6' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
+}
+
+.project-checkbox-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-start;
+    font-size: 0.8rem;
+}
+
+.project-checkbox-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: rgba(255, 255, 255, 0.7);
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
     font-weight: 500;
+    transition: all 0.2s ease;
     white-space: nowrap;
 }
 
-.project-folder-dropdown .Select-control {
-    font-size: 13px;
+.project-checkbox-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.5);
+    color: rgba(255, 255, 255, 1);
+}
+
+.project-controls-separator {
+    color: rgba(255, 255, 255, 0.3);
+    margin: 0 4px;
+}
+
+/* Responsive Controls Update - Phase 15 */
+@media (max-width: 1200px) {
+
+    /* Ensure cards wrap to single column (redundant with 1400px rule but safe) */
+    .dataset-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Force controls to wrap inside cards */
+    .controls-grid-row {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 8px;
+    }
+
+    .controls-grid-row>.field-label {
+        width: auto;
+        min-width: max-content;
+    }
+
+
+    .controls-grid-row>.dropdown-wrapper {
+        min-width: 140px;
+        flex: 1;
+        /* Allow dropdowns to grow */
+    }
+}
+
+/* Phase 16 - Flexible Controls Layout */
+.controls-flex-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 10px;
+    border-radius: 10px;
+    transition: background-color 0.2s ease;
+}
+
+.controls-flex-row:hover {
+    background-color: rgba(24, 53, 104, 0.02);
+}
+
+.control-pair {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 300px;
+    min-width: 0;
+}
+
+.control-pair .field-label {
+    margin-bottom: 0;
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
+.control-pair .dropdown-wrapper {
+    flex: 1;
+    min-width: 220px;
+}
+
+/* Ensure subsequent rows (Range, Slider) stay as Grids */
+.range-row-extended {
+    display: grid !important;
+    /* Grid columns are defined in line 924: grid-template-columns: max-content minmax(140px, 1.2fr) minmax(140px, 1.2fr) auto auto; */
+    /* Add explicit grid property here in case it isn't inherited */
+}
+
+/* =============================================================================
+   DYNAMIC TAB MANAGEMENT - Module Dropdown & Tab Headers
+   ============================================================================= */
+
+/* Module selector dropdown in sidebar */
+.module-selector-dropdown {
+    width: 100%;
+    margin: 10px 0;
+}
+
+.sidebar-module-selector {
+    margin-bottom: 20px;
+}
+
+/* Vertical tab headers in sidebar */
+.sidebar-tab-headers {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 15px;
+    width: 100%;
+}
+
+/* Individual tab header - EXACT match to old custom-tab style */
+.tab-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 12px 5px 19px;
+    margin: 0 -12px;
+    box-sizing: border-box;
+    border-radius: 12px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 600;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+    width: 100%;
+}
+
+.tab-header:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+}
+
+.tab-header.active {
+    background: rgba(0, 0, 0, 0.45);
+    color: #ffffff;
+    box-shadow: inset 5px 0 0 #c50623;  /* Red left border - EXACT match */
+    border-radius: 12px;
+}
+
+.tab-header .tab-icon {
+    flex-shrink: 0;
+}
+
+.tab-header .tab-label {
+    flex: 1;
+    text-align: left;
+    padding-right: 10px;
+}
+
+/* Close button on tab */
+.tab-close-btn {
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 18px;
+    line-height: 1;
+    padding: 4px 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    opacity: 0.6;
+    flex-shrink: 0;
+}
+
+.tab-close-btn:hover {
+    color: #ff4444;
+    opacity: 1;
+    transform: scale(1.2);
+}
+
+.tab-header.active .tab-close-btn {
+    color: #999;
+    opacity: 1;
+}
+
+.tab-header.active .tab-close-btn:hover {
+    color: #ff4444;
 }

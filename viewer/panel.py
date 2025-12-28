@@ -169,6 +169,9 @@ class ViewerPanel:
             reader_factory: callable returning VTKReader for a file path
             tab_config (dict): configuration for this tab
         """
+        import time
+        _panel_start = time.time()
+
         self.app = app
         overrides = tab_config.get("overrides") or {}
         self.config = {**DEFAULTS, **overrides}
@@ -210,13 +213,17 @@ class ViewerPanel:
 
         initial_scalar = self.scalar_defs[0]['value']
         if self.reader and self.file_path:
+            state_start = time.time()
             self.base_state = self._build_state(self.reader, self.file_path, initial_scalar)
+            print(f"        [ViewerPanel] State built in {time.time()-state_start:.3f}s")
             self.initial_slider_max = self._max_slice_index(self.reader)
             self.initial_slider_disabled = not self.reader.is_3d
             # Precompute an initial figure bundle so dynamically inserted layouts render immediately
             # (Dash does not always fire callbacks on first mount for newly added components).
             try:
+                heatmap_start = time.time()
                 self.initial_heatmap_bundle = self._build_heatmap_figures(self.reader, self.base_state, self.file_path)
+                print(f"        [ViewerPanel] Initial heatmap built in {time.time()-heatmap_start:.3f}s")
             except Exception:
                 self.initial_heatmap_bundle = {"figure": go.Figure(), "colorbar": go.Figure(), "scaled_stats": {"min": 0.0, "max": 1.0}, "fig_width": 600}
         else:
@@ -237,7 +244,10 @@ class ViewerPanel:
             self.initial_slider_disabled = True
             self.initial_heatmap_bundle = {"figure": go.Figure(), "colorbar": go.Figure(), "scaled_stats": {"min": 0.0, "max": 1.0}, "fig_width": 600}
 
+        callback_start = time.time()
         self.register_callbacks()
+        print(f"        [ViewerPanel] Callbacks registered in {time.time()-callback_start:.3f}s")
+        print(f"        [ViewerPanel] Total init time: {time.time()-_panel_start:.3f}s")
 
     def cid(self, suffix: str) -> str:
         """Component id helper."""
@@ -259,7 +269,7 @@ class ViewerPanel:
             options.append({"label": name, "value": value})
         return options
 
-    def _colorscale_params(self, Z_grid, state: ViewerState):
+    def _colorscale_params(self, Z_grid, state: ViewerState, data_limits=None):
         """Compute colorscale and z-range settings for the current state."""
 
         # Special case: Interfaces (band) – render interfaces in a single
@@ -278,9 +288,13 @@ class ViewerPanel:
         colors = self.PALETTES.get(state.palette, self.PALETTES["aqua-fire"])
 
         if state.colorscale_mode == "dynamic":
-            # Dynamic mode: use full data range
-            data_min = float(np.nanmin(Z_grid))
-            data_max = float(np.nanmax(Z_grid))
+            # Dynamic mode: use full data range (or provided global limits)
+            if data_limits and len(data_limits) == 2:
+                data_min = float(data_limits[0])
+                data_max = float(data_limits[1])
+            else:
+                data_min = float(np.nanmin(Z_grid))
+                data_max = float(np.nanmax(Z_grid))
 
             blue_cut = state.range_min
             red_cut = state.range_max
@@ -334,7 +348,7 @@ class ViewerPanel:
                             side="right",
                             font=dict(
                                 size=20,
-                                family="Montserrat, Arial, sans-serif",
+                                family="Roboto Condensed, sans-serif",
                                 color="#0f1b2b",
                             ),
                         ),
@@ -349,7 +363,7 @@ class ViewerPanel:
                         ticks="outside",
                         tickfont=dict(
                             size=16,
-                            family="Montserrat, Arial, sans-serif",
+                            family="Roboto Condensed, sans-serif",
                             color="#0f1b2b",
                         ),
                     ),
@@ -368,7 +382,8 @@ class ViewerPanel:
         )
         return colorbar_fig
 
-    def _build_heatmap_figures(self, reader, state: ViewerState, file_path: str, slice_data=None):
+    def _build_heatmap_figures(self, reader, state: ViewerState, file_path: str, slice_data=None, data_limits=None):
+        debug = bool(os.environ.get("OPVIEW_DEBUG"))
         descriptor = self.scalar_map.get(state.scalar_key) or self.scalar_defs[0]
         if slice_data is None:
             slice_data = reader.get_interpolated_slice(
@@ -381,7 +396,7 @@ class ViewerPanel:
         X_grid, Y_grid, Z_grid, stats = slice_data
         scale = descriptor.get('scale', 1.0) or 1.0
         Z_grid = Z_grid * scale
-        colorscale, Z_display, zmin_display, zmax_display, zmid_display = self._colorscale_params(Z_grid, state)
+        colorscale, Z_display, zmin_display, zmax_display, zmid_display = self._colorscale_params(Z_grid, state, data_limits=data_limits)
         nx, ny = self._slice_dimensions(reader, state.axis)
         effective_height = 380 - 40
         aspect = nx / max(ny, 1)
@@ -393,12 +408,64 @@ class ViewerPanel:
         )
         colorbar_fig = self._build_colorbar_figure(zmin_display, zmax_display, colorscale, state)
         scaled_stats = {k: stats[k] * scale for k in stats}
+
+        # Optional: add Interfaces (band) overlay on top of any field.
+
+        if state.interfaces_overlay_visible:
+            try:
+                phase_file = self._phase_overlay_file(file_path)
+                # if debug:
+
+                phase_reader = self.reader_factory(phase_file)
+                X_i, Y_i, Z_i, _ = phase_reader.get_interpolated_slice(
+                    axis=state.axis,
+                    index=state.slice_index,
+                    scalar_name="Interfaces",
+                    component=None,
+                    resolution=self.config["interpolation_resolution"],
+                )
+
+                # Use thick interface band (1.5 to 3.5) with smooth interpolated edges
+                band_min, band_max = 1.5, 3.5
+                # if debug:
+
+
+                # Switch to Contours for smoother edges
+                figure.add_trace(go.Contour(
+                    x=X_i[0, :],
+                    y=Y_i[:, 0],
+                    z=Z_i,  # Use original data
+                    contours=dict(
+                        coloring='fill',
+                        start=band_min,
+                        end=band_max,
+                        size=0.5,     # Step size: creates bands at 1.5, 2.0, 2.5, 3.0
+                        showlabels=False,
+                    ),
+                    colorscale=[
+                        [0.0, "rgba(0,0,0,0)"],      # Below band_min
+                        [0.01, "rgba(0,0,0,0.8)"],   # Start of band (semi-transparent black)
+                        [0.5, "rgba(0,0,0,1)"],      # Middle of band (solid black)
+                        [0.99, "rgba(0,0,0,0.8)"],   # End of band
+                        [1.0, "rgba(0,0,0,0)"]       # Above band_max
+                    ],
+                    showscale=False,
+                    hoverinfo="skip",
+                    opacity=1.0,
+                    line=dict(width=0) # No contour lines, just fill
+                ))
+            except Exception as e:
+                # Silently catch overlay errors (e.g. file missing)
+
+                pass
+
         return {
             "figure": figure,
             "colorbar": colorbar_fig,
             "scaled_stats": scaled_stats,
             "fig_width": fig_width,
         }
+
 
     def _slice_dimensions(self, reader, axis: str):
         """Return (nx, ny) for the current slice based on the original mesh dimensions.
@@ -476,6 +543,7 @@ class ViewerPanel:
                 Input('projects-store', 'data'),
                 Input(self.cid('project'), 'value'),
                 State(self.cid('time'), 'value'),
+                # Note: No prevent_initial_call - this callback MUST fire to populate project picker
             )
             def _sync_project_and_files(projects_store, selected_project, selected_file):
                 store = projects_store or {}
@@ -577,6 +645,7 @@ class ViewerPanel:
             *outputs,
             *inputs,
             State(self.cid('state'), 'data'),
+            prevent_initial_call=True
         )
         def _update_viewer(*args):
             debug = bool(os.environ.get("OPVIEW_DEBUG"))
@@ -736,6 +805,12 @@ class ViewerPanel:
             state = ViewerState.from_dict(stored_state, fallback_state)
             triggered = ctx.triggered_id
             range_needs_reset = False
+
+            # Force range reset if the file has changed (mismatch between state and current file)
+            if state.file_path != file_path:
+                range_needs_reset = True
+                # Update state to track the new file immediately
+                state.file_path = file_path
 
             if triggered == self.cid('reset'):
                 state = replace(fallback_state)
@@ -914,35 +989,7 @@ class ViewerPanel:
                 "height": "380px",
             }
 
-            # Optional: add Interfaces (band) overlay on top of any field.
-            if state.interfaces_overlay_visible:
-                try:
-                    phase_file = self._phase_overlay_file(file_path)
-                    phase_reader = self.reader_factory(phase_file)
-                    X_i, Y_i, Z_i, _ = phase_reader.get_interpolated_slice(
-                        axis=state.axis,
-                        index=state.slice_index,
-                        scalar_name="Interfaces",
-                        component=None,
-                        resolution=self.config["interpolation_resolution"],
-                    )
 
-                    band_min, band_max = 1.5, 3.5
-                    mask = (Z_i >= band_min) & (Z_i <= band_max)
-                    Z_band = np.where(mask, 1.0, np.nan)
-                    figure.add_trace(go.Heatmap(
-                        x=X_i[0, :],
-                        y=Y_i[:, 0],
-                        z=Z_band,
-                        colorscale=[[0.0, "#000000"], [1.0, "#000000"]],
-                        zmin=0.0,
-                        zmax=1.0,
-                        showscale=False,
-                        hoverinfo="skip",
-                        hovertemplate=None,
-                    ))
-                except Exception:
-                    pass
             map_title = self._build_map_title(state)
             click_info = self._build_click_info(state)
 
@@ -1057,6 +1104,7 @@ class ViewerPanel:
                 Input(self.cid('histogramField'), 'value'),
                 Input(self.cid('histogramBins'), 'value'),
                 State(self.cid('state'), 'data'),
+                prevent_initial_call=True
             )
             def _update_histogram(scalar_value, histogram_field, bins, stored_state):
                 state_data = stored_state or {}
@@ -1212,7 +1260,7 @@ class ViewerPanel:
                       colorscale, zmin_display, zmax_display, zmid_display, fig_width: int):
         template = 'plotly_white'
         bg_color = '#ffffff'
-        font_family = "Montserrat, Arial, sans-serif"
+        font_family = "Roboto Condensed, sans-serif"
         text_color = "#0f1b2b"
 
         fig = go.Figure(data=go.Heatmap(
@@ -1287,7 +1335,7 @@ class ViewerPanel:
 
     def _build_line_scan_figure(self, X_grid, Y_grid, Z_grid, state: ViewerState):
         """Build line scan plot figure."""
-        font_family = "Montserrat, Arial, sans-serif"
+        font_family = "Roboto Condensed, sans-serif"
         text_color = "#0f1b2b"
 
         if state.line_scan_direction == 'horizontal':
@@ -1355,7 +1403,7 @@ class ViewerPanel:
 
     def _build_histogram_figure(self, Z_grid, label, bins):
         """Build histogram figure."""
-        font_family = "Montserrat, Arial, sans-serif"
+        font_family = "Roboto Condensed, sans-serif"
         text_color = "#0f1b2b"
 
         # Flatten and remove NaN values
@@ -1537,18 +1585,31 @@ class ViewerPanel:
         """
         Pick the PhaseField file that matches the active timestep if available,
         otherwise fall back to the first file.
+
+        Uses 3-strategy matching to handle different digit padding conventions:
+        1. Exact match (fast path)
+        2. 8-digit padding (common PhaseField convention)
+        3. Numeric value search (robust fallback)
+
+        Looks in the same project's VTK directory as the active file.
         """
-        default = str(self._vtk_dir() / "PhaseField_00000000.vts")
         if not active_file:
+            # No active file, use generic VTK directory
+            vtk_dir = self._vtk_dir()
+            default = str(vtk_dir / "PhaseField_00000000.vts")
             return default
 
         path = Path(active_file)
+
+        # Extract VTK directory from the active file path (same project)
+        vtk_dir = path.parent
+        default = str(vtk_dir / "PhaseField_00000000.vts")
 
         # If we're already on a PhaseField file, just reuse it.
         if path.name.startswith("PhaseField_"):
             return str(path)
 
-        # Extract trailing digits from the active filename stem to build a candidate.
+        # Extract trailing digits from the active filename stem
         stem = path.stem
         digits = ""
         for ch in reversed(stem):
@@ -1557,11 +1618,33 @@ class ViewerPanel:
             elif digits:
                 break
 
-        if digits:
-            candidate = self._vtk_dir() / f"PhaseField_{digits}.vts"
-            if candidate.exists():
-                return str(candidate)
+        if not digits:
+            return default
 
+        # Strategy 1: Try exact match first (fast path)
+        exact_match = vtk_dir / f"PhaseField_{digits}.vts"
+        if exact_match.exists():
+            return str(exact_match)
+
+        # Strategy 2: Try 8-digit padding (common PhaseField convention)
+        padded_digits = digits.zfill(8)
+        padded_match = vtk_dir / f"PhaseField_{padded_digits}.vts"
+        if padded_match.exists():
+            return str(padded_match)
+
+        # Strategy 3: Search for files with matching numeric timestep
+        try:
+            timestep_int = int(digits)
+            for phase_file in vtk_dir.glob("PhaseField_*.vts"):
+                phase_stem = phase_file.stem
+                # Extract all digits from PhaseField filename
+                phase_digits = ''.join(c for c in phase_stem.split('_')[-1] if c.isdigit())
+                if phase_digits and int(phase_digits) == timestep_int:
+                    return str(phase_file)
+        except (ValueError, OSError):
+            pass
+
+        # Fall back to default if no match found
         return default
 
     def _vtk_dir(self) -> Path:
