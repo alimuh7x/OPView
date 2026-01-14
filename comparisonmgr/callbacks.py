@@ -602,7 +602,7 @@ def register_comparison_callbacks(app):
         except Exception as e:
             return f"Error with plyer: {e}"
 
-        return "Error: Please install 'easygui' (needs python3-tk) or 'plyer' (pip install plyer) to use Browse."
+        return "Error: Please install 'plyer' (pip install plyer) to use Browse."
         
         return no_update
 

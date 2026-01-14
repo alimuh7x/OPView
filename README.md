@@ -106,6 +106,7 @@ Each module has a single, well-defined responsibility for maintainability.
   - numpy, scipy
   - vtk, pyvista
   - markdown
+  - plyer (for file chooser dialogs)
 
 ## Troubleshooting
 

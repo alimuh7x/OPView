@@ -8,3 +8,4 @@ pyvista
 vtk
 markdown
 kaleido
+plyer
