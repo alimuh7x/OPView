@@ -440,7 +440,7 @@ def initialize_tab_datasets_static():
                 except Exception:
                     pass
             datasets.append((dataset["label"], panel))
-        if debug:
+        if DEBUG:
             print(f"  - Tab '{tab_id}' initialized in {time.time()-tab_start:.3f}s ({len(datasets)} panels)")
     return tab_data
 
