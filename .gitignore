@@ -9,3 +9,18 @@ venv*/
 
 # Large simulation outputs
 sample_data/*.vti
+
+# Claude-specific files
+claude.md
+.claude/
+*.skill
+
+# Generated documentation and presentations
+*_presentation.html
+ARCHITECTURE_MAP.html
+ARCHITECTURE_MAP.md
+Visual_Architecture.html
+PRESENTATION_PROMPT.md
+
+# Temporary scripts
+preview_*.sh

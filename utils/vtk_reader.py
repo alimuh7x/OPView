@@ -2,7 +2,7 @@
 VTK File Reader Utility
 Loads VTK files and extracts 2D slices for visualization
 """
-import pyvista as pv
+# pyvista imported lazily in load_file() to speed up startup
 import numpy as np
 
 
@@ -24,6 +24,9 @@ class VTKReader:
 
     def load_file(self):
         """Load VTK file using PyVista"""
+        # Lazy import - only load pyvista when first VTK file is read
+        import pyvista as pv
+
         self.mesh = pv.read(self.file_path)
 
         # Detect scalar field (first available scalar array)

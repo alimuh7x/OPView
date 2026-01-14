@@ -8,6 +8,7 @@ and support histogram, time-series, and component selection callbacks.
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 from scipy import stats
 
@@ -70,16 +71,29 @@ class StressStrainData(TensorDataSource, TimeSeriesDataSource):
             return False
 
         columns = {name: [row[idx] for row in rows] for idx, name in enumerate(header)}
+        columns_ci = {name.lower(): name for name in columns}
 
-        def col(*names):
+        def find_column_name(*names):
             for name in names:
                 if name in columns:
-                    return columns[name]
+                    return name
+                resolved = columns_ci.get(name.lower())
+                if resolved is not None:
+                    return resolved
             return None
+
+        def col(*names):
+            name = find_column_name(*names)
+            return columns.get(name) if name is not None else None
+
+        x_col = find_column_name('E_xx', 'Epsilon_xx', 'Strain', 'strain', 'epsilon_xx')
 
         # Build data structure
         self._data = {
-            'strain': col('E_xx', 'Strain', 'strain') or [],
+            'columns': columns,
+            'x_column': x_col,
+            # Support both legacy headers (E_xx) and common OP headers (Epsilon_xx).
+            'strain': col('E_xx', 'Epsilon_xx', 'Strain', 'strain', 'epsilon_xx') or [],
             'components': {
                 'Sigma_xx': col('S_xx', 'Sigma_xx', 'sigma_xx'),
                 'Sigma_yy': col('S_yy', 'Sigma_yy', 'sigma_yy'),
@@ -90,7 +104,7 @@ class StressStrainData(TensorDataSource, TimeSeriesDataSource):
                 'Mises': col('Mises', 'vonMises', 'von_mises'),
             },
             'strain_components': {
-                'Epsilon_xx': col('E_xx', 'Strain', 'strain'),
+                'Epsilon_xx': col('E_xx', 'Epsilon_xx', 'Strain', 'strain', 'epsilon_xx'),
                 'Epsilon_yy': col('E_yy', 'Epsilon_yy', 'epsilon_yy'),
                 'Epsilon_zz': col('E_zz', 'Epsilon_zz', 'epsilon_zz'),
             }
@@ -101,28 +115,70 @@ class StressStrainData(TensorDataSource, TimeSeriesDataSource):
         self._data['strain_components'] = {k: v for k, v in self._data['strain_components'].items() if v is not None}
 
         self._loaded = True
-        return bool(self._data['components'])
+        # Consider this data available if we have an x-axis and at least one other column.
+        has_x = bool(self._data.get('strain'))
+        has_y = len(columns.keys()) > (1 if x_col in columns else 0)
+        return has_x and has_y
+
+    def get_component_options(self) -> List[Dict[str, str]]:
+        """Expose all file columns as selectable series (except the x-axis)."""
+        if not self.is_available:
+            return []
+
+        columns: Dict[str, Any] = self._data.get('columns', {}) or {}
+        x_col = self._data.get('x_column')
+
+        options = []
+        for name in columns.keys():
+            if name == x_col:
+                continue
+            options.append({'label': name, 'value': name})
+        return options
 
     def get_default_components(self) -> List[str]:
         """Default to showing σ_xx and von Mises"""
-        return ['Sigma_xx', 'Mises']
+        if not self.is_available:
+            return ['Sigma_xx', 'Mises']
+
+        columns = list((self._data.get('columns', {}) or {}).keys())
+        x_col = self._data.get('x_column')
+        candidates = [c for c in columns if c != x_col]
+
+        preferred = [c for c in ('Sigma_xx', 'Mises') if c in candidates]
+        if preferred:
+            return preferred
+        return candidates[:2]
 
     def _get_component_values(self, component: str) -> Optional[np.ndarray]:
         """Get strain or stress values for a component"""
         if not self.is_available:
             return None
-        comps = self._data.get('components', {})
-        if component in comps:
+        columns = self._data.get('columns', {}) or {}
+        if component in columns:
+            return np.array(columns[component])
+
+        # Backward compatibility for callers that use canonical tensor component keys.
+        comps = self._data.get('components', {}) or {}
+        if component in comps and comps[component] is not None:
             return np.array(comps[component])
+
         return None
+
+    def _scale_series(self, name: str, values: np.ndarray) -> Tuple[np.ndarray, str]:
+        lname = (name or "").lower()
+        if any(token in lname for token in ("sigma", "mises", "pressure")):
+            return values / 1e6, "Stress (MPa)"
+        if any(token in lname for token in ("epsilon", "strain")) or lname.startswith("e_"):
+            return values * 100.0, "Strain (%)"
+        return values, "Value"
 
     def build_figure(self, components: List[str]) -> go.Figure:
         """Build stress-strain figure for selected components"""
         if not self.is_available:
             return go.Figure()
 
+        x_col = self._data.get('x_column') or "Strain"
         strain = np.array(self._data['strain']) * 100.0  # Convert to percent
-        comp_map = self._data['components']
         labels = {
             "Sigma_xx": "σ_xx",
             "Sigma_yy": "σ_yy",
@@ -132,15 +188,19 @@ class StressStrainData(TensorDataSource, TimeSeriesDataSource):
 
         selected = components or self.get_default_components()
         traces = []
+        y_axis_titles = set()
         for comp in selected:
-            values = comp_map.get(comp)
-            if values is None:
+            values = self._get_component_values(comp)
+            if values is None or len(values) == 0:
                 continue
+            y_scaled, y_title = self._scale_series(comp, np.asarray(values, dtype=float))
+            y_axis_titles.add(y_title)
             traces.append(go.Scatter(
                 x=strain,
-                y=np.array(values) / 1e6,  # Convert to MPa
-                mode='lines',
-                line=dict(width=2),
+                y=y_scaled,
+                mode='lines+markers',
+                line=dict(width=1.5),
+                marker=dict(size=6, line=dict(width=0)),
                 name=labels.get(comp, comp)
             ))
 
@@ -750,3 +810,151 @@ class PlasticStrainData(TimeSeriesDataSource):
             return None
         data = self._data.get('data', {})
         return np.array(data.get(component, [])) if component in data else None
+
+
+class GenericTextDataSource:
+    """Generic data source for any CSV/space-delimited text file.
+
+    Auto-detects file format and provides dynamic column selection for plotting.
+    Supports both comma-delimited and space-delimited formats with automatic
+    time column detection.
+
+    This is a standalone class that does not inherit from the abstract DataSource
+    base classes, as it's designed to work with arbitrary text files with
+    unknown structure.
+    """
+
+    def __init__(self, file_path: Path, file_name: str = None):
+        """
+        Initialize generic text data source.
+
+        Args:
+            file_path: Path to text file
+            file_name: Display name (optional, uses filename if not provided)
+        """
+        self.file_path = file_path
+        self.file_name = file_name or file_path.name
+        self._columns = []
+        self._data = None
+        self._loaded = False
+
+    def load(self) -> bool:
+        """Load CSV/space-delimited file and auto-detect format.
+
+        Tries comma separator first. If no commas found in header,
+        falls back to whitespace separator (for files like StressStrainFile.txt).
+
+        Returns:
+            True if data loaded successfully, False otherwise
+        """
+        if not self.file_path.exists():
+            self._loaded = True
+            return False
+
+        try:
+            # Read first line to check format
+            with open(self.file_path, 'r') as f:
+                first_line = f.readline().strip()
+
+            # If comma found in header, use comma separator
+            if ',' in first_line:
+                self._data = pd.read_csv(self.file_path, sep=',')
+            else:
+                # No commas - use whitespace separator (for stress-strain files, etc.)
+                self._data = pd.read_csv(self.file_path, sep=r'\s+')
+
+        except Exception as e:
+            print(f"[GenericTextDataSource] Failed to load {self.file_path}: {e}")
+            self._loaded = True
+            return False
+
+        # Clean column names (strip whitespace)
+        self._data.columns = self._data.columns.str.strip()
+
+        # Store available columns (excluding time column)
+        time_cols = ['Time', 'TimeStep', 'time', 'timestep']
+        self._columns = [col for col in self._data.columns if col not in time_cols]
+
+        self._loaded = True
+        return True
+
+    @property
+    def is_available(self) -> bool:
+        """Check if data is available."""
+        return self.file_path.exists() and self._data is not None
+
+    def get_available_columns(self) -> List[str]:
+        """Get list of plottable columns.
+
+        Returns:
+            List of column names (excluding time column)
+        """
+        return self._columns
+
+    def get_time_column(self) -> str:
+        """Detect and return time column name.
+
+        Returns:
+            Name of time column, or first column if no time column found
+        """
+        time_cols = ['Time', 'TimeStep', 'time', 'timestep']
+        for col in time_cols:
+            if col in self._data.columns:
+                return col
+        # Default to first column if no time column found
+        return self._data.columns[0]
+
+    def build_figure(self, selected_columns: List[str], **kwargs):
+        """Build time-series plot for selected columns.
+
+        Args:
+            selected_columns: List of column names to plot
+            **kwargs: Additional keyword arguments (unused, for interface compatibility)
+
+        Returns:
+            Plotly figure object
+        """
+        if not self.is_available or not selected_columns:
+            return go.Figure()
+
+        time_col = self.get_time_column()
+        time_data = self._data[time_col]
+
+        fig = go.Figure()
+
+        # Color palette for multiple series
+        colors = [
+            '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+            '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+        ]
+
+        for idx, col in enumerate(selected_columns):
+            if col in self._data.columns:
+                color = colors[idx % len(colors)]
+                fig.add_trace(go.Scatter(
+                    x=time_data,
+                    y=self._data[col],
+                    mode='lines+markers',
+                    name=col,
+                    line=dict(width=2, color=color),
+                    marker=dict(size=4, color=color)
+                ))
+
+        fig.update_layout(
+            title=f"{self.file_name} - Time Series",
+            xaxis_title=time_col,
+            yaxis_title="Value",
+            hovermode='x unified',
+            template='plotly_white',
+            showlegend=True,
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01,
+                bgcolor='rgba(255, 255, 255, 0.8)'
+            ),
+            margin=dict(l=60, r=30, t=50, b=50)
+        )
+
+        return fig

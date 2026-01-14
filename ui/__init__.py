@@ -77,6 +77,18 @@ from .cards import (
 # UI Manager
 from .ui_manager import UIManager
 
+# Layout builder
+from .layout import build_app_layout
+
+# Graphs tab
+from .graphs import (
+    build_graphs_tab_layout,
+    build_graph_card,
+    get_textdata_files,
+    build_multifile_panel,
+    build_multifile_figure,
+)
+
 # Callback factories
 from .callbacks import (
     create_histogram_callback,
@@ -143,6 +155,16 @@ __all__ = [
 
     # UI Manager
     'UIManager',
+
+    # Layout
+    'build_app_layout',
+
+    # Graphs tab
+    'build_graphs_tab_layout',
+    'build_graph_card',
+    'get_textdata_files',
+    'build_multifile_panel',
+    'build_multifile_figure',
 
     # Callback API
     'create_histogram_callback',

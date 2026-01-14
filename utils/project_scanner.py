@@ -9,12 +9,13 @@ from pathlib import Path
 from typing import Dict, List, Any
 
 
-def scan_project_folders(base_path: Path = None) -> Dict[str, Dict[str, Any]]:
+def scan_project_folders(base_path: Path = None, quick_scan: bool = True) -> Dict[str, Dict[str, Any]]:
     """
     Scan the current directory for folders containing VTK or TextData subdirectories.
 
     Args:
         base_path: Directory to scan (defaults to current working directory)
+        quick_scan: If True, skip file counting for faster startup (default: True)
 
     Returns:
         Dictionary mapping folder names to their contents:
@@ -25,8 +26,8 @@ def scan_project_folders(base_path: Path = None) -> Dict[str, Dict[str, Any]]:
                 'has_textdata': True/False,
                 'vtk_path': Path to VTK folder or None,
                 'textdata_path': Path to TextData folder or None,
-                'vtk_file_count': number of VTK files,
-                'textdata_file_count': number of text data files
+                'vtk_file_count': number of VTK files (or -1 if quick_scan),
+                'textdata_file_count': number of text data files (or -1 if quick_scan)
             },
             ...
         }
@@ -63,21 +64,26 @@ def scan_project_folders(base_path: Path = None) -> Dict[str, Dict[str, Any]]:
 
         # Only include folders that have at least VTK or TextData
         if has_vtk or has_textdata:
-            # Count files
-            vtk_count = 0
-            if has_vtk:
-                vtk_count = sum(
-                    1 for f in vtk_path.iterdir()
-                    if f.is_file() and f.suffix.lower() in ALLOWED_VTK_EXTENSIONS
-                )
+            # Count files (skip if quick_scan for faster startup)
+            if quick_scan:
+                vtk_count = -1
+                textdata_count = -1
+            else:
+                vtk_count = 0
+                if has_vtk:
+                    vtk_count = sum(
+                        1 for f in vtk_path.iterdir()
+                        if f.is_file() and f.suffix.lower() in ALLOWED_VTK_EXTENSIONS
+                    )
 
-            textdata_count = 0
-            if has_textdata:
-                textdata_count = sum(
-                    1 for f in textdata_path.iterdir()
-                    if f.is_file() and f.suffix.lower() in ('.txt', '.dat')
-                )
+                textdata_count = 0
+                if has_textdata:
+                    textdata_count = sum(
+                        1 for f in textdata_path.iterdir()
+                        if f.is_file() and f.suffix.lower() in ('.txt', '.dat', '.csv')
+                    )
 
+            # Add parent folder (loads both VTK and TextData if both exist)
             project_folders[item.name] = {
                 'path': item,
                 'has_vtk': has_vtk,
@@ -85,8 +91,38 @@ def scan_project_folders(base_path: Path = None) -> Dict[str, Dict[str, Any]]:
                 'vtk_path': vtk_path if has_vtk else None,
                 'textdata_path': textdata_path,
                 'vtk_file_count': vtk_count,
-                'textdata_file_count': textdata_count
+                'textdata_file_count': textdata_count,
+                'is_subdirectory': False,
+                'parent_folder': None
             }
+
+            # Add VTK subdirectory as separate option (if exists)
+            if has_vtk:
+                project_folders[f"{item.name}/VTK"] = {
+                    'path': vtk_path,
+                    'has_vtk': True,
+                    'has_textdata': False,
+                    'vtk_path': vtk_path,
+                    'textdata_path': None,
+                    'vtk_file_count': vtk_count,
+                    'textdata_file_count': 0,
+                    'is_subdirectory': True,
+                    'parent_folder': item.name
+                }
+
+            # Add TextData subdirectory as separate option (if exists)
+            if has_textdata:
+                project_folders[f"{item.name}/TextData"] = {
+                    'path': textdata_path,
+                    'has_vtk': False,
+                    'has_textdata': True,
+                    'vtk_path': None,
+                    'textdata_path': textdata_path,
+                    'vtk_file_count': 0,
+                    'textdata_file_count': textdata_count,
+                    'is_subdirectory': True,
+                    'parent_folder': item.name
+                }
 
     return project_folders
 
@@ -103,11 +139,67 @@ def get_project_folder_options(discovered_folders: Dict[str, Dict[str, Any]]) ->
     """
     options = []
     for folder_name, folder_info in sorted(discovered_folders.items()):
-        vtk_count = folder_info.get('vtk_file_count', 0)
-        textdata_count = folder_info.get('textdata_file_count', 0)
-        label = f"{folder_name} ({vtk_count} VTK, {textdata_count} TextData)"
+        # Add visual indicator for subdirectories
+        if folder_info.get('is_subdirectory', False):
+            label = f"  └─ {folder_name.split('/')[-1]}"  # Indented with tree character
+        else:
+            label = folder_name
+
         options.append({'label': label, 'value': folder_name})
     return options
+
+
+def group_projects_by_parent(discovered_folders: Dict[str, Dict[str, Any]]) -> Dict[str, List[Dict[str, str]]]:
+    """
+    Group VTK/TextData folders by their parent project for hierarchical display.
+
+    Creates a grouped structure where project names are headers and VTK folders
+    are checkboxes underneath. Only subdirectories are included; parent folders
+    with no subdirectories are excluded.
+
+    Args:
+        discovered_folders: Dict from scan_project_folders() containing all discovered folders
+
+    Returns:
+        Dict mapping project names to lists of VTK folder options
+
+    Example:
+        {
+            'Project1': [
+                {'label': 'VTKFolder1', 'value': 'Project1/VTKFolder1'},
+                {'label': 'VTKFolder2', 'value': 'Project1/VTKFolder2'}
+            ],
+            'Project2': [
+                {'label': 'Results', 'value': 'Project2/Results'}
+            ]
+        }
+    """
+    grouped = {}
+
+    for folder_name, folder_info in sorted(discovered_folders.items()):
+        # Only process subdirectories (VTK/TextData folders), skip parent folders
+        if not folder_info.get('is_subdirectory', False):
+            continue
+
+        # Get parent project name
+        parent = folder_info.get('parent_folder')
+        if not parent:
+            continue
+
+        # Extract just the folder name (last part of path)
+        folder_display_name = folder_name.split('/')[-1]
+
+        # Initialize group if needed
+        if parent not in grouped:
+            grouped[parent] = []
+
+        # Add folder to parent group
+        grouped[parent].append({
+            'label': folder_display_name,  # Display: "VTKFolder1"
+            'value': folder_name            # Value: "Project1/VTKFolder1"
+        })
+
+    return grouped
 
 
 def _scan_vtk_dir(directory: Path) -> List[str]:

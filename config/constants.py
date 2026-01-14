@@ -11,8 +11,9 @@ APP_VERSION = "2.0.0"
 # Tensor components
 TENSOR_COMPONENTS = ['xx', 'yy', 'zz', 'xy', 'yz', 'zx']
 
-# Tab order for main navigation
-TAB_ORDER = ['phase-field', 'composition', 'mechanics', 'plasticity']
+# Tab order for main navigation (derived from TAB_CONFIGS - single source of truth)
+from .tabs import TAB_CONFIGS
+TAB_ORDER = [tab['id'] for tab in TAB_CONFIGS]
 
 # Folders to skip when scanning for projects
 SKIP_FOLDERS = {

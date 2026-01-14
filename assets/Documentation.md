@@ -8,6 +8,9 @@ The OpenPhase Post-Processing Suite is an interactive Dash web application for i
 - Use the left sidebar to switch between the **Phase Field**, **Mechanics**, and **Plasticity** modules. Each module displays up to two heat-map “cards” per row.
 - Every viewer remembers the latest available VTK file automatically; you only need to provide the data in the `VTK/` folder.
 
+- Use the Project Folder dropdown to load one or more project folders. The first selected project becomes the active default for viewers.
+- Switch modules using the tab bar (Phase Field, Mechanics, Plasticity, Comparison) to see the corresponding cards.
+
 ## Color Palettes
 The heat maps share a curated set of perceptually balanced palettes. Each palette blends brand reds/blues with high-contrast midpoints so you can switch contexts without losing readability. The gradients below are rendered exactly as they appear in the app:
 
@@ -70,6 +73,17 @@ Each heat-map card (Phase Field, Stress Tensor, Elastic Strains, Plastic Strain,
 - **Color Map dropdown** – switch among curated palettes while preserving the brand theme.
 - **Range inputs & slider** – manually enter min/max values or drag the dual slider to focus on a subrange. Use the **Reset** button (with icon) to restore dataset statistics.
 - **Slice controls** – enabled only for 3D volumes. Drag the slice slider or type an index to move through the stack.
+
+- Use the dropdowns first (Scalar Field, Color Map), then adjust the range. If the plot looks washed out, click Reset to restore dataset defaults.
+- For 3D datasets, the Slice controls let you step through layers; for 2D datasets, those controls are disabled.
+
+## Comparison Feature
+Use the Comparison tab to view multiple VTK files side-by-side with shared controls.
+- Load one or more projects first (Project Folder dropdown), or upload files using Add VTK File.
+- Pick files for each comparison group; each selected file renders as its own heat map.
+- Use the shared Scalar and Color Map controls to keep groups consistent.
+- Adjust the range controls to lock the same min and max across files; use Reset to return to auto scaling.
+- Remove files from a group to clear its panels without affecting other groups.
 
 ## Phase Field Module
 ### Phase Field Viewer

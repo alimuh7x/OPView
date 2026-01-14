@@ -70,7 +70,7 @@ def get_reader(file_path: str, vtk_path_resolver=None):
     Raises:
         FileNotFoundError: If file doesn't exist
     """
-    from viewer import VTKReader
+    from .vtk_reader import VTKReader
 
     debug = bool(os.environ.get("OPVIEW_DEBUG"))
 

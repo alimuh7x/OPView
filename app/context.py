@@ -33,10 +33,17 @@ class AppContext:
         # Data sources
         self.data_sources: Dict[str, Any] = {}
 
+        # Auto dataset slot mapping (dataset_id <-> auto-slot-* id)
+        self.auto_dataset_to_slot: Dict[str, str] = {}
+        self.auto_slot_to_dataset: Dict[str, str] = {}
+
         # Caches
         self.reader_cache: Dict[str, Any] = {}
         self.comparison_panels_cache: Dict[str, Any] = {}
         self.comparison_grid_cache: Dict[tuple, Any] = {}
+
+        # Dataset registry for panel-based auto-detection
+        self.dataset_registry: Optional[Any] = None  # DatasetRegistry instance
 
         # Version tracking for cache invalidation
         self._version = 0

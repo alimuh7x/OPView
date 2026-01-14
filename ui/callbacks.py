@@ -32,7 +32,8 @@ def create_histogram_callback(app, data_source, id_prefix: str) -> Callable:
         Output(f'{id_prefix}-summary', 'children'),
         Input(f'{id_prefix}-component', 'value'),
         Input(f'{id_prefix}-bins', 'value'),
-        Input(f'{id_prefix}-fit', 'value')
+        Input(f'{id_prefix}-fit', 'value'),
+        prevent_initial_call=True
     )
     def update_histogram(component, bins, fit_value):
         """Update histogram based on component, bins, and fit selection"""
@@ -93,6 +94,7 @@ def create_time_series_callback(
     @app.callback(
         Output(graph_id, 'figure'),
         inputs,
+        prevent_initial_call=True,
         **kwargs
     )
     def update_time_series(*args):
@@ -147,6 +149,7 @@ def create_component_selection_callback(
     @app.callback(
         Output(graph_id, 'figure'),
         Input(component_id, 'value'),
+        prevent_initial_call=True,
         **kwargs
     )
     def update_components(selected_components):
@@ -199,6 +202,7 @@ def create_multi_output_callback(
     @app.callback(
         output_list,
         input_list,
+        prevent_initial_call=True,
         **kwargs
     )
     def wrapper(*args):

@@ -2,6 +2,11 @@
 Tab configuration for OPView application.
 
 Defines all tab structures, datasets, and scalar field configurations.
+
+IMPORTANT: file_glob patterns are relative to the project's VTK folder
+(which may be named "VTK", "Results", "Output", or anything else).
+The pattern should only specify the filename pattern, NOT include the folder.
+Example: "PhaseField_*.vts" NOT "VTK/PhaseField_*.vts"
 """
 
 from typing import List, Dict, Optional, Any
@@ -31,11 +36,12 @@ TAB_CONFIGS = [
     {
         "id": "phase-field",
         "label": "Phase Field",
+        "icon": "⛶",
         "datasets": [
             {
                 "id": "phase",
                 "label": "Phase Field",
-                "file_glob": "VTK/PhaseField_*.vts",
+                "file_glob": "PhaseField_*.vts",
                 "scalars": [
                     {'label': 'Phase Field', 'array': 'PhaseFields'},
                     {'label': 'Interfaces', 'array': 'Interfaces'},
@@ -47,11 +53,12 @@ TAB_CONFIGS = [
     {
         "id": "composition",
         "label": "Composition",
+        "icon": "⚛",
         "datasets": [
             {
                 "id": "composition",
                 "label": "Composition",
-                "file_glob": "VTK/Composition_*.vts",
+                "file_glob": "Composition_*.vts",
                 "scalars": [
                     {'label': 'Weight Fraction FE (Total)', 'array': 'WeightFractionsTotal_FE'},
                     {'label': 'Mole Fraction FE (Total)', 'array': 'MoleFractionsTotal_FE'},
@@ -72,13 +79,14 @@ TAB_CONFIGS = [
     {
         "id": "mechanics",
         "label": "Mechanics",
+        "icon": "⚙",
         "datasets": [
             {
                 "id": "stresses",
                 "label": "Stress Tensor",
                 "units": "MPa",
                 "scale": 1e-6,
-                "file_glob": "VTK/Stresses_*.vts",
+                "file_glob": "Stresses_*.vts",
                 "scalars": [
                     {'label': 'Pressure', 'array': 'Pressure'},
                     {'label': 'von Mises', 'array': 'von Mises'},
@@ -88,7 +96,7 @@ TAB_CONFIGS = [
             {
                 "id": "elastic",
                 "label": "Elastic Strains",
-                "file_glob": "VTK/ElasticStrains_*.vts",
+                "file_glob": "ElasticStrains_*.vts",
                 "units": "%",
                 "scale": 100.0,
                 "scalars": tensor_scalars('ElasticStrains', 'ε'),
@@ -98,13 +106,14 @@ TAB_CONFIGS = [
     {
         "id": "plasticity",
         "label": "Plasticity",
+        "icon": "🧪",
         "datasets": [
             {
                 "id": "crss",
                 "label": "CRSS",
                 "units": "MPa",
                 "scale": 1e-6,
-                "file_glob": "VTK/CRSS_00001000.vts",
+                "file_glob": "CRSS_*.vts",
                 "scalars": [
                     {'label': f"CRSS {i}", 'array': f"CRSS_0_{i}"}
                     for i in range(12)
@@ -113,7 +122,7 @@ TAB_CONFIGS = [
             {
                 "id": "plastic-strain",
                 "label": "Plastic Strain",
-                "file_glob": "VTK/PlasticStrain_*.vts",
+                "file_glob": "PlasticStrain_*.vts",
                 "units": "%",
                 "scale": 100.0,
                 "scalars": tensor_scalars('PlasticStrain', 'εᵖ'),

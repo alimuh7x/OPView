@@ -173,6 +173,7 @@ class ViewerPanel:
         _panel_start = time.time()
 
         self.app = app
+        self._auto_discovery = tab_config.get("scalars") is None
         overrides = tab_config.get("overrides") or {}
         self.config = {**DEFAULTS, **overrides}
         self.tab_config = tab_config
@@ -200,6 +201,17 @@ class ViewerPanel:
 
         self.reader = self.reader_factory(self.file_path) if self.file_path else None
         self.scalar_defs = self._build_scalar_definitions(tab_config.get("scalars"))
+        if not self.scalar_defs and self._auto_discovery:
+            # Allow "auto" panels to exist before a file is selected.
+            # Scalar definitions will be auto-discovered once a file is chosen.
+            self.scalar_defs = [{
+                'label': '(select a field)',
+                'value': '__auto__',
+                'array': None,
+                'component': None,
+                'scale': self.dataset_scale or 1.0,
+                'units': self.dataset_units,
+            }]
         self.scalar_options = [{'label': d['label'], 'value': d['value']} for d in self.scalar_defs]
         self.scalar_map = {d['value']: d for d in self.scalar_defs}
         self.palette_options = [{'label': name.replace("-", " ").title(), 'value': name} for name in self.PALETTES.keys()]
@@ -383,6 +395,19 @@ class ViewerPanel:
         return colorbar_fig
 
     def _build_heatmap_figures(self, reader, state: ViewerState, file_path: str, slice_data=None, data_limits=None):
+        # Fix for 2D XY-planar datasets (N, N, 1 or N, N, 0):
+        if reader and hasattr(reader, 'dimensions') and reader.dimensions:
+            dx, dy, dz = reader.dimensions
+            # If Flat Z (XY Plane), view Top (Z)
+            if dz <= 1 and dy > 1 and dx > 1:
+                state = replace(state, axis='z')
+            # If Flat Y (XZ Plane), view Side (Y)
+            elif dy <= 1 and dx > 1 and dz > 1:
+                state = replace(state, axis='y')
+            # If Flat X (YZ Plane), view Front (X)
+            elif dx <= 1 and dy > 1 and dz > 1:
+                state = replace(state, axis='x')
+
         debug = bool(os.environ.get("OPVIEW_DEBUG"))
         descriptor = self.scalar_map.get(state.scalar_key) or self.scalar_defs[0]
         if slice_data is None:
@@ -399,7 +424,8 @@ class ViewerPanel:
         colorscale, Z_display, zmin_display, zmax_display, zmid_display = self._colorscale_params(Z_grid, state, data_limits=data_limits)
         nx, ny = self._slice_dimensions(reader, state.axis)
         effective_height = 380 - 40
-        aspect = nx / max(ny, 1)
+        # Protect both dimensions from being 0 or too small
+        aspect = max(nx, 1) / max(ny, 1)
         fig_width = max(100, min(1200, int(effective_height * aspect)))
         figure = self._build_figure(
             X_grid, Y_grid, Z_display, state,
@@ -481,10 +507,6 @@ class ViewerPanel:
         dx, dy, dz = reader.dimensions
         axis = (axis or "y").lower()
 
-        # For 2D data, just use the in-plane dimensions
-        if not reader.is_3d:
-            return dx, dz
-
         if axis == "x":
             # X-slice → viewing Y–Z plane
             return dy, dz
@@ -512,6 +534,8 @@ class ViewerPanel:
             include_hidden_line_toggle=not self.enable_line_scan,
             initial_figure=(self.initial_heatmap_bundle or {}).get("figure"),
             initial_colorbar=(self.initial_heatmap_bundle or {}).get("colorbar"),
+            fig_width=(self.initial_heatmap_bundle or {}).get("fig_width"),
+            dataset_key=getattr(self, "dataset_key", None),
         )
 
     def build_line_scan_card(self):
@@ -531,8 +555,18 @@ class ViewerPanel:
         # Dash does not allow registering the same Output more than once, so we guard by panel id.
         # Note: callbacks close over `self`; panel ids are designed to be stable per dataset/config.
         if self.id in _REGISTERED_PANEL_CALLBACKS:
+            if bool(os.environ.get("OPVIEW_DEBUG")):
+                print(
+                    f"[OPVIEW_DEBUG] ViewerPanel.register_callbacks skip id={self.id!r} (already registered)",
+                    flush=True,
+                )
             return
         _REGISTERED_PANEL_CALLBACKS.add(self.id)
+        if bool(os.environ.get("OPVIEW_DEBUG")):
+            print(
+                f"[OPVIEW_DEBUG] ViewerPanel.register_callbacks start id={self.id!r}",
+                flush=True,
+            )
 
         if self.enable_project_picker:
             @self.app.callback(
@@ -541,11 +575,12 @@ class ViewerPanel:
                 Output(self.cid('time'), 'options'),
                 Output(self.cid('time'), 'value'),
                 Input('projects-store', 'data'),
+                Input(self.cid('datasetKey'), 'data'),
                 Input(self.cid('project'), 'value'),
                 State(self.cid('time'), 'value'),
                 # Note: No prevent_initial_call - this callback MUST fire to populate project picker
             )
-            def _sync_project_and_files(projects_store, selected_project, selected_file):
+            def _sync_project_and_files(projects_store, dataset_key, selected_project, selected_file):
                 store = projects_store or {}
                 names = store.get('names') or []
                 active = store.get('active')
@@ -560,8 +595,34 @@ class ViewerPanel:
                     project_value = names[0]
 
                 files = files_by_project.get(project_value) or []
-                if self.file_pattern:
-                    files = [p for p in files if fnmatch.fnmatchcase(Path(p).name, self.file_pattern)]
+                # Determine file pattern. For configured panels this is stable.
+                # For auto-slot panels, prefer using the dataset registry keyed by datasetKey
+                # to avoid stale/missing patterns.
+                pattern = self.file_pattern
+                if dataset_key and isinstance(dataset_key, str) and dataset_key.startswith("auto-"):
+                    try:
+                        import OPView
+                        registry = None
+                        if OPView.app_context is not None and getattr(OPView.app_context, "dataset_registry", None):
+                            registry = OPView.app_context.dataset_registry
+                        elif getattr(OPView, "dataset_registry", None):
+                            registry = OPView.dataset_registry
+                        if registry:
+                            info = registry.get_by_id(dataset_key)
+                            if info and info.file_glob:
+                                pattern = info.file_glob
+                    except Exception:
+                        pass
+
+                if pattern:
+                    files = [p for p in files if fnmatch.fnmatchcase(Path(p).name, pattern)]
+
+                if bool(os.environ.get("OPVIEW_DEBUG")) and self.id.startswith("auto-slot-"):
+                    print(
+                        f"[OPVIEW_DEBUG] sync_files panel={self.id} datasetKey={dataset_key!r} "
+                        f"pattern={pattern!r} project={project_value!r} files={len(files)}",
+                        flush=True,
+                    )
 
                 time_options = self._build_time_options(files)
                 allowed = {opt.get('value') for opt in time_options}
@@ -577,6 +638,7 @@ class ViewerPanel:
             Output(self.cid('clickInfo'), 'children'),
             Output(self.cid('state'), 'data'),
             Output(self.cid('scalar'), 'value'),
+            Output(self.cid('scalar'), 'options'),
             Output(self.cid('slice'), 'value'),
             Output(self.cid('rangeMin'), 'value'),
             Output(self.cid('rangeMax'), 'value'),
@@ -709,6 +771,7 @@ class ViewerPanel:
                     None,
                     fallback_state.to_dict(),
                     fallback_state.scalar_key,
+                    self.scalar_options,
                     0,
                     _formatted_range_value(fallback_state.range_min),
                     _formatted_range_value(fallback_state.range_max),
@@ -744,6 +807,10 @@ class ViewerPanel:
                 # the currently selected file.
                 self.reader = reader
                 self.file_path = file_path
+                # For auto panels, refresh scalar fields based on the active file
+                # (so tensors/components like xx/yy update correctly).
+                if self._auto_discovery:
+                    self._refresh_auto_scalar_definitions(reader)
             except Exception:
                 if debug:
                     print(f"[OPVIEW_DEBUG] panel={self.id} reader_factory failed for {file_path!r}", flush=True)
@@ -819,6 +886,15 @@ class ViewerPanel:
                 palette_value = fallback_state.palette
                 # Keep current file when resetting other controls
                 state.file_path = file_path
+
+            # For auto panels, ensure scalar selection is valid after refresh.
+            if self._auto_discovery:
+                desired_scalar = scalar_value or state.scalar_key
+                if desired_scalar not in self.scalar_map:
+                    desired_scalar = self.scalar_defs[0]['value']
+                state.scalar_key = desired_scalar
+                descriptor = self.scalar_map.get(state.scalar_key) or self.scalar_defs[0]
+                state.scalar_label = descriptor.get('label') or state.scalar_key
 
             if scalar_value and scalar_value in self.scalar_map and scalar_value != state.scalar_key:
                 descriptor = self.scalar_map[scalar_value]
@@ -918,6 +994,7 @@ class ViewerPanel:
                     _click_box(f"Error: {err}", "#842029", "#f8d7da"),
                     state.to_dict(),
                     state.scalar_key,
+                    self.scalar_options,
                     state.slice_index,
                     formatted_min,
                     formatted_max,
@@ -1007,6 +1084,7 @@ class ViewerPanel:
                 click_info,
                 store_data,
                 state.scalar_key,
+                self.scalar_options,
                 state.slice_index,
                 formatted_min,
                 formatted_max,
@@ -1145,8 +1223,18 @@ class ViewerPanel:
         """Register client-side download handler to save heatmap + logo + colorbar."""
         # Avoid duplicate Output registration if panels are rebuilt/recreated.
         if self.id in _REGISTERED_DOWNLOAD_CALLBACKS:
+            if bool(os.environ.get("OPVIEW_DEBUG")):
+                print(
+                    f"[OPVIEW_DEBUG] ViewerPanel._register_download_callback skip id={self.id!r} (already registered)",
+                    flush=True,
+                )
             return
         _REGISTERED_DOWNLOAD_CALLBACKS.add(self.id)
+        if bool(os.environ.get("OPVIEW_DEBUG")):
+            print(
+                f"[OPVIEW_DEBUG] ViewerPanel._register_download_callback start id={self.id!r}",
+                flush=True,
+            )
         self.app.clientside_callback(
             f"""
             function(n_clicks) {{
@@ -1566,17 +1654,94 @@ class ViewerPanel:
         if not definitions:
             if available is None:
                 return definitions
-            for array_name in available:
-                definitions.append({
-                    'label': array_name,
-                    'value': self._make_scalar_value(array_name, None),
-                    'array': array_name,
-                    'component': None,
-                    'scale': default_scale,
-                    'units': default_units
-                })
+
+            # AUTO-DISCOVERY MODE: Detect tensor components automatically
+            for array_name in sorted(available):
+                # Check if array is multi-dimensional (tensor/vector)
+                array_data = self.reader.mesh[array_name] if self.reader else None
+                is_tensor = array_data is not None and array_data.ndim == 2
+
+                if is_tensor:
+                    num_components = array_data.shape[1]
+
+                    # Try to read component names from VTK file metadata
+                    component_labels = []
+                    vtk_array = self.reader.mesh.point_data.get(array_name)
+                    if vtk_array is None:
+                        # Try cell_data if not in point_data
+                        vtk_array = self.reader.mesh.cell_data.get(array_name)
+
+                    if vtk_array is not None and hasattr(vtk_array, 'GetComponentName'):
+                        for i in range(num_components):
+                            comp_name = vtk_array.GetComponentName(i)
+                            if comp_name:  # Component name exists in file
+                                component_labels.append(comp_name)
+
+                    # If no component names from file, infer standard names based on count
+                    if not component_labels:
+                        if num_components == 6:
+                            # Symmetric tensor (Voigt notation): xx, yy, zz, xy, yz, xz
+                            component_labels = ['xx', 'yy', 'zz', 'xy', 'yz', 'xz']
+                        elif num_components == 9:
+                            # Full 3x3 tensor: xx, xy, xz, yx, yy, yz, zx, zy, zz
+                            component_labels = ['xx', 'xy', 'xz', 'yx', 'yy', 'yz', 'zx', 'zy', 'zz']
+                        elif num_components == 3:
+                            # Vector: x, y, z
+                            component_labels = ['x', 'y', 'z']
+                        else:
+                            # Unknown multi-component - use generic indices
+                            component_labels = [f'c{i}' for i in range(num_components)]
+
+                    # Add norm (magnitude) as first option
+                    definitions.append({
+                        'label': f'{array_name} (Norm)',
+                        'value': self._make_scalar_value(array_name, None),
+                        'array': array_name,
+                        'component': None,
+                        'scale': default_scale,
+                        'units': default_units
+                    })
+
+                    # Add each component
+                    for idx, comp_label in enumerate(component_labels):
+                        definitions.append({
+                            'label': f'{array_name} [{comp_label}]',
+                            'value': self._make_scalar_value(array_name, idx),
+                            'array': array_name,
+                            'component': idx,
+                            'scale': default_scale,
+                            'units': default_units
+                        })
+                else:
+                    # Scalar field - add as-is
+                    definitions.append({
+                        'label': array_name,
+                        'value': self._make_scalar_value(array_name, None),
+                        'array': array_name,
+                        'component': None,
+                        'scale': default_scale,
+                        'units': default_units
+                    })
 
         return definitions
+
+    def _refresh_auto_scalar_definitions(self, reader) -> None:
+        """Refresh scalar definitions for auto-discovered datasets."""
+        self.reader = reader
+        if not self._auto_discovery:
+            return
+        self.scalar_defs = self._build_scalar_definitions(None)
+        if not self.scalar_defs:
+            self.scalar_defs = [{
+                'label': '(no fields found)',
+                'value': '__auto__',
+                'array': None,
+                'component': None,
+                'scale': self.dataset_scale or 1.0,
+                'units': self.dataset_units,
+            }]
+        self.scalar_options = [{'label': d['label'], 'value': d['value']} for d in self.scalar_defs]
+        self.scalar_map = {d['value']: d for d in self.scalar_defs}
 
     def _make_scalar_value(self, array_name, component):
         return f"{array_name}__c{component}" if component is not None else array_name

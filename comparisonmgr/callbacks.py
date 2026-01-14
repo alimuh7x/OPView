@@ -32,15 +32,7 @@ def _make_comparison_cache_key(files, field, range_min, range_max, palette, full
     return (files_tuple, field, range_min, range_max, palette, full_scale, slider_tuple)
 
 
-def _comparison_upload():
-    """Return the upload button for the Comparison tab."""
-    return dcc.Upload(
-        id='vtk-file-upload',
-        accept='.vtk,.vti,.vtp,.vtr,.vts',
-        multiple=False,
-        className='vtk-file-upload',
-        children=html.Span("Add VTK File", className='vtk-file-upload__text')
-    )
+# Removed: _comparison_upload() - Upload feature removed per user request
 
 
 def register_comparison_callbacks(app):
@@ -175,17 +167,25 @@ def register_comparison_callbacks(app):
 
     @app.callback(
         Output({'type': 'comparison-project-picker', 'group': MATCH}, 'options'),
+        Output({'type': 'comparison-project-picker', 'group': MATCH}, 'value'),
         Input('comparison-files-store', 'data'),
+        Input('projects-store', 'data'),
+        State({'type': 'comparison-project-picker', 'group': MATCH}, 'value'),
     )
-    def _update_comparison_project_picker(files):
-        """Update items in the project picker when files change."""
-        from .helpers import _comparison_entries, get_project_options, list_vtk_files
-        
-        # Merge global list + uploaded entries
+    def _update_comparison_project_picker(files, projects_store, current_value):
+        """Update items in the project picker when files/projects change."""
+        from .helpers import get_project_options
+
         all_entries = _comparison_entries(files, list_vtk_files())
-        
-        # Use new helper to generate robust options
-        return get_project_options(all_entries)
+        options = get_project_options(all_entries)
+        allowed = {o.get('value') for o in options or []}
+
+        value = current_value if current_value in allowed else None
+        active = (projects_store or {}).get('active')
+        if value is None and active in allowed:
+            value = active
+
+        return options, value
 
     @app.callback(
         Output({'type': 'comparison-vtk-picker', 'group': MATCH}, 'options'),
@@ -242,6 +242,11 @@ def register_comparison_callbacks(app):
         if not selected_project:
             filtered_entries = group_entries
         else:
+            # Extract project name from "Project/VTK" format if needed
+            project_name = selected_project
+            if '/' in selected_project:
+                project_name = selected_project.split('/')[0]
+
             for e in group_entries:
                 path_obj = Path(e.get('path') or '')
                 parts = list(path_obj.parts)
@@ -249,19 +254,19 @@ def register_comparison_callbacks(app):
                 # 1. Standard: "Project1/VTK/file.vts"
                 # 2. Custom: "MyFolder/file.vts" -> Project is MyFolder
                 is_match = False
-                
+
                 # Check standard structure first
                 found_vtk_structure = False
                 for idx, part in enumerate(parts):
                     if part.lower() == 'vtk' and idx > 0:
-                        if parts[idx - 1] == selected_project:
+                        if parts[idx - 1] == project_name:
                             is_match = True
                         found_vtk_structure = True
                         break
-                
+
                 # Check simple parent structure if not matched via standard structure
                 if not is_match and not found_vtk_structure:
-                    if len(parts) > 1 and parts[-2] == selected_project:
+                    if len(parts) > 1 and parts[-2] == project_name:
                         is_match = True
 
                 if is_match:
@@ -710,89 +715,5 @@ def register_comparison_callbacks(app):
         
         return updated_store, status_outputs
 
-    @app.callback(
-        Output('comparison-content', 'children', allow_duplicate=True),
-        Input('comparison-files-store', 'data'),
-        Input('active-tab', 'data'),
-        State({'type': 'comparison-selected-files-store', 'group': ALL}, 'data'),
-        State({'type': 'comparison-controls-store', 'group': ALL}, 'data'),
-        State({'type': 'comparison-heatmap-rows', 'group': ALL}, 'id'),
-        prevent_initial_call=True
-    )
-    def _rebuild_comparison_content(files, active_tab, sel_files_list, controls_list, ids_list):
-        """Rebuild the entire comparison content when files or active tab changes."""
-        from .ui_builders import build_comparison_content
-        from .helpers import allowed_comparison_groups_for_tab
-        
-        # 1. Reconstruct current state maps from ALL inputs
-        stored_files_by_group = {}
-        stored_controls_by_group = {}
-        
-        # Zip the IDs with the data to map back to group names
-        # ids_list contains dicts like {'group': 'PhaseField', 'type': 'comparison-heatmap-rows'}
-        for i, id_dict in enumerate(ids_list):
-            if not id_dict or 'group' not in id_dict:
-                continue
-            group = id_dict['group']
-            
-            # Map selected files
-            if i < len(sel_files_list):
-                stored_files_by_group[group] = sel_files_list[i]
-            
-            # Map controls (Note: controls_list might not align 1:1 if some rows missing? 
-            # Dash ensures ALL lists are aligned by index if component structure is identical?
-            # Actually, 'comparison-controls-store' and 'comparison-heatmap-rows' are distinct components.
-            # Their lists might be ordered differently or have different lengths if one is missing.
-            # BUT, generally they are created together in the row.
-            # Safest is to assume alignment if they are in same container, but 'group' is the key.
-            # Wait, 'ids_list' corresponds to 'comparison-heatmap-rows'.
-            # 'sel_files_list' corresponds to 'comparison-selected-files-store'.
-            # 'controls_list' corresponds to 'comparison-controls-store'.
-            # We need the ID for EACH store to know its group.
-            pass
-        
-        # Better approach: Add State for IDs of the stores themselves to map correctly
-        # We can't change the signature easily now loop. 
-        # Actually, let's just use the fact that they are generated in pairs?
-        # No, relying on list index alignment across different component types is risky.
-        
-        # RETRY Strategy: We simply pass empty dicts if we can't map safely.
-        # OR better: The "State" for 'comparison-selected-files-store' comes with its ID property?
-        # ctx.states_list contains the structure!
-        pass 
-    
-    # Correction: To implement state preservation correctly without complex ID passing:
-    # We rely on dcc.Store persistence = 'session'. 
-    # If the components are recreated with the SAME IDs, they *might* pick up the session storage?
-    # Yes, dcc.Store with persistence=True (or storage_type='session' and same ID) will restore data.
-    # checking ui_builders.py:
-    # dcc.Store(id={'type': 'comparison-selected-files-store', 'group': group}, storage_type='session')
-    # So we DON'T need to manually pass the state! Dash will re-hydrate the stores if IDs match.
-    
-    # So we can simplify this callback significantly.
-    
-        allowed_groups = allowed_comparison_groups_for_tab(active_tab)
-        
-        # FIX: Explicitly add groups present in the user-added files.
-        # Otherwise, custom datasets (e.g. "Fracture") will be hidden by the module filter.
-        if files:
-            from .helpers import _comparison_group_name
-            user_groups = set()
-            for f in files:
-                # Handle both dict entries and raw paths
-                path = f if isinstance(f, str) else f.get('path')
-                if path:
-                    base = path.split('/')[-1] # Simple basename
-                    grp = _comparison_group_name(base)
-                    user_groups.add(grp)
-
-            # Combine sets (allowed_groups might be set or None)
-            if allowed_groups is not None:
-                allowed_groups = set(allowed_groups) | user_groups
-        
-        return build_comparison_content(
-            files, 
-            {}, # stored_files implicitly handled by session store
-            {}, # stored_controls implicitly handled by session store
-            allowed_groups
-        )
+    # Note: comparison-content rendering is managed by TabCallbackManager so Multi View can
+    # have its own "Add Panel" + tab state separate from Single View.

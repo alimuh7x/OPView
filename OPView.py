@@ -49,7 +49,7 @@ from ui.callbacks import (
 )
 
 # UI Manager
-from ui import UIManager, build_app_layout
+from ui import UIManager, build_app_layout, build_graphs_tab_layout, get_textdata_files
 
 # Utility functions (extracted from this file - now imported)
 from utils import (
@@ -61,7 +61,7 @@ from utils import (
     reader_cache,
 )
 from utils.vtk_utils import list_comparison_files
-from utils.project_scanner import get_project_folder_options
+from utils.project_scanner import get_project_folder_options, group_projects_by_parent
 from utils.chart_utils import (
     compute_average_series,
     fit_best_distribution,
@@ -74,7 +74,7 @@ from utils.chart_utils import (
 from utils.docs import render_docs as _render_docs
 
 # Config functions
-from config import comparison_data_dir
+from config import comparison_data_dir, TAB_CONFIGS
 
 # Comparison helpers (Phase 10.1)
 from comparisonmgr.helpers import (
@@ -110,7 +110,7 @@ from comparisonmgr.ui_builders import (
 # Comparison callbacks (Phase 10.3)
 from comparisonmgr.callbacks import (
     register_comparison_callbacks,
-    _comparison_upload,
+    # Removed: _comparison_upload - Upload feature removed per user request
 )
 
 APP_TITLE = "OpenPhase OPView"
@@ -119,114 +119,19 @@ APP_BG_COLOR = "#f5f7fb"
 TENSOR_COMPONENTS = ['xx', 'yy', 'zz', 'xy', 'yz', 'zx']
 BASE_DIR = Path(__file__).resolve().parent
 
-
-def tensor_scalars(array_name: str, prefix: str):
-    return [
-        {'label': f"{prefix}_{comp}", 'array': array_name, 'component': idx}
-        for idx, comp in enumerate(TENSOR_COMPONENTS)
-    ]
-
-TAB_CONFIGS = [
-    {
-        "id": "phase-field",
-        "label": "Phase Field",
-        "datasets": [
-            {
-                "id": "phase",
-                "label": "Phase Field",
-                "file_glob": "VTK/PhaseField_*.vts",
-                "scalars": [
-                    {'label': 'Phase Field', 'array': 'PhaseFields'},
-                    {'label': 'Interfaces', 'array': 'Interfaces'},
-                    {'label': 'Phase Fraction', 'array': 'PhaseFraction_0'},
-                ]
-            }
-        ],
-    },
-    {
-        "id": "composition",
-        "label": "Composition",
-        "datasets": [
-            {
-                "id": "composition",
-                "label": "Composition",
-                "file_glob": "VTK/Composition_*.vts",
-                "scalars": [
-                    {'label': 'Weight Fraction FE (Total)', 'array': 'WeightFractionsTotal_FE'},
-                    {'label': 'Mole Fraction FE (Total)', 'array': 'MoleFractionsTotal_FE'},
-                    {'label': 'Mole Fraction FE (Phase 0)', 'array': 'MoleFractionsPhase_FE(0)'},
-                    {'label': 'Mole Fraction FE (Phase 1)', 'array': 'MoleFractionsPhase_FE(1)'},
-                    {'label': 'Weight Fraction SOLVENT (Total)', 'array': 'WeightFractionsTotal_SOLVENT'},
-                    {'label': 'Mole Fraction SOLVENT (Total)', 'array': 'MoleFractionsTotal_SOLVENT'},
-                    {'label': 'Mole Fraction SOLVENT (Phase 0)', 'array': 'MoleFractionsPhase_SOLVENT(0)'},
-                    {'label': 'Mole Fraction SOLVENT (Phase 1)', 'array': 'MoleFractionsPhase_SOLVENT(1)'},
-                    {'label': 'Weight Fraction CL (Total)', 'array': 'WeightFractionsTotal_CL'},
-                    {'label': 'Mole Fraction CL (Total)', 'array': 'MoleFractionsTotal_CL'},
-                    {'label': 'Mole Fraction CL (Phase 0)', 'array': 'MoleFractionsPhase_CL(0)'},
-                    {'label': 'Mole Fraction CL (Phase 1)', 'array': 'MoleFractionsPhase_CL(1)'},
-                ]
-            }
-        ],
-    },
-    {
-        "id": "mechanics",
-        "label": "Mechanics",
-        "datasets": [
-            {
-                "id": "stresses",
-                "label": "Stress Tensor",
-                "units": "MPa",
-                "scale": 1e-6,
-                "file_glob": "VTK/Stresses_*.vts",
-                "scalars": [
-                    {'label': 'Pressure', 'array': 'Pressure'},
-                    {'label': 'von Mises', 'array': 'von Mises'},
-                    *tensor_scalars('Stresses', 'σ')
-                ],
-            },
-            {
-                "id": "elastic",
-                "label": "Elastic Strains",
-                "file_glob": "VTK/ElasticStrains_*.vts",
-                # Store elastic strains in percent for all components
-                "units": "%",
-                "scale": 100.0,
-                "scalars": tensor_scalars('ElasticStrains', 'ε'),
-            },
-        ],
-    },
-    {
-        "id": "plasticity",
-        "label": "Plasticity",
-        "datasets": [
-            {
-                "id": "crss",
-                "label": "CRSS",
-                "units": "MPa",
-                "scale": 1e-6,
-                "file_glob": "VTK/CRSS_00001000.vts",
-                "scalars": [
-                    {'label': f"CRSS {i}", 'array': f"CRSS_0_{i}"}
-                    for i in range(12)
-                ],
-            },
-            {
-                "id": "plastic-strain",
-                "label": "Plastic Strain",
-                "file_glob": "VTK/PlasticStrain_*.vts",
-                # Store plastic strains in percent for all components
-                "units": "%",
-                "scale": 100.0,
-                "scalars": tensor_scalars('PlasticStrain', 'εᵖ'),
-            },
-        ],
-    },
-]
+# =============================================================================
+# TAB_CONFIGS - Now imported from config.tabs (Single Source of Truth) ✅
+# =============================================================================
+# TAB_CONFIGS defines all module configurations (phase-field, composition, mechanics, plasticity)
+# Imported from config/tabs.py at line 77
+# Adding a new module only requires editing config/tabs.py
+# =============================================================================
 
 # Application context (injected by OPViewApp during initialization)
 # When running standalone, this will be None and fall back to legacy globals
 app_context = None
 data_manager = None
+dataset_registry = None  # Dataset registry for panel-based auto-detection (legacy mode)
 
 
 def get_legacy_data(data_type: str):
@@ -272,6 +177,14 @@ loaded_project_vtk_files_by_project = {}
 main_panels_by_id = {}
 # Cache manual single-file ViewerPanels by absolute path.
 manual_panels_by_path = {}
+
+# Pool of pre-registered "auto slots" used to display unconfigured datasets.
+# This avoids registering new Dash callbacks at runtime (which does not reliably
+# work once the browser has loaded the app).
+AUTO_PANEL_SLOT_COUNT = 12
+AUTO_PANEL_SLOTS = [f"auto-slot-{i}" for i in range(AUTO_PANEL_SLOT_COUNT)]
+auto_dataset_to_slot = {}   # dataset_id -> slot_id
+auto_slot_to_dataset = {}   # slot_id -> dataset_id
 
 
 # Phase 7A: Removed duplicate functions - now imported from utils module
@@ -332,7 +245,7 @@ print(f"[{time.time()-_start_time:.2f}s] Comparison callbacks registered")
 
 # Register project callbacks (Phase 13)
 print(f"[{time.time()-_start_time:.2f}s] Registering callbacks...")
-from callbacks import ProjectCallbackManager, TabCallbackManager
+from callbacks import ProjectCallbackManager, TabCallbackManager, GraphsCallbackManager
 project_cb_manager = ProjectCallbackManager(app, app_context)
 project_cb_manager.register()
 print(f"[{time.time()-_start_time:.2f}s] Project callbacks registered: {project_cb_manager.count()}")
@@ -340,6 +253,11 @@ print(f"[{time.time()-_start_time:.2f}s] Project callbacks registered: {project_
 tab_cb_manager = TabCallbackManager(app, app_context)
 tab_cb_manager.register()
 print(f"[{time.time()-_start_time:.2f}s] Tab callbacks registered: {tab_cb_manager.count()}")
+
+# Register graphs tab callbacks (Phase 17)
+graphs_cb_manager = GraphsCallbackManager(app, app_context)
+graphs_cb_manager.register()
+print(f"[{time.time()-_start_time:.2f}s] Graphs callbacks registered: {graphs_cb_manager.count()}")
 
 TEXTDATA_DIR = Path("TextData")
 SIZE_DETAILS_FILE   = TEXTDATA_DIR / "SizeDetails.dat"
@@ -525,6 +443,27 @@ print(f"[{time.time()-_start_time:.2f}s] Initializing tab panels...")
 tab_datasets = initialize_tab_datasets_static()
 print(f"[{time.time()-_start_time:.2f}s] Tab panels initialized ({len(tab_datasets)} tabs)")
 
+print(f"[{time.time()-_start_time:.2f}s] Initializing auto panel slots...")
+for slot_id in AUTO_PANEL_SLOTS:
+    if slot_id in main_panels_by_id:
+        continue
+    try:
+        from viewer import ViewerPanel
+        slot_config = {
+            "id": slot_id,
+            "label": "Auto Dataset",
+            "file": None,
+            "files": [],
+            "file_pattern": None,
+            "scalars": None,  # auto-discovered once a file is selected
+            "enable_project_picker": True,
+            "enable_line_scan": True,
+        }
+        main_panels_by_id[slot_id] = ViewerPanel(app, get_reader, slot_config)
+    except Exception as e:
+        print(f"[auto-slots] Failed to init slot {slot_id}: {e}")
+print(f"[{time.time()-_start_time:.2f}s] Auto panel slots initialized ({len(AUTO_PANEL_SLOTS)})")
+
 comparison_panels = {}
 
 
@@ -553,50 +492,211 @@ comparison_panels = {}
 # =============================================================================
 
 
-def build_tab_children(tab_id):
-    _tab_start = time.time()
-    print(f"      [tab_children] Building content for '{tab_id}'...")
+def create_auto_panel(dataset_info):
+    """
+    Create ViewerPanel for auto-detected VTK file (unconfigured dataset).
 
-    panels = tab_datasets[tab_id]["panels"]
-    if not panels:
-        return [html.Div("No datasets available for this tab.", className='dataset-empty')]
+    This function creates panels on-demand for VTK files that were automatically
+    detected but not configured in TAB_CONFIGS. ViewerPanel will auto-discover
+    scalar fields from the VTK file.
+
+    Args:
+        dataset_info: DatasetInfo object from dataset_registry
+
+    Returns:
+        ViewerPanel instance or None if creation fails
+
+    Example:
+        >>> dataset_info = registry.get_by_id('auto-temperature')
+        >>> panel = create_auto_panel(dataset_info)
+        >>> # Panel now has auto-discovered scalar fields from Temperature_*.vts
+    """
+    from viewer import ViewerPanel
+
+    # Use first matched file as the primary file
+    vtk_file = dataset_info.matched_files[0] if dataset_info.matched_files else None
+    if not vtk_file:
+        return None
+
+    # Build minimal config - ViewerPanel will auto-discover scalars
+    config = {
+        "id": dataset_info.dataset_id,
+        "label": dataset_info.label,
+        "file": str(vtk_file),
+        "files": [str(f) for f in dataset_info.matched_files],
+        "file_pattern": dataset_info.file_glob,
+        # scalars: None - ViewerPanel will auto-discover from VTK file!
+        "scalars": None,
+        "scale": 1.0,  # Default scale
+        "units": "",   # No units for auto-detected files
+        "enable_project_picker": True,
+        "enable_line_scan": True,
+    }
+
+    try:
+        if bool(os.environ.get("OPVIEW_DEBUG")):
+            print(
+                f"[OPVIEW_DEBUG] create_auto_panel id={dataset_info.dataset_id!r} "
+                f"pattern={dataset_info.file_glob!r} files={len(dataset_info.matched_files or [])}",
+                flush=True,
+            )
+        panel = ViewerPanel(app, get_reader, config)
+        print(f"  [create_auto_panel] Created panel for '{dataset_info.label}' with {len(dataset_info.matched_files)} files")
+        return panel
+    except Exception as e:
+        print(f"  [create_auto_panel] Failed to create panel for '{dataset_info.label}': {e}")
+        return None
+
+
+def build_tab_children(tab_id):
+    """
+    Build tab content for a specific dataset.
+
+    Changed from module-based to dataset-based system.
+    Now tab_id is actually a dataset_id (e.g., 'mechanics-stresses').
+
+    Args:
+        tab_id: Dataset identifier (e.g., 'mechanics-stresses', 'phase-field-phase')
+
+    Returns:
+        List of Dash components for tab content
+    """
+    _tab_start = time.time()
+    print(f"      [tab_children] Building content for dataset '{tab_id}'...")
+
+    # Resolve slot-based auto datasets:
+    # - preferred: dropdown returns auto-slot-* ids
+    # - compatibility: previously opened tabs may still use auto-* dataset ids
+    resolved_dataset_id = tab_id
+    slot_id = None
+    if tab_id.startswith("auto-slot-"):
+        slot_id = tab_id
+        resolved_dataset_id = auto_slot_to_dataset.get(tab_id, tab_id)
+    elif tab_id.startswith("auto-") and tab_id in auto_dataset_to_slot:
+        slot_id = auto_dataset_to_slot.get(tab_id)
+
+    # Get panel for this specific dataset (configured dataset id or auto-slot id)
+    panel = main_panels_by_id.get(slot_id or tab_id)
+
+    # If panel doesn't exist, check if it's an auto-detected dataset
+    if not panel:
+        # Get registry to check if this is an unconfigured/auto-detected dataset
+        registry = None
+        if app_context and app_context.dataset_registry:
+            registry = app_context.dataset_registry
+        elif dataset_registry:  # Check legacy global
+            registry = dataset_registry
+
+        if registry:
+            dataset_info = registry.get_by_id(resolved_dataset_id)
+            if dataset_info and dataset_info.module_id == "unconfigured":
+                # This is an auto-detected VTK file - create panel on-demand
+                print(f"      [tab_children] Creating on-demand panel for auto-detected dataset '{tab_id}'...")
+                panel = create_auto_panel(dataset_info)
+                if panel:
+                    # Cache the panel for future use
+                    main_panels_by_id[tab_id] = panel
+                else:
+                    return [html.Div(
+                        f"Failed to create panel for auto-detected file: {tab_id}",
+                        className='dataset-empty'
+                    )]
+
+        # If still no panel, show error
+        if not panel:
+            return [html.Div(f"Panel not found for dataset: {tab_id}", className='dataset-empty')]
+
     cards = []
 
-    # Add main viewer cards
-    for label, panel in panels:
-        # Main viewer card
-        cards.append(html.Div([
-            html.Div([
-                html.Span(className='dataset-accent'),
-                html.H3(label, className='dataset-title')
-            ], className='dataset-header'),
-            html.Div(panel.build_layout(), className='dataset-body')
-        ], className='dataset-block'))
+    # Get dataset info from registry for label
+    dataset_label = resolved_dataset_id.replace('-', ' ').title()  # Fallback
+    registry = None
+    if app_context and app_context.dataset_registry:
+        registry = app_context.dataset_registry
+    elif dataset_registry:  # Check legacy global
+        registry = dataset_registry
 
-        cards.append(panel.build_line_scan_card())
-        # build_histogram_card() returns None (deprecated - now combined with line scan)
-        histogram_card = panel.build_histogram_card()
-        if histogram_card:
-            cards.append(histogram_card)
+    if registry:
+        dataset_info = registry.get_by_id(resolved_dataset_id)
+        if dataset_info:
+            dataset_label = dataset_info.label
+            # If we're using an auto slot, configure the slot panel for this dataset.
+            if slot_id is not None:
+                panel.label = dataset_info.label
+                panel.file_pattern = dataset_info.file_glob
+                panel.dataset_key = resolved_dataset_id
+                # Reset auto scalar fields so they refresh from the selected file.
+                try:
+                    panel.scalar_defs = [{
+                        'label': '(select a field)',
+                        'value': '__auto__',
+                        'array': None,
+                        'component': None,
+                        'scale': panel.dataset_scale or 1.0,
+                        'units': panel.dataset_units,
+                    }]
+                    panel.scalar_options = [{'label': d['label'], 'value': d['value']} for d in panel.scalar_defs]
+                    panel.scalar_map = {d['value']: d for d in panel.scalar_defs}
+                except Exception:
+                    pass
 
-    if tab_id == 'phase-field':
+    # Ensure project/file dropdowns are populated for dynamically added panels.
+    # (Dash won't necessarily fire the project/file sync callback immediately when
+    # a panel is first inserted into the layout unless an input changes.)
+    try:
+        use_ctx = app_context is not None
+        names = (app_context.loaded_project_names if use_ctx else loaded_project_names) or []
+        files_by_project = (app_context.loaded_project_vtk_files_by_project if use_ctx else loaded_project_vtk_files_by_project) or {}
+        panel.project_options = [{'label': n, 'value': n} for n in names] if panel.enable_project_picker else None
+        if panel.enable_project_picker:
+            if panel.project_value not in names:
+                panel.project_value = names[0] if names else None
+            files = files_by_project.get(panel.project_value) or []
+            if panel.file_pattern:
+                files = [p for p in files if fnmatch.fnmatchcase(Path(p).name, panel.file_pattern)]
+            panel.time_options = panel._build_time_options(files)
+            if panel.time_value not in {opt.get('value') for opt in panel.time_options}:
+                panel.time_value = None
+    except Exception:
+        pass
+
+    # Add main viewer card for this dataset
+    cards.append(html.Div([
+        html.Div([
+            html.Span(className='dataset-accent'),
+            html.H3(dataset_label, className='dataset-title')
+        ], className='dataset-header'),
+        html.Div(panel.build_layout(), className='dataset-body')
+    ], className='dataset-block'))
+
+    # Add line scan and histogram cards
+    cards.append(panel.build_line_scan_card())
+    histogram_card = panel.build_histogram_card()
+    if histogram_card:
+        cards.append(histogram_card)
+
+    # Add text data cards based on dataset's module
+    # Extract module_id from dataset_id (e.g., 'mechanics-stresses' -> 'mechanics')
+    module_id = resolved_dataset_id.split('-')[0] if '-' in resolved_dataset_id else None
+
+    if module_id == 'phase':
         # Phase-field tab: show size-details and grain distribution cards.
         for builder in (ui_manager.build_size_details_card, ui_manager.build_grain_distribution_card):
             card = builder()
             if card:
                 cards.append(card)
-    elif tab_id == 'mechanics':
+    elif module_id == 'mechanics':
         for builder in (ui_manager.build_stress_strain_card, ui_manager.build_stress_hist_card, ui_manager.build_strain_hist_card):
             card = builder()
             if card:
                 cards.append(card)
-    elif tab_id == 'plasticity':
+    elif module_id == 'plasticity':
         for builder in (ui_manager.build_crss_card, ui_manager.build_plastic_strain_card):
             card = builder()
             if card:
                 cards.append(card)
 
-    print(f"      [tab_children] '{tab_id}' content built in {time.time()-_tab_start:.3f}s")
+    print(f"      [tab_children] Dataset '{tab_id}' content built in {time.time()-_tab_start:.3f}s")
     return [html.Div(cards, className='dataset-grid')]
 
 
@@ -628,7 +728,7 @@ def build_tab_children(tab_id):
 #
 # Helper functions:
 #   - _make_comparison_cache_key()          - Cache key generation (deprecated)
-#   - _comparison_upload()                  - Upload button component
+#   - Removed: _comparison_upload()         - Upload button (feature removed)
 #
 # Registered at line 327 via register_comparison_callbacks(app)
 # =============================================================================
@@ -763,6 +863,7 @@ app.layout = html.Div(
         build_comparison_content_func=build_comparison_content,
         allowed_comparison_groups_func=allowed_comparison_groups_for_tab,
         get_project_folder_options_func=get_project_folder_options,
+        group_projects_by_parent_func=group_projects_by_parent,
         default_vtk_folder_label=DEFAULT_VTK_FOLDER_LABEL,
     ),
     style={"backgroundColor": APP_BG_COLOR, "minHeight": "100vh"},
@@ -772,7 +873,8 @@ print(f"[{time.time()-_start_time:.2f}s] App layout built")
 # =============================================================================
 # PROJECT MANAGEMENT CALLBACKS - Extracted to callbacks/project_manager.py (Phase 13) ✅
 # =============================================================================
-# Callbacks for VTK upload, project folder selection, and folder actions.
+# Callbacks for project folder selection and folder actions.
+# VTK upload feature removed per user request.
 # Registered at line 330-335 via ProjectCallbackManager.
 # =============================================================================
 

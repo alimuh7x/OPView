@@ -29,16 +29,13 @@ def build_controls(
     include_hidden_line_toggle: bool = False,
 ):
     """Return control panel stacked above the graph."""
+    persist_session = not str(viewer_id).startswith("auto-slot-")
 
     # Row 1: Optional Project picker, File picker, Scalar Field
     first_row_children = []
 
     if project_options is not None:
-        first_row_children.extend([
-            html.Label([
-                html.Span("P", className="label-icon"),
-                "Project:",
-            ], className='field-label grid-label'),
+        first_row_children.append(html.Div([
             html.Div([
                 dcc.Dropdown(
                     id=component_id(viewer_id, 'project'),
@@ -46,19 +43,15 @@ def build_controls(
                     value=project_value,
                     clearable=False,
                     searchable=False,
-                    persistence=True,
-                    persistence_type='session',
-                    placeholder="Select project…",
+                    persistence=persist_session,
+                    persistence_type='session' if persist_session else None,
+                    placeholder="Select Folder",
                 )
             ], className='dropdown-wrapper'),
-        ])
+        ], className='control-pair project-control-pair'))
 
     if time_options is not None:
-        first_row_children.extend([
-            html.Label([
-                html.Span("F", className="label-icon"),
-                "Files:",
-            ], className='field-label grid-label'),
+        first_row_children.append(html.Div([
             html.Div([
                 dcc.Dropdown(
                     id=component_id(viewer_id, 'time'),
@@ -66,18 +59,14 @@ def build_controls(
                     value=time_value,
                     clearable=True,
                     searchable=False,
-                    persistence=True,
-                    persistence_type='session',
-                    placeholder="Select file…",
+                    persistence=persist_session,
+                    persistence_type='session' if persist_session else None,
+                    placeholder="Select File",
                 )
             ], className='dropdown-wrapper'),
-        ])
+        ], className='control-pair'))
 
-    first_row_children.extend([
-        html.Label([
-            html.Span("S", className="label-icon"),
-            "Field:",
-        ], className='field-label grid-label'),
+    first_row_children.append(html.Div([
         html.Div([
             dcc.Dropdown(
                 id=component_id(viewer_id, 'scalar'),
@@ -85,12 +74,13 @@ def build_controls(
                 value=state.scalar_key,
                 clearable=False,
                 searchable=False,
+                placeholder="Select Field",
             )
         ], className='dropdown-wrapper'),
-    ])
+    ], className='control-pair'))
 
-    row_class = 'controls-grid-row controls-row-3' if project_options is not None else 'controls-grid-row'
-    rows = [html.Div(first_row_children, className=row_class)]
+    # switched from grid to flex for better wrapping
+    rows = [html.Div(first_row_children, className='controls-flex-row')]
 
     if include_range_section:
         rows.extend([
@@ -210,7 +200,7 @@ def build_controls(
 
 #  HEAD: --------------------- Heatmap plot section -------------------------------------------------------
 
-def build_graph_section(viewer_id: str, *, initial_figure=None, initial_colorbar=None):
+def build_graph_section(viewer_id: str, *, initial_figure=None, initial_colorbar=None, fig_width=None):
     """Graph container - main heatmap block."""
     return html.Div([
 
@@ -276,7 +266,7 @@ def build_graph_section(viewer_id: str, *, initial_figure=None, initial_colorbar
                     ),
                     id=component_id(viewer_id, 'heatmapCard'),
                     className='heatmap-main-card',
-                    style={'width': '600px', 'height': '380px'}
+                    style={'width': f'{fig_width}px' if fig_width else '600px', 'height': '380px'}
                 ),
 
                 # --- Right: Colorbar card ---
@@ -379,10 +369,11 @@ def build_line_scan_card(viewer_id: str, state):
                     dcc.Slider(
                         id=component_id(viewer_id, 'histogramBins'),
                         min=10,
-                        max=100,
-                        step=5,
+                        max=200,
+                        step=None,  # Force snapping to marks
                         value=30,
-                        marks={10: '10', 50: '50', 100: '100'},
+                        marks={10: '10', 30: '30', 50: '50', 100: '100', 200: '200'},
+                        updatemode='mouseup',
                         tooltip={"placement": "bottom", "always_visible": False}
                     )
                 ], className='textdata-control'),
@@ -413,6 +404,8 @@ def build_tab_layout(
     include_hidden_line_toggle=False,
     initial_figure=None,
     initial_colorbar=None,
+    fig_width=None,
+    dataset_key=None,
 ):
     """Return the full layout for a viewer tab."""
     return html.Div([
@@ -432,9 +425,10 @@ def build_tab_layout(
                 include_range_section=include_range_section,
                 include_hidden_line_toggle=include_hidden_line_toggle
             ),
-            build_graph_section(viewer_id, initial_figure=initial_figure, initial_colorbar=initial_colorbar)
+            build_graph_section(viewer_id, initial_figure=initial_figure, initial_colorbar=initial_colorbar, fig_width=fig_width)
         ], className='stacked-card'),
         dcc.Store(id=component_id(viewer_id, 'state'), data=state.to_dict()),
+        dcc.Store(id=component_id(viewer_id, 'datasetKey'), data=dataset_key),
     ], className='viewer-tab')
 
 

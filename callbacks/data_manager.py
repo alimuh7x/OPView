@@ -90,14 +90,15 @@ class DataCallbackManager(BaseCallbackManager):
             return
 
         from dash import Output, Input
-        from OPView import build_grain_histogram
+        from OPView import ui_manager
 
         @self.app.callback(
             Output('grain-dist-fig', 'figure'),
             Output('grain-dist-summary', 'children'),
             Input('grain-dist-time', 'value'),
             Input('grain-dist-bins', 'value'),
-            Input('grain-dist-fit', 'value')
+            Input('grain-dist-fit', 'value'),
+            prevent_initial_call=True
         )
         def update_grain_histogram(time_value, bins, fit_value):
             """Update grain distribution histogram."""
@@ -105,6 +106,6 @@ class DataCallbackManager(BaseCallbackManager):
             if time_value is None:
                 times = grain_data.get_time_steps()
                 time_value = times[0] if times else 0
-            return build_grain_histogram(float(time_value), bins or 15, fit=fit_enabled)
+            return ui_manager.build_grain_histogram(float(time_value), bins or 15, fit=fit_enabled)
 
         self._track_callback(update_grain_histogram)
