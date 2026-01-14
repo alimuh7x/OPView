@@ -12,6 +12,34 @@ A modular, web-based visualization tool for phase field simulation data built wi
 
 ## Quick Start
 
+### Prerequisites
+
+**System Dependencies (Linux/WSL):**
+
+VTK requires OpenGL and X11 libraries. Install them before running setup:
+
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install python3.13 python3.13-venv \
+  libgl1-mesa-dev libxrender-dev libxcursor-dev \
+  libxrandr-dev libxinerama-dev libxi-dev
+
+# Fedora/RHEL
+sudo dnf install python3.13 mesa-libGL-devel \
+  libXrender-devel libXcursor-devel libXrandr-devel \
+  libXinerama-devel libXi-devel
+```
+
+**macOS:**
+```bash
+# Install Python via Homebrew
+brew install python@3.13
+
+# Xcode Command Line Tools (usually already installed)
+xcode-select --install
+```
+
 ### Installation (Linux / macOS / WSL)
 
 ```bash

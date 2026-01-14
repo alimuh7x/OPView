@@ -6,6 +6,41 @@ echo "OPView Setup - OpenPhase Visualization"
 echo "=========================================="
 echo ""
 
+# Check for required system libraries (Linux only)
+if [[ "$OSTYPE" == "linux-gnu"* ]] || [[ "$OSTYPE" == "linux"* ]]; then
+    echo "Checking system dependencies..."
+    MISSING_LIBS=()
+
+    # Check for OpenGL
+    if ! ldconfig -p | grep -q "libGL.so"; then
+        MISSING_LIBS+=("libgl1-mesa-dev")
+    fi
+
+    # Check for X11 libraries
+    for lib in libXrender libXcursor libXrandr; do
+        if ! ldconfig -p | grep -q "${lib}.so"; then
+            MISSING_LIBS+=("${lib,,}-dev")
+        fi
+    done
+
+    if [ ${#MISSING_LIBS[@]} -gt 0 ]; then
+        echo ""
+        echo "WARNING: Missing system libraries required for VTK:"
+        printf '  - %s\n' "${MISSING_LIBS[@]}"
+        echo ""
+        echo "Install them with:"
+        echo "  sudo apt install ${MISSING_LIBS[*]}"
+        echo ""
+        read -r -p "Continue anyway? [y/N]: " reply
+        if [[ ! $reply =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        echo "System dependencies OK."
+    fi
+    echo ""
+fi
+
 # Select a supported Python version (prefer 3.13, fall back to 3.12)
 PYTHON_CMD=""
 for candidate in python3.13 /home/linuxbrew/.linuxbrew/bin/python3.13 python3.12; do
