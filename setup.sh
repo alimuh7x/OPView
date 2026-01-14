@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
-echo "========================================"
-echo "OPView setup (Linux / macOS / WSL)"
-echo "========================================"
+echo "=========================================="
+echo "OPView Setup - OpenPhase Visualization"
+echo "=========================================="
 echo ""
 
 # Select a supported Python version (prefer 3.13, fall back to 3.12)
@@ -68,10 +68,38 @@ echo "Installing dependencies from requirements.txt..."
 pip install -r requirements.txt
 
 echo ""
-echo "Setup complete."
+echo "Verifying installation..."
+python -c "
+import sys
+modules_ok = True
+required_modules = ['dash', 'plotly', 'numpy', 'vtk', 'pyvista', 'markdown']
+for module in required_modules:
+    try:
+        __import__(module)
+    except ImportError:
+        print(f'ERROR: Failed to import {module}')
+        modules_ok = False
+        sys.exit(1)
+print('All core modules imported successfully.')
+"
+
+echo ""
+echo "=========================================="
+echo "Setup complete!"
+echo "=========================================="
+echo ""
+echo "OPView uses a modular architecture with:"
+echo "  • app/          - Application orchestration"
+echo "  • callbacks/    - Callback managers"
+echo "  • ui/           - UI components"
+echo "  • data/         - Data sources"
+echo "  • viewer/       - VTK visualization"
+echo "  • utils/        - Utility functions"
+echo ""
 echo "To run the application:"
 echo "  source myenv/bin/activate"
 echo "  python OPView.py"
+echo ""
 echo "Then open http://127.0.0.1:8050 in your browser."
 echo ""
 
