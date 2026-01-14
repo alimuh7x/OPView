@@ -45,7 +45,7 @@ class TabCallbackManager(BaseCallbackManager):
         self._register_close_comparison_tab()
         self._register_toggle_module_selector()  # Show/hide module/graphs selectors based on active tab
         self._register_populate_custom_graph_selector()  # Folder/file dropdowns for Custom Graph tab
-        self._register_clear_comparison_on_tab_switch()
+        # self._register_clear_comparison_on_tab_switch()  # REMOVED: Was clearing valid user selections on tab switch
 
     # =========================================================================
     # OLD CALLBACK - Removed (Phase 14 - Dynamic Tab Management) ✅
@@ -777,23 +777,31 @@ class TabCallbackManager(BaseCallbackManager):
 
         self._track_callback(populate_custom_graph_selector)
 
-    def _register_clear_comparison_on_tab_switch(self):
-        """Clear comparison selections when switching into Multi View to avoid stale state."""
-        @self.app.callback(
-            Output({'type': 'comparison-selected-files-store', 'group': ALL}, 'data', allow_duplicate=True),
-            Output({'type': 'comparison-controls-store', 'group': ALL}, 'data', allow_duplicate=True),
-            Input('vtk-folder-tabs', 'value'),
-            State({'type': 'comparison-selected-files-store', 'group': ALL}, 'id'),
-            State({'type': 'comparison-controls-store', 'group': ALL}, 'id'),
-            prevent_initial_call=True
-        )
-        def clear_comparison_on_tab(value, sel_ids, ctrl_ids):
-            if value != 'comparison':
-                raise PreventUpdate
-            if not sel_ids and not ctrl_ids:
-                raise PreventUpdate
-            sel_out = [[] for _ in (sel_ids or [])]
-            ctrl_out = [{} for _ in (ctrl_ids or [])]
-            return sel_out, ctrl_out
-
-        self._track_callback(clear_comparison_on_tab)
+    # =========================================================================
+    # REMOVED CALLBACK: _register_clear_comparison_on_tab_switch (2025-01-14)
+    # =========================================================================
+    # This callback cleared all Multi View selections when entering the tab,
+    # which destroyed valid user work when switching between Custom Graph and
+    # Multi View. Since the three tabs (Single View, Multi View, Custom Graph)
+    # use different data types and stores, there's no risk of stale state.
+    # =========================================================================
+    # def _register_clear_comparison_on_tab_switch(self):
+    #     """Clear comparison selections when switching into Multi View to avoid stale state."""
+    #     @self.app.callback(
+    #         Output({'type': 'comparison-selected-files-store', 'group': ALL}, 'data', allow_duplicate=True),
+    #         Output({'type': 'comparison-controls-store', 'group': ALL}, 'data', allow_duplicate=True),
+    #         Input('vtk-folder-tabs', 'value'),
+    #         State({'type': 'comparison-selected-files-store', 'group': ALL}, 'id'),
+    #         State({'type': 'comparison-controls-store', 'group': ALL}, 'id'),
+    #         prevent_initial_call=True
+    #     )
+    #     def clear_comparison_on_tab(value, sel_ids, ctrl_ids):
+    #         if value != 'comparison':
+    #             raise PreventUpdate
+    #         if not sel_ids and not ctrl_ids:
+    #             raise PreventUpdate
+    #         sel_out = [[] for _ in (sel_ids or [])]
+    #         ctrl_out = [{} for _ in (ctrl_ids or [])]
+    #         return sel_out, ctrl_out
+    #
+    #     self._track_callback(clear_comparison_on_tab)
