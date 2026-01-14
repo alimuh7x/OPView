@@ -1,18 +1,22 @@
 """Multi-field VTK viewer with reusable tab panels."""
 import time
+import os
 _start_time = time.time()
-print(f"[{time.time()-_start_time:.2f}s] Starting imports...")
+DEBUG = bool(os.environ.get("OPVIEW_DEBUG"))
+
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Starting imports...")
 
 import base64
 import fnmatch
 import hashlib
-import os
 import re
 import warnings
 from glob import glob
 from pathlib import Path
 
-print(f"[{time.time()-_start_time:.2f}s] Standard library imports done")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Standard library imports done")
 
 import numpy as np
 import plotly.graph_objects as go
@@ -347,16 +351,17 @@ def initialize_tab_datasets_static():
     _init_start = time.time()
 
     from viewer import ViewerPanel
-    print(f"  - ViewerPanel import took {time.time()-_init_start:.3f}s")
+    if DEBUG:
+        print(f"  - ViewerPanel import took {time.time()-_init_start:.3f}s")
 
     tab_data = {}
-    debug = bool(os.environ.get("OPVIEW_DEBUG"))
     active_project_name = None
     # Panels populate project/file pickers from `projects-store` (paths only; no VTK reads).
     for tab in TAB_CONFIGS:
         tab_id = tab['id']
         tab_start = time.time()
-        print(f"  - Initializing tab '{tab_id}'...")
+        if DEBUG:
+            print(f"  - Initializing tab '{tab_id}'...")
         datasets = []
         # Initialize the tab entry first to ensure it exists even if no datasets are found
         tab_data[tab["id"]] = {
@@ -390,7 +395,7 @@ def initialize_tab_datasets_static():
                 "enable_line_scan": True,
             }
             panel_id = dataset_config["id"]
-            if debug:
+            if DEBUG:
                 sample = [Path(p).name for p in (files or [])[:5]]
                 print(
                     f"[OPVIEW_DEBUG] init_tab panel={panel_id} files={len(files or [])} sample={sample}",
@@ -399,7 +404,7 @@ def initialize_tab_datasets_static():
             panel = main_panels_by_id.get(panel_id)
             if panel is None:
                 try:
-                    panel = ViewerPanel(app, get_reader, dataset_config)
+                    panel = ViewerPanel(app, get_reader, dataset_config, debug=DEBUG)
                 except (FileNotFoundError, ValueError):
                     continue
                 main_panels_by_id[panel_id] = panel
@@ -435,15 +440,19 @@ def initialize_tab_datasets_static():
                 except Exception:
                     pass
             datasets.append((dataset["label"], panel))
-        print(f"  - Tab '{tab_id}' initialized in {time.time()-tab_start:.3f}s ({len(datasets)} panels)")
+        if debug:
+            print(f"  - Tab '{tab_id}' initialized in {time.time()-tab_start:.3f}s ({len(datasets)} panels)")
     return tab_data
 
 
-print(f"[{time.time()-_start_time:.2f}s] Initializing tab panels...")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Initializing tab panels...")
 tab_datasets = initialize_tab_datasets_static()
-print(f"[{time.time()-_start_time:.2f}s] Tab panels initialized ({len(tab_datasets)} tabs)")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Tab panels initialized ({len(tab_datasets)} tabs)")
 
-print(f"[{time.time()-_start_time:.2f}s] Initializing auto panel slots...")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Initializing auto panel slots...")
 for slot_id in AUTO_PANEL_SLOTS:
     if slot_id in main_panels_by_id:
         continue
@@ -459,7 +468,7 @@ for slot_id in AUTO_PANEL_SLOTS:
             "enable_project_picker": True,
             "enable_line_scan": True,
         }
-        main_panels_by_id[slot_id] = ViewerPanel(app, get_reader, slot_config)
+        main_panels_by_id[slot_id] = ViewerPanel(app, get_reader, slot_config, debug=DEBUG)
     except Exception as e:
         print(f"[auto-slots] Failed to init slot {slot_id}: {e}")
 print(f"[{time.time()-_start_time:.2f}s] Auto panel slots initialized ({len(AUTO_PANEL_SLOTS)})")
@@ -534,13 +543,13 @@ def create_auto_panel(dataset_info):
     }
 
     try:
-        if bool(os.environ.get("OPVIEW_DEBUG")):
+        if DEBUG:
             print(
                 f"[OPVIEW_DEBUG] create_auto_panel id={dataset_info.dataset_id!r} "
                 f"pattern={dataset_info.file_glob!r} files={len(dataset_info.matched_files or [])}",
                 flush=True,
             )
-        panel = ViewerPanel(app, get_reader, config)
+        panel = ViewerPanel(app, get_reader, config, debug=DEBUG)
         print(f"  [create_auto_panel] Created panel for '{dataset_info.label}' with {len(dataset_info.matched_files)} files")
         return panel
     except Exception as e:

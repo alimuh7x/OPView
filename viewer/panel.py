@@ -162,17 +162,19 @@ class ViewerPanel:
         "ice-sunset": ["#1c3d5a", "#3aa0c8", "#ffffff", "#f9d976", "#f47068"],
     }
 
-    def __init__(self, app, reader_factory, tab_config):
+    def __init__(self, app, reader_factory, tab_config, debug=False):
         """
         Args:
             app: Dash application instance
             reader_factory: callable returning VTKReader for a file path
             tab_config (dict): configuration for this tab
+            debug (bool): Enable verbose initialization output
         """
         import time
         _panel_start = time.time()
 
         self.app = app
+        self.debug = debug
         self._auto_discovery = tab_config.get("scalars") is None
         overrides = tab_config.get("overrides") or {}
         self.config = {**DEFAULTS, **overrides}
@@ -227,7 +229,8 @@ class ViewerPanel:
         if self.reader and self.file_path:
             state_start = time.time()
             self.base_state = self._build_state(self.reader, self.file_path, initial_scalar)
-            print(f"        [ViewerPanel] State built in {time.time()-state_start:.3f}s")
+            if self.debug:
+                print(f"        [ViewerPanel] State built in {time.time()-state_start:.3f}s")
             self.initial_slider_max = self._max_slice_index(self.reader)
             self.initial_slider_disabled = not self.reader.is_3d
             # Precompute an initial figure bundle so dynamically inserted layouts render immediately
@@ -235,7 +238,8 @@ class ViewerPanel:
             try:
                 heatmap_start = time.time()
                 self.initial_heatmap_bundle = self._build_heatmap_figures(self.reader, self.base_state, self.file_path)
-                print(f"        [ViewerPanel] Initial heatmap built in {time.time()-heatmap_start:.3f}s")
+                if self.debug:
+                    print(f"        [ViewerPanel] Initial heatmap built in {time.time()-heatmap_start:.3f}s")
             except Exception:
                 self.initial_heatmap_bundle = {"figure": go.Figure(), "colorbar": go.Figure(), "scaled_stats": {"min": 0.0, "max": 1.0}, "fig_width": 600}
         else:
@@ -258,8 +262,9 @@ class ViewerPanel:
 
         callback_start = time.time()
         self.register_callbacks()
-        print(f"        [ViewerPanel] Callbacks registered in {time.time()-callback_start:.3f}s")
-        print(f"        [ViewerPanel] Total init time: {time.time()-_panel_start:.3f}s")
+        if self.debug:
+            print(f"        [ViewerPanel] Callbacks registered in {time.time()-callback_start:.3f}s")
+            print(f"        [ViewerPanel] Total init time: {time.time()-_panel_start:.3f}s")
 
     def cid(self, suffix: str) -> str:
         """Component id helper."""
