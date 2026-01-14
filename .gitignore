@@ -10,9 +10,10 @@ venv*/
 # Large simulation outputs
 sample_data/*.vti
 
-# Claude-specific files
+# AI assistant files
 claude.md
 .claude/
+.gemini/
 *.skill
 
 # Generated documentation and presentations
