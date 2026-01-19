@@ -4,8 +4,10 @@ dash-mantine-components
 plotly
 numpy
 scipy
+pandas
 pyvista
 vtk
 markdown
 kaleido
 plyer
+pywin32; sys_platform == 'win32'

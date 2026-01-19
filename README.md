@@ -40,6 +40,34 @@ brew install python@3.13
 xcode-select --install
 ```
 
+**Windows:**
+```powershell
+# Install Python via winget (Windows 10/11)
+winget install Python.Python.3.12
+
+# Or download from https://www.python.org/downloads/
+# Make sure to check "Add Python to PATH" during installation
+```
+
+### Installation (Windows)
+
+```powershell
+cd E:\path\to\OPView
+py -3.12 -m venv myenv
+myenv\Scripts\activate
+pip install -r requirements.txt
+python OPView.py
+```
+
+Open http://127.0.0.1:8050 in your browser. Stop the server with `Ctrl+C`, and exit the virtual environment with `deactivate`.
+
+**Restarting Later (Windows):**
+```powershell
+cd E:\path\to\OPView
+myenv\Scripts\activate
+python OPView.py
+```
+
 ### Installation (Linux / macOS / WSL)
 
 ```bash
@@ -52,8 +80,7 @@ python OPView.py
 
 Open http://127.0.0.1:8050 in your browser. Stop the server with `Ctrl+C`, and exit the virtual environment with `deactivate`.
 
-### Restarting Later
-
+**Restarting Later (Linux/macOS/WSL):**
 ```bash
 cd /path/to/OPView
 source myenv/bin/activate
@@ -103,24 +130,46 @@ Each module has a single, well-defined responsibility for maintainability.
 - **Dependencies**: Listed in `requirements.txt`
   - dash, dash-mantine-components
   - plotly, kaleido
-  - numpy, scipy
+  - numpy, scipy, pandas
   - vtk, pyvista
   - markdown
   - plyer (for file chooser dialogs)
+  - pywin32 (Windows only - required for plyer on Windows)
 
 ## Troubleshooting
 
 ### Virtual Environment Issues
-If you encounter issues with the existing environment:
+
+**Windows:**
+```powershell
+# Remove existing environment
+Remove-Item -Recurse -Force myenv
+# Recreate from scratch
+py -3.12 -m venv myenv
+myenv\Scripts\activate
+pip install -r requirements.txt
+```
+
+**Linux/macOS/WSL:**
 ```bash
 rm -rf myenv
 ./setup.sh  # Recreate from scratch
 ```
 
 ### Python Version
-Ensure you're using Python 3.12 or 3.13:
+
+**Windows:**
+```powershell
+py -3.12 --version
+# or
+python --version
+```
+
+**Linux/macOS/WSL:**
 ```bash
 python --version
+# or
+python3 --version
 ```
 
 ### Port Already in Use
