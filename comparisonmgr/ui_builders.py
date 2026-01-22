@@ -165,7 +165,7 @@ def _comparison_heatmap_data(panel, entry: dict, settings, override_range=None):
     return heatmap_bundle
 
 
-def build_comparison_heatmap_row(panels, entries, settings, group):
+def build_comparison_heatmap_row(panels, entries, settings, group, app=None):
     """Return a single heatmap row for a comparison group.
 
     Args:
@@ -173,6 +173,7 @@ def build_comparison_heatmap_row(panels, entries, settings, group):
         entries: List of entry dicts for this group
         settings: Dict with scalar, range, palette, full_scale settings
         group: Group name (string)
+        app: Dash app instance (unused, kept for compatibility)
 
     Returns:
         List containing a single Div with heatmap title row and graph row
@@ -241,7 +242,7 @@ def build_comparison_heatmap_row(panels, entries, settings, group):
     if colorbar_fig:
         heatmap_children.append(html.Div(
             dcc.Graph(
-                id={'type': 'comparison-colorbar', 'group': group},
+                id=f'comparison-colorbar-{group}',
                 className='heatmap-colorbar-graph comparison-heatmap-colorbar-graph',
                 figure=colorbar_fig,
                 config={'displayModeBar': False, 'displaylogo': False, 'responsive': False}
@@ -259,7 +260,7 @@ def build_comparison_heatmap_row(panels, entries, settings, group):
                     html.Img(src='/assets/download.png', alt='Download', className='btn-icon'),
                     html.Span("PNG")
                 ],
-                id={'type': 'comparison-download-group', 'group': group},
+                id={'type': 'comparison-download', 'group': group},
                 n_clicks=0,
                 className='comparison-heatmap-download-all graph-toolbar-btn graph-toolbar-btn--icon',
                 title='Download all heatmaps as PNG'
@@ -305,7 +306,7 @@ def build_comparison_heatmap_row(panels, entries, settings, group):
             ),
             html.Div(
                 heatmap_children,
-                id={'type': 'comparison-heatmap-row', 'group': group},
+                id=f'comparison-heatmap-row-{group}',
                 className='comparison-heatmap-row heatmap-row',
                 style={'gridTemplateColumns': grid_template}
             ),
@@ -314,7 +315,7 @@ def build_comparison_heatmap_row(panels, entries, settings, group):
     )]
 
 
-def build_comparison_content(files, group_controls_by_group=None, group_selected_paths_by_group=None, allowed_groups=None):
+def build_comparison_content(files, group_controls_by_group=None, group_selected_paths_by_group=None, allowed_groups=None, app=None):
     """Render the comparison tab body showing files from Comparison folder, grouped by prefix.
 
     Args:
@@ -322,6 +323,7 @@ def build_comparison_content(files, group_controls_by_group=None, group_selected
         group_controls_by_group: Optional dict {group: stored_controls}.
         group_selected_paths_by_group: Optional dict {group: [vtk_paths]} selected from VTK folder.
         allowed_groups: Optional set/list of group prefixes to show.
+        app: Dash app instance (for callback registration)
 
     Returns:
         List containing a single Div with all comparison group cards
@@ -622,7 +624,7 @@ def build_comparison_content(files, group_controls_by_group=None, group_selected
 
         heatmap_sections = []
         if panels_for_group:
-            heatmap_sections = build_comparison_heatmap_row(panels_for_group, selected_group_entries, settings, group)
+            heatmap_sections = build_comparison_heatmap_row(panels_for_group, selected_group_entries, settings, group, app=app)
 
         comparison_block = html.Div([
             html.Div([
@@ -644,8 +646,16 @@ def build_comparison_content(files, group_controls_by_group=None, group_selected
     return [html.Div(cards, className='comparison-root')]
 
 
-def build_comparison_group_content(group, files, group_controls_by_group=None, group_selected_paths_by_group=None):
-    """Render a single comparison group card (Multi View panels use this)."""
+def build_comparison_group_content(group, files, group_controls_by_group=None, group_selected_paths_by_group=None, app=None):
+    """Render a single comparison group card (Multi View panels use this).
+
+    Args:
+        group: Group name
+        files: List of comparison files
+        group_controls_by_group: Optional dict of stored controls
+        group_selected_paths_by_group: Optional dict of selected paths
+        app: Dash app instance (for callback registration)
+    """
     group_selected_paths_by_group = group_selected_paths_by_group or {}
 
     available_entries = _comparison_entries(files, list_vtk_files())
@@ -905,7 +915,7 @@ def build_comparison_group_content(group, files, group_controls_by_group=None, g
 
     heatmap_sections = []
     if panels_for_group:
-        heatmap_sections = build_comparison_heatmap_row(panels_for_group, selected_entries, settings, group)
+        heatmap_sections = build_comparison_heatmap_row(panels_for_group, selected_entries, settings, group, app=app)
 
     comparison_block = html.Div([
         html.Div([

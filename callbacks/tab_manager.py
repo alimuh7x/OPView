@@ -356,7 +356,7 @@ class TabCallbackManager(BaseCallbackManager):
                     if not group:
                         content = [html.Div(f"Failed to resolve comparison group for: {tab_id}", className='dataset-empty')]
                     else:
-                        content = build_comparison_group_content(group, comparison_files or [], stored_by_group, selected_by_group)
+                        content = build_comparison_group_content(group, comparison_files or [], stored_by_group, selected_by_group, app=self.app)
                     panels.append(
                         html.Div(
                             content,

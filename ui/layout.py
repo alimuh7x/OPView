@@ -50,6 +50,8 @@ def build_app_layout(
                 dcc.Store(id='comparison-active-tab', data=None),  # Active comparison panel (memory only)
                 dcc.Store(id='comparison-open-tabs', data=[]),  # Open comparison panels (memory only)
                 dcc.Store(id='comparison-files-store', data=comparison_files),
+                dcc.Store(id='comparison-png-export-trigger', data=None),  # PNG export trigger (memory only)
+                html.Div(id='comparison-png-export-dummy', style={'display': 'none'}),  # PNG export dummy output
                 dcc.Store(id='loaded-vtk-folders', data=[]),
                 dcc.Store(id='loaded-textdata-folders', data=[]),
                 dcc.Store(id='selected-project-folder', data=None),

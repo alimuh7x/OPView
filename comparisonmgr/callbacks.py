@@ -9,7 +9,8 @@ Extracted from OPView.py Phase 10.3 - provides callback functions for:
 - Control persistence
 """
 
-from dash import Output, Input, State, MATCH, ALL, ctx, html, dcc, no_update
+import time
+from dash import Output, Input, State, MATCH, ALL, ctx, html, dcc, no_update, ClientsideFunction
 from dash.exceptions import PreventUpdate
 
 # Import helper functions from same package
@@ -41,6 +42,49 @@ def register_comparison_callbacks(app):
     Args:
         app: Dash application instance
     """
+
+    # PNG Export: Server-side callback to catch button clicks (pattern-matching works here)
+    @app.callback(
+        Output('comparison-png-export-trigger', 'data'),
+        Input({'type': 'comparison-download', 'group': ALL}, 'n_clicks'),
+        State({'type': 'comparison-download', 'group': ALL}, 'id'),
+        prevent_initial_call=True
+    )
+    def _trigger_png_export(n_clicks_list, button_ids):
+        """Catch PNG button clicks and trigger export via Store."""
+        if not ctx.triggered_id:
+            raise PreventUpdate
+
+        if not isinstance(ctx.triggered_id, dict):
+            raise PreventUpdate
+
+        # Check the actual click value - must be > 0 (actual click, not initialization)
+        triggered_value = ctx.triggered[0]['value'] if ctx.triggered else None
+
+        if not triggered_value or triggered_value == 0:
+            raise PreventUpdate
+
+        group = ctx.triggered_id.get('group')
+
+        if not group:
+            raise PreventUpdate
+
+        # Return group name to trigger clientside export
+        return {'group': group, 'timestamp': time.time()}
+
+    # PNG Export: Universal clientside callback that handles all groups
+    # JavaScript code is in assets/comparison_png_export.js
+    app.clientside_callback(
+        ClientsideFunction(
+            namespace='comparison',
+            function_name='export_png'
+        ),
+        Output('comparison-png-export-dummy', 'children'),
+        Input('comparison-png-export-trigger', 'data'),
+        prevent_initial_call=True
+    )
+
+    print("[PNG Export] Clientside callback registered")
 
     @app.callback(
         Output({'type': 'comparison-selected-files-store', 'group': MATCH}, 'data'),
@@ -107,7 +151,7 @@ def register_comparison_callbacks(app):
         )
 
         settings['interfaces_overlay_visible'] = bool(overlay_checked)
-        return build_comparison_heatmap_row(panels_for_group, group_entries, settings, group)
+        return build_comparison_heatmap_row(panels_for_group, group_entries, settings, group, app=app)
 
     @app.callback(
         Output({'type': 'comparison-heatmap-field', 'group': MATCH}, 'options'),
@@ -443,131 +487,6 @@ def register_comparison_callbacks(app):
             'interfaces_overlay_visible': bool(overlay_checked),
             'slider_range': slider_range,
         }
-
-    app.clientside_callback(
-        """
-        function(n_clicks) {
-            if (!n_clicks) {
-                return window.dash_clientside.no_update;
-            }
-            var ctx = window.dash_clientside.callback_context || {};
-            var trig = ctx.triggered_id;
-            if (!trig) {
-                return window.dash_clientside.no_update;
-            }
-            var rowId = JSON.stringify({type: 'comparison-heatmap-row', group: trig.group});
-            var colorbarId = JSON.stringify({type: 'comparison-colorbar', group: trig.group});
-            var rowEl = document.getElementById(rowId);
-            var colorbarContainer = document.getElementById(colorbarId);
-            if (!rowEl || !colorbarContainer || !window.Plotly || !Plotly.toImage) {
-                return window.dash_clientside.no_update;
-            }
-
-            var heatmapContainers = Array.prototype.slice.call(
-                rowEl.getElementsByClassName("comparison-heatmap-graph")
-            );
-            if (!heatmapContainers.length) {
-                return window.dash_clientside.no_update;
-            }
-
-            var heatmapPlots = heatmapContainers.map(function(container) {
-                return container.getElementsByClassName("js-plotly-plot")[0] || container;
-            });
-            var colorbarPlot = colorbarContainer.getElementsByClassName("js-plotly-plot")[0] || colorbarContainer;
-
-            var loadImage = function(src) {
-                return new Promise(function(resolve, reject) {
-                    var img = new Image();
-                    img.onload = function() { resolve(img); };
-                    img.onerror = reject;
-                    img.src = src;
-                });
-            };
-
-            var exportScale = 2;
-            var gap = 14 * exportScale;
-            var padding = 12 * exportScale;
-            var logoCardWidth = 70 * exportScale;
-
-            var heatmapDims = heatmapPlots.map(function(plot) {
-                var layout = plot._fullLayout || {};
-                return {
-                    width: Math.round(layout.width || plot.clientWidth || 600),
-                    height: Math.round(layout.height || plot.clientHeight || 380)
-                };
-            });
-            var colorbarLayout = colorbarPlot._fullLayout || {};
-            var colorbarWidth = Math.round(colorbarLayout.width || colorbarPlot.clientWidth || 90);
-            var colorbarHeight = Math.round(colorbarLayout.height || colorbarPlot.clientHeight || heatmapDims[0].height);
-
-            (async () => {
-                try {
-                    var heatmapUrls = await Promise.all(
-                        heatmapPlots.map(function(plot, idx) {
-                            return Plotly.toImage(plot, {
-                                format: 'png',
-                                width: heatmapDims[idx].width,
-                                height: heatmapDims[idx].height,
-                                scale: exportScale
-                            });
-                        })
-                    );
-                    var colorbarUrl = await Plotly.toImage(colorbarPlot, {
-                        format: 'png',
-                        width: colorbarWidth,
-                        height: colorbarHeight,
-                        scale: exportScale
-                    });
-
-                    var heatmapImgs = await Promise.all(heatmapUrls.map(loadImage));
-                    var colorbarImg = await loadImage(colorbarUrl);
-                    var logoImg = await loadImage("/assets/OP_Logo.png");
-
-                    var totalHeatmapWidth = heatmapImgs.reduce(function(sum, img) { return sum + img.width; }, 0);
-                    var maxHeatmapHeight = heatmapImgs.reduce(function(max, img) { return Math.max(max, img.height); }, 0);
-
-                    var canvasWidth = padding * 2 + logoCardWidth + gap + totalHeatmapWidth + gap * (heatmapImgs.length - 1) + gap + colorbarImg.width;
-                    var canvasHeight = padding * 2 + Math.max(maxHeatmapHeight, colorbarImg.height);
-
-                    var canvas = document.createElement('canvas');
-                    canvas.width = canvasWidth;
-                    canvas.height = canvasHeight;
-                    var ctx2d = canvas.getContext('2d');
-
-                    ctx2d.fillStyle = '#ffffff';
-                    ctx2d.fillRect(0, 0, canvasWidth, canvasHeight);
-
-                    var cursorX = padding + logoCardWidth + gap;
-                    var cursorY = padding;
-                    heatmapImgs.forEach(function(img) {
-                        ctx2d.drawImage(img, cursorX, cursorY);
-                        cursorX += img.width + gap;
-                    });
-
-                    ctx2d.drawImage(colorbarImg, cursorX, padding);
-
-                    var logoTargetWidth = logoCardWidth * 0.5;
-                    var logoScale = logoTargetWidth / logoImg.width;
-                    var logoTargetHeight = logoImg.height * logoScale;
-                    var logoX = padding + logoCardWidth - logoTargetWidth;
-                    var logoY = padding + maxHeatmapHeight - logoTargetHeight - 6 * exportScale;
-                    ctx2d.drawImage(logoImg, logoX, logoY, logoTargetWidth, logoTargetHeight);
-
-                    var link = document.createElement('a');
-                    link.href = canvas.toDataURL('image/png');
-                    link.download = 'comparison_' + trig.group + '.png';
-                    link.click();
-                } catch (err) {
-                    console.error("Failed to export comparison heatmap PNG", err);
-                }
-            })();
-            return window.dash_clientside.no_update;
-        }
-        """,
-        Output({'type': 'comparison-download-group', 'group': MATCH}, 'n_clicks'),
-        Input({'type': 'comparison-download-group', 'group': MATCH}, 'n_clicks'),
-        prevent_initial_call=True
-    )
 
     @app.callback(
         Output({'type': 'comparison-add-path-input', 'group': MATCH}, 'value'),
