@@ -215,7 +215,33 @@ def build_comparison_heatmap_row(panels, entries, settings, group, app=None):
         if not panel_entry:
             continue
         _, panel, _ = panel_entry
-        heatmap_data = _comparison_heatmap_data(panel, entry, settings, override_range=override_range)
+        # Use cached heatmap bundles when possible to avoid re-rendering.
+        import OPView
+        file_path = entry.get('path')
+        scalar_value = settings.get('scalar')
+        slice_index = settings.get('slice_index')
+        try:
+            slice_index = int(slice_index) if slice_index is not None else 0
+        except (TypeError, ValueError):
+            slice_index = 0
+        cache_key = (
+            str(file_path),
+            scalar_value,
+            slice_index,
+            settings.get('range_min'),
+            settings.get('range_max'),
+            settings.get('palette'),
+            bool(settings.get('full_scale')),
+            bool(settings.get('interfaces_overlay_visible')),
+            tuple(override_range) if override_range else None,
+        )
+        heatmap_cache = getattr(OPView, "comparison_heatmap_cache", {})
+        heatmap_data = heatmap_cache.get(cache_key)
+        if heatmap_data is None:
+            heatmap_data = _comparison_heatmap_data(panel, entry, settings, override_range=override_range)
+            if heatmap_data is not None:
+                heatmap_cache[cache_key] = heatmap_data
+                OPView.comparison_heatmap_cache = heatmap_cache
         if not heatmap_data:
             continue
         # Use the first available colorbar for the row.

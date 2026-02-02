@@ -172,6 +172,9 @@ reader_cache = {}
 # Grid cache for comparison panel optimizations: key = (file_name, scalar, slice_index) → (figure, colorbar_figure)
 comparison_grid_cache = {}
 comparison_grid_cache_data = {}  # key = (file_name, scalar, slice_index) → (X_grid, Y_grid, Z_grid, stats, state_dict)
+# Cache rendered heatmap bundles for comparison panels.
+# key = (file_path, scalar, slice_index, range_min, range_max, palette, full_scale, interfaces_overlay)
+comparison_heatmap_cache = {}
 
 # Storage for discovered project folders (initialized at startup)
 discovered_project_folders = {}
