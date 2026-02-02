@@ -88,10 +88,31 @@ def register_comparison_callbacks(app):
 
     # SessionStorage Persistence: Restore selected files when stores are recreated
     app.clientside_callback(
-        ClientsideFunction(
-            namespace='comparison_persistence',
-            function_name='restore_selected_files'
-        ),
+        """
+        function(store_data, store_id) {
+            if (!store_id || !store_id.group) {
+                return window.dash_clientside.no_update;
+            }
+            const key = `comparison-selected-files-${store_id.group}`;
+            if (store_data && store_data.length > 0) {
+                sessionStorage.setItem(key, JSON.stringify(store_data));
+                return store_data;
+            }
+            const stored = sessionStorage.getItem(key);
+            if (stored) {
+                try {
+                    const parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        console.log(`[PERSISTENCE] Restored ${parsed.length} files for group ${store_id.group}`);
+                        return parsed;
+                    }
+                } catch (e) {
+                    console.error('[PERSISTENCE] Error parsing stored data:', e);
+                }
+            }
+            return [];
+        }
+        """,
         Output({'type': 'comparison-selected-files-store', 'group': MATCH}, 'data', allow_duplicate=True),
         Input({'type': 'comparison-selected-files-store', 'group': MATCH}, 'data'),
         State({'type': 'comparison-selected-files-store', 'group': MATCH}, 'id'),
@@ -100,10 +121,31 @@ def register_comparison_callbacks(app):
 
     # SessionStorage Persistence: Restore control settings when stores are recreated
     app.clientside_callback(
-        ClientsideFunction(
-            namespace='comparison_persistence',
-            function_name='restore_controls'
-        ),
+        """
+        function(store_data, store_id) {
+            if (!store_id || !store_id.group) {
+                return window.dash_clientside.no_update;
+            }
+            const key = `comparison-controls-${store_id.group}`;
+            if (store_data && Object.keys(store_data).length > 0) {
+                sessionStorage.setItem(key, JSON.stringify(store_data));
+                return store_data;
+            }
+            const stored = sessionStorage.getItem(key);
+            if (stored) {
+                try {
+                    const parsed = JSON.parse(stored);
+                    if (parsed && typeof parsed === 'object') {
+                        console.log(`[PERSISTENCE] Restored controls for group ${store_id.group}`);
+                        return parsed;
+                    }
+                } catch (e) {
+                    console.error('[PERSISTENCE] Error parsing stored controls:', e);
+                }
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
         Output({'type': 'comparison-controls-store', 'group': MATCH}, 'data', allow_duplicate=True),
         Input({'type': 'comparison-controls-store', 'group': MATCH}, 'data'),
         State({'type': 'comparison-controls-store', 'group': MATCH}, 'id'),

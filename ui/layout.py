@@ -18,7 +18,8 @@ def build_app_layout(
     allowed_comparison_groups_func,
     get_project_folder_options_func,
     group_projects_by_parent_func,
-    default_vtk_folder_label="VTK"
+    default_vtk_folder_label="VTK",
+    server_session_id=None
 ):
     """Build the main application layout.
 
@@ -32,6 +33,7 @@ def build_app_layout(
         get_project_folder_options_func: Function to get project folder options (legacy)
         group_projects_by_parent_func: Function to group VTK folders by parent project
         default_vtk_folder_label: Label for default VTK folder
+        server_session_id: Unique server session ID for detecting server restarts
 
     Returns:
         Dash layout component
@@ -44,6 +46,13 @@ def build_app_layout(
         html.Div(
             id='app-container',
             children=[
+                # Server session tracking (for detecting server restarts)
+                dcc.Store(
+                    id='server-session-id',
+                    data={'id': server_session_id} if server_session_id else None,
+                    storage_type='memory'  # Don't persist - always fetch from server
+                ),
+                html.Div(id='session-check-dummy', style={'display': 'none'}),  # Session checker dummy output
                 dcc.Store(id='active-tab', data=None),  # Currently active tab (memory only - resets on refresh)
                 dcc.Store(id='open-tabs', data=[]),  # Track which tabs are open (memory only - resets on refresh)
                 # Multi View has its own panel state (separate from Single View).

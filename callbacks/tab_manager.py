@@ -4,7 +4,7 @@ Tab callback manager for OPView.
 Manages callbacks related to tab navigation and rendering.
 """
 
-from dash import Output, Input, State, ctx, ALL, no_update
+from dash import Output, Input, State, ctx, ALL, no_update, ClientsideFunction
 from dash.exceptions import PreventUpdate
 
 from .base import BaseCallbackManager
@@ -29,6 +29,7 @@ class TabCallbackManager(BaseCallbackManager):
 
     def register(self) -> None:
         """Register all tab-related callbacks."""
+        self._register_check_server_session()  # NEW: Clear session on server restart
         # OLD: self._register_set_active_tab()  # Removed - used old tab buttons
         self._register_render_tab_content()
         # Dynamic tab management callbacks
@@ -885,3 +886,47 @@ class TabCallbackManager(BaseCallbackManager):
     #         return sel_out, ctrl_out
     #
     #     self._track_callback(clear_comparison_on_tab)
+
+    def _register_check_server_session(self):
+        """Check server session ID and clear sessionStorage if server restarted."""
+        self.app.clientside_callback(
+            """
+            function(server_session_data) {
+                if (!server_session_data || !server_session_data.id) {
+                    return window.dash_clientside.no_update;
+                }
+
+                const current_server_id = server_session_data.id;
+                const stored_server_id = sessionStorage.getItem('server-session-id');
+                const reloaded_for_id = sessionStorage.getItem('server-session-reloaded');
+
+                console.log('[SESSION] Current server ID:', current_server_id);
+                console.log('[SESSION] Stored server ID:', stored_server_id);
+
+                // First load or server restarted
+                if (!stored_server_id || stored_server_id !== current_server_id) {
+                    console.log('[SESSION] Server restart detected - clearing all session data');
+
+                    // Clear all session storage
+                    sessionStorage.clear();
+
+                    // Store new session ID
+                    sessionStorage.setItem('server-session-id', current_server_id);
+                    sessionStorage.setItem('server-session-reloaded', current_server_id);
+
+                    console.log('[SESSION] Session data cleared');
+                    if (reloaded_for_id !== current_server_id) {
+                        window.location.reload();
+                    }
+                } else {
+                    console.log('[SESSION] Same server session - preserving data');
+                }
+
+                return window.dash_clientside.no_update;
+            }
+            """,
+            Output('session-check-dummy', 'children'),
+            Input('server-session-id', 'data'),
+            prevent_initial_call=False  # Run on first load
+        )
+        print("[CALLBACKS] Registered server session checker")

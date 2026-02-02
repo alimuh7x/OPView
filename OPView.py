@@ -161,6 +161,11 @@ def get_legacy_data(data_type: str):
         'plastic_strain': PLASTIC_STRAIN_DATA,
     }.get(data_type)
 
+# Generate unique session ID when server starts (used to detect server restarts)
+import uuid
+SERVER_SESSION_ID = str(uuid.uuid4())
+print(f"[SERVER] Session ID: {SERVER_SESSION_ID}")
+
 # Legacy global variables (used when app_context is None for backwards compatibility)
 reader_cache = {}
 
@@ -874,6 +879,7 @@ app.layout = html.Div(
         get_project_folder_options_func=get_project_folder_options,
         group_projects_by_parent_func=group_projects_by_parent,
         default_vtk_folder_label=DEFAULT_VTK_FOLDER_LABEL,
+        server_session_id=SERVER_SESSION_ID,
     ),
     style={"backgroundColor": APP_BG_COLOR, "minHeight": "100vh"},
 )
