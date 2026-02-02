@@ -6,12 +6,13 @@
  * loading persisted data from sessionStorage when stores are recreated.
  */
 
-window.dash_clientside = Object.assign({}, window.dash_clientside, {
-    comparison_persistence: {
-        /**
-         * Restore selected files from sessionStorage when store is recreated
-         */
-        restore_selected_files: function(store_data, store_id) {
+window.dash_clientside = window.dash_clientside || {};
+window.dash_clientside.comparison_persistence = window.dash_clientside.comparison_persistence || {};
+
+/**
+ * Restore selected files from sessionStorage when store is recreated
+ */
+window.dash_clientside.comparison_persistence.restore_selected_files = function(store_data, store_id) {
             // Get the store ID string for sessionStorage key
             if (!store_id || !store_id.group) {
                 return window.dash_clientside.no_update;
@@ -41,12 +42,12 @@ window.dash_clientside = Object.assign({}, window.dash_clientside, {
 
             // No persisted data found
             return [];
-        },
+        };
 
-        /**
-         * Restore control settings from sessionStorage when store is recreated
-         */
-        restore_controls: function(store_data, store_id) {
+/**
+ * Restore control settings from sessionStorage when store is recreated
+ */
+window.dash_clientside.comparison_persistence.restore_controls = function(store_data, store_id) {
             // Get the store ID string for sessionStorage key
             if (!store_id || !store_id.group) {
                 return window.dash_clientside.no_update;
@@ -76,6 +77,4 @@ window.dash_clientside = Object.assign({}, window.dash_clientside, {
 
             // No persisted data found
             return window.dash_clientside.no_update;
-        }
-    }
-});
+        };

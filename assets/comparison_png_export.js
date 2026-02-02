@@ -1,7 +1,7 @@
 // Comparison PNG Export - Clientside callback
-window.dash_clientside = Object.assign({}, window.dash_clientside, {
-    comparison: {
-        export_png: function(trigger_data) {
+window.dash_clientside = window.dash_clientside || {};
+window.dash_clientside.comparison = window.dash_clientside.comparison || {};
+window.dash_clientside.comparison.export_png = function(trigger_data) {
             if (!trigger_data || !trigger_data.group) {
                 return window.dash_clientside.no_update;
             }
@@ -134,6 +134,4 @@ window.dash_clientside = Object.assign({}, window.dash_clientside, {
             })();
 
             return window.dash_clientside.no_update;
-        }
-    }
-});
+        };
