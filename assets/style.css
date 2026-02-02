@@ -1912,6 +1912,19 @@ input:focus,
     height: 100%;
 }
 
+/* ===== Multi-File Graph Logo Styles ===== */
+
+/* Logo image positioned at bottom-left inside graph container */
+.multifile-logo {
+    position: absolute;
+    bottom: 40px;            /* Distance from bottom */
+    left: 50px;              /* Distance from left */
+    width: 45px;             /* Logo width */
+    height: auto;            /* Maintain aspect ratio */
+    z-index: 10;             /* Ensure logo appears above graph */
+    pointer-events: none;    /* Allow interaction with graph behind logo */
+}
+
 .graph-topbar {
     display: flex;
     justify-content: space-between;
@@ -2134,11 +2147,13 @@ input:focus,
 
 .multifile-graph-area {
     flex: 1;
-    min-width: 0;
-    padding: 16px;
+    position: relative;      /* For absolute positioning of logo */
     display: flex;
-    flex-direction: column;
-    overflow: hidden;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;            /* Allow flex to shrink below content size */
+    padding: 10px;
+    overflow: auto;          /* Add scroll if graph is larger than container */
 }
 
 .multifile-settings-sidebar {
@@ -2734,4 +2749,21 @@ input:focus,
     .multifile-columns-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* =============================================================================
+   Smooth Panel Visibility Transitions (Fix Panel Flash on Tab Switch)
+   ============================================================================= */
+
+/* Smooth panel visibility transitions */
+.panel-container {
+    transition: opacity 0.15s ease-in-out;
+}
+
+.panel-container[style*="display: none"] {
+    opacity: 0;
+}
+
+.panel-container[style*="display: block"] {
+    opacity: 1;
 }

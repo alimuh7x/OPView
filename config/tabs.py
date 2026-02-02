@@ -34,49 +34,6 @@ def tensor_scalars(array_name: str, prefix: str) -> List[Dict[str, Any]]:
 # Main tab configurations
 TAB_CONFIGS = [
     {
-        "id": "phase-field",
-        "label": "Phase Field",
-        "icon": "⛶",
-        "datasets": [
-            {
-                "id": "phase",
-                "label": "Phase Field",
-                "file_glob": "PhaseField_*.vts",
-                "scalars": [
-                    {'label': 'Phase Field', 'array': 'PhaseFields'},
-                    {'label': 'Interfaces', 'array': 'Interfaces'},
-                    {'label': 'Phase Fraction', 'array': 'PhaseFraction_0'},
-                ]
-            }
-        ],
-    },
-    {
-        "id": "composition",
-        "label": "Composition",
-        "icon": "⚛",
-        "datasets": [
-            {
-                "id": "composition",
-                "label": "Composition",
-                "file_glob": "Composition_*.vts",
-                "scalars": [
-                    {'label': 'Weight Fraction FE (Total)', 'array': 'WeightFractionsTotal_FE'},
-                    {'label': 'Mole Fraction FE (Total)', 'array': 'MoleFractionsTotal_FE'},
-                    {'label': 'Mole Fraction FE (Phase 0)', 'array': 'MoleFractionsPhase_FE(0)'},
-                    {'label': 'Mole Fraction FE (Phase 1)', 'array': 'MoleFractionsPhase_FE(1)'},
-                    {'label': 'Weight Fraction SOLVENT (Total)', 'array': 'WeightFractionsTotal_SOLVENT'},
-                    {'label': 'Mole Fraction SOLVENT (Total)', 'array': 'MoleFractionsTotal_SOLVENT'},
-                    {'label': 'Mole Fraction SOLVENT (Phase 0)', 'array': 'MoleFractionsPhase_SOLVENT(0)'},
-                    {'label': 'Mole Fraction SOLVENT (Phase 1)', 'array': 'MoleFractionsPhase_SOLVENT(1)'},
-                    {'label': 'Weight Fraction CL (Total)', 'array': 'WeightFractionsTotal_CL'},
-                    {'label': 'Mole Fraction CL (Total)', 'array': 'MoleFractionsTotal_CL'},
-                    {'label': 'Mole Fraction CL (Phase 0)', 'array': 'MoleFractionsPhase_CL(0)'},
-                    {'label': 'Mole Fraction CL (Phase 1)', 'array': 'MoleFractionsPhase_CL(1)'},
-                ]
-            }
-        ],
-    },
-    {
         "id": "mechanics",
         "label": "Mechanics",
         "icon": "⚙",

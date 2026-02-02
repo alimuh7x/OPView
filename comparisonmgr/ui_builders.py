@@ -398,14 +398,16 @@ def build_comparison_content(files, group_controls_by_group=None, group_selected
         stored = stored_controls_by_group.get(group) or {}
 
         has_selection = bool(panels_for_settings)
+        # Use stored values regardless of file selection to preserve settings during tab switches
         settings, scalar_options, palette_options = _comparison_settings(
             panels_for_settings,
-            scalar_value=stored.get('scalar') if has_selection else None,
-            range_min=stored.get('range_min') if has_selection else None,
-            range_max=stored.get('range_max') if has_selection else None,
+            scalar_value=stored.get('scalar'),
+            range_min=stored.get('range_min'),
+            range_max=stored.get('range_max'),
             palette_value=stored.get('palette'),
-            full_scale=stored.get('full_scale', False) if has_selection else False,
-            slider_range=stored.get('slider_range') if has_selection else None,
+            full_scale=stored.get('full_scale', False),
+            slider_range=stored.get('slider_range'),
+            interfaces_overlay_visible=stored.get('interfaces_overlay_visible', False),
         )
         slider_min_default, slider_max_default = _comparison_range_defaults(panels_for_settings, settings['scalar'])
         if slider_min_default is None or slider_max_default is None:
@@ -602,11 +604,13 @@ def build_comparison_content(files, group_controls_by_group=None, group_selected
         range_selector_store = dcc.Store(
             id={'type': 'comparison-range-selection', 'group': group},
             data={'click_count': 0, 'first_click': None},
+            storage_type='session',
         )
 
         group_selected_store = dcc.Store(
             id={'type': 'comparison-selected-files-store', 'group': group},
             data=selected_paths,
+            storage_type='session',
         )
 
         group_controls_store = dcc.Store(
@@ -620,6 +624,7 @@ def build_comparison_content(files, group_controls_by_group=None, group_selected
                 'interfaces_overlay_visible': settings.get('interfaces_overlay_visible', False),
                 'slider_range': [slider_value_min, slider_value_max],
             },
+            storage_type='session',
         )
 
         heatmap_sections = []
@@ -735,15 +740,20 @@ def build_comparison_group_content(group, files, group_controls_by_group=None, g
     group_options = [{'label': _label_for_entry(e), 'value': e['path']} for e in available_group_entries]
 
     has_selection = bool(panels_for_group)
+    # Use stored values from State if available, regardless of whether files are selected
+    # This preserves control settings when switching tabs
+    print(f"[DEBUG UI] stored.get('range_min')={stored.get('range_min')}, stored.get('range_max')={stored.get('range_max')}, interfaces={stored.get('interfaces_overlay_visible')}")
     settings, scalar_options, palette_options = _comparison_settings(
         panels_for_group,
-        scalar_value=stored.get('scalar') if has_selection else None,
-        range_min=stored.get('range_min') if has_selection else None,
-        range_max=stored.get('range_max') if has_selection else None,
+        scalar_value=stored.get('scalar'),
+        range_min=stored.get('range_min'),
+        range_max=stored.get('range_max'),
         palette_value=stored.get('palette'),
-        full_scale=stored.get('full_scale', False) if has_selection else False,
-        slider_range=stored.get('slider_range') if has_selection else None,
+        full_scale=stored.get('full_scale', False),
+        slider_range=stored.get('slider_range'),
+        interfaces_overlay_visible=stored.get('interfaces_overlay_visible', False),
     )
+    print(f"[DEBUG UI] After _comparison_settings: settings['range_min']={settings.get('range_min')}, settings['range_max']={settings.get('range_max')}, interfaces={settings.get('interfaces_overlay_visible')}")
     slider_min_default, slider_max_default = _comparison_range_defaults(panels_for_group, settings['scalar'])
     if slider_min_default is None or slider_max_default is None:
         slider_min_default, slider_max_default = 0.0, 1.0
@@ -887,21 +897,29 @@ def build_comparison_group_content(group, files, group_controls_by_group=None, g
         ], className='range-slider-row range-slider-with-mode')
     ])
 
+    # Range selector doesn't need persistence - always reset on tab render
     range_selector_store = dcc.Store(
         id={'type': 'comparison-range-selection', 'group': group},
         data={'click_count': 0, 'first_click': None},
         storage_type='session',
     )
 
-    group_selected_store = dcc.Store(
-        id={'type': 'comparison-selected-files-store', 'group': group},
-        data=selected_paths,
-        storage_type='session',
-    )
+    # Only initialize data if we have selected paths from arguments, otherwise load from sessionStorage
+    group_selected_store_props = {
+        'id': {'type': 'comparison-selected-files-store', 'group': group},
+        'storage_type': 'session',
+    }
+    if selected_paths:  # Only set data if we have paths to initialize
+        group_selected_store_props['data'] = selected_paths
+    group_selected_store = dcc.Store(**group_selected_store_props)
 
-    group_controls_store = dcc.Store(
-        id={'type': 'comparison-controls-store', 'group': group},
-        data={
+    # Initialize data if State has controls (during tab switches), otherwise let clientside restore from sessionStorage
+    group_controls_store_props = {
+        'id': {'type': 'comparison-controls-store', 'group': group},
+        'storage_type': 'session',
+    }
+    if stored:  # If we have any data from State, use it to prevent reset during tab switches
+        group_controls_store_props['data'] = {
             'scalar': settings['scalar'],
             'range_min': settings['range_min'],
             'range_max': settings['range_max'],
@@ -909,9 +927,11 @@ def build_comparison_group_content(group, files, group_controls_by_group=None, g
             'full_scale': settings['full_scale'],
             'interfaces_overlay_visible': settings.get('interfaces_overlay_visible', False),
             'slider_range': [slider_value_min, slider_value_max],
-        },
-        storage_type='session',
-    )
+        }
+        print(f"[DEBUG UI] Creating store with data: range_min={settings['range_min']}, range_max={settings['range_max']}")
+    else:
+        print(f"[DEBUG UI] Creating store WITHOUT data (will load from sessionStorage)")
+    group_controls_store = dcc.Store(**group_controls_store_props)
 
     heatmap_sections = []
     if panels_for_group:

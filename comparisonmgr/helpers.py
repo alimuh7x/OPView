@@ -255,7 +255,8 @@ def _comparison_range_defaults(panels, scalar_key):
 
 
 def _comparison_settings(panels, scalar_value=None, range_min=None, range_max=None,
-                         palette_value=None, full_scale=False, slider_range=None):
+                         palette_value=None, full_scale=False, slider_range=None,
+                         interfaces_overlay_visible=False):
     """Normalize comparison control inputs into a settings dict plus dropdown options."""
     scalar_options = _comparison_scalar_options(panels)
     palette_options = _comparison_palette_options(panels)
@@ -299,6 +300,7 @@ def _comparison_settings(panels, scalar_value=None, range_min=None, range_max=No
         'range_max': clamped_max,
         'palette': selected_palette,
         'full_scale': bool(full_scale),
+        'interfaces_overlay_visible': bool(interfaces_overlay_visible),
     }
     return settings, scalar_options, palette_options
 

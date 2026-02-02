@@ -712,7 +712,7 @@ class ViewerPanel:
             *outputs,
             *inputs,
             State(self.cid('state'), 'data'),
-            prevent_initial_call=True
+            prevent_initial_call=False
         )
         def _update_viewer(*args):
             debug = bool(os.environ.get("OPVIEW_DEBUG"))
@@ -870,26 +870,35 @@ class ViewerPanel:
             # Fallback state should reflect the currently selected file
             fallback_state = self._build_state(reader, file_path, fallback_value)
 
+            print(f"[DEBUG VIEWER {self.id}] stored_state keys: {list(stored_state.keys()) if stored_state else 'empty'}")
+            print(f"[DEBUG VIEWER {self.id}] stored range_min={stored_state.get('range_min') if stored_state else None}, range_max={stored_state.get('range_max') if stored_state else None}, interfaces={stored_state.get('interfaces_overlay_visible') if stored_state else None}")
+
             # Ensure colorscale_mode is in state_data for backward compatibility
             if stored_state and 'colorscale_mode' not in stored_state:
                 stored_state['colorscale_mode'] = 'normal'
 
             state = ViewerState.from_dict(stored_state, fallback_state)
+            print(f"[DEBUG VIEWER {self.id}] After from_dict: state.range_min={state.range_min}, state.range_max={state.range_max}, state.interfaces_overlay_visible={state.interfaces_overlay_visible}")
+            print(f"[DEBUG VIEWER {self.id}] fallback_state.interfaces_overlay_visible={fallback_state.interfaces_overlay_visible}")
+
             triggered = ctx.triggered_id
+            print(f"[DEBUG VIEWER {self.id}] Triggered: {triggered}")
             range_needs_reset = False
+            preserve_stored_range = False  # Flag to prevent later resets
 
-            # Force range reset if the file has changed (mismatch between state and current file)
-            if state.file_path != file_path:
-                range_needs_reset = True
-                # Update state to track the new file immediately
-                state.file_path = file_path
-
+            # Only reset range if user explicitly clicked reset button
             if triggered == self.cid('reset'):
+                print(f"[DEBUG VIEWER {self.id}] Reset button clicked - resetting to defaults")
                 state = replace(fallback_state)
                 min_val = state.range_min
                 max_val = state.range_max
                 palette_value = fallback_state.palette
                 # Keep current file when resetting other controls
+                state.file_path = file_path
+                range_needs_reset = True
+            # Update file path if it changed
+            elif state.file_path != file_path:
+                print(f"[DEBUG VIEWER {self.id}] File path updated: {state.file_path} -> {file_path}")
                 state.file_path = file_path
 
             # For auto panels, ensure scalar selection is valid after refresh.
@@ -911,13 +920,26 @@ class ViewerPanel:
                 range_needs_reset = True
             # Handle explicit time step change
             if triggered == self.cid('time') and time_value:
-                # When file changes, reset slice index and ranges to new dataset stats
-                state.file_path = file_path
-                self.time_value = time_value
-                if debug:
-                    print(f"[OPVIEW_DEBUG] panel={self.id} selected_file={file_path!r}", flush=True)
-                state.slice_index = 0
-                range_needs_reset = True
+                # Check if this is a real file change or just tab rebuild with same file
+                if stored_state and stored_state.get('file_path') == file_path:
+                    # Same file - tab rebuild, preserve stored state
+                    print(f"[DEBUG VIEWER {self.id}] Time input triggered but same file, preserving stored state")
+                    preserve_stored_range = True
+                    state.file_path = file_path
+                    self.time_value = time_value
+                    state.slice_index = stored_state.get('slice_index', 0)
+                    # Don't read from UI inputs - they were initialized with defaults
+                    # The state already has the correct values from ViewerState.from_dict()
+                    # Skip the later logic that overwrites state with input values
+                else:
+                    # Different file or first load - reset to new file's defaults
+                    print(f"[DEBUG VIEWER {self.id}] Time input triggered with file change, resetting range")
+                    state.file_path = file_path
+                    self.time_value = time_value
+                    if debug:
+                        print(f"[OPVIEW_DEBUG] panel={self.id} selected_file={file_path!r}", flush=True)
+                    state.slice_index = 0
+                    range_needs_reset = True
 
             if triggered in {self.cid('slice'), self.cid('sliceInput')}:
                 candidate = slice_value if triggered == self.cid('slice') else slice_input_value
@@ -948,21 +970,28 @@ class ViewerPanel:
                 state.click_count = 0
                 state.first_click = None
 
-            state.palette = palette_value or fallback_state.palette
-            full_scale_enabled = bool(colorscale_mode_checked)
-            state.colorscale_mode = 'dynamic' if full_scale_enabled else 'normal'
-            state.interfaces_overlay_visible = bool(interfaces_overlay_checked)
+            # Only update state from UI inputs if this is NOT a tab rebuild with preserved state
+            if not preserve_stored_range:
+                state.palette = palette_value or fallback_state.palette
+                full_scale_enabled = bool(colorscale_mode_checked)
+                state.colorscale_mode = 'dynamic' if full_scale_enabled else 'normal'
+                state.interfaces_overlay_visible = bool(interfaces_overlay_checked)
+                state.line_overlay_visible = bool(line_overlay_checked)
+                state.line_scan_direction = scan_direction_value
+                print(f"[DEBUG VIEWER {self.id}] Updated state from UI inputs: interfaces={state.interfaces_overlay_visible}, line_overlay={state.line_overlay_visible}, colorscale_mode={state.colorscale_mode}")
+            else:
+                # Tab rebuild - state already has correct values from stored_state via from_dict()
+                print(f"[DEBUG VIEWER {self.id}] Preserving state from stored_state: interfaces={state.interfaces_overlay_visible}, line_overlay={state.line_overlay_visible}, colorscale_mode={state.colorscale_mode}")
+                # Still update palette if explicitly changed
+                if palette_value and palette_value != state.palette:
+                    state.palette = palette_value
 
-            # Handle DMC Switch boolean values and SegmentedControl string value
-            state.line_overlay_visible = bool(line_overlay_checked)
             # Decide click mode based on which toggle was interacted with
             if triggered == self.cid('clickModeRange'):
                 state.click_mode = 'range'
             elif triggered == self.cid('clickModeLine'):
                 state.click_mode = 'linescan'
             # Otherwise, keep existing state.click_mode
-
-            state.line_scan_direction = scan_direction_value  # SegmentedControl returns 'horizontal' or 'vertical' directly
 
             descriptor = self.scalar_map.get(state.scalar_key, self.scalar_defs[0])
             scale = descriptor.get('scale', 1.0) or 1.0
@@ -1081,6 +1110,9 @@ class ViewerPanel:
             formatted_max = _formatted_range_value(state.range_max)
             min_display = f"{formatted_min:.6f}" if formatted_min is not None else ""
             max_display = f"{formatted_max:.6f}" if formatted_max is not None else ""
+
+            print(f"[DEBUG VIEWER {self.id}] Before return: formatted_min={formatted_min}, formatted_max={formatted_max}, state.interfaces_overlay_visible={state.interfaces_overlay_visible}")
+            print(f"[DEBUG VIEWER {self.id}] store_data to be returned: range_min={store_data.get('range_min')}, range_max={store_data.get('range_max')}, interfaces={store_data.get('interfaces_overlay_visible')}")
 
             # Build base return tuple
             base_return = (

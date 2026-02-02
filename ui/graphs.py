@@ -483,6 +483,11 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
         html.Div([
             # LEFT: GRAPH
             html.Div([
+                html.Img(
+                    src='/assets/OP_Logo.png',
+                    className='multifile-logo',
+                    alt='OP logo'
+                ),
                 dcc.Graph(
                     id={'type': 'multifile-plot', 'panel': panel_id},
                     config={'displayModeBar': True, 'displaylogo': False},

@@ -200,8 +200,9 @@ def build_controls(
 
 #  HEAD: --------------------- Heatmap plot section -------------------------------------------------------
 
-def build_graph_section(viewer_id: str, *, initial_figure=None, initial_colorbar=None, fig_width=None):
+def build_graph_section(viewer_id: str, state, *, initial_figure=None, initial_colorbar=None, fig_width=None):
     """Graph container - main heatmap block."""
+    print(f"[DEBUG build_graph_section {viewer_id}] Initializing interfacesOverlay toggle with checked={state.interfaces_overlay_visible}")
     return html.Div([
 
         # -------------------------
@@ -214,7 +215,7 @@ def build_graph_section(viewer_id: str, *, initial_figure=None, initial_colorbar
                     dmc.Switch(
                         id=component_id(viewer_id, 'interfacesOverlay'),
                         label="Interfaces Overlay",
-                        checked=False,
+                        checked=state.interfaces_overlay_visible,
                         labelPosition="left",
                         size="xs",
                         radius="xs",
@@ -323,7 +324,7 @@ def build_line_scan_card(viewer_id: str, state):
                     dmc.Switch(
                         id=component_id(viewer_id, 'lineOverlay'),
                         label="Show Line",
-                        checked=True,
+                        checked=state.line_overlay_visible,
                         labelPosition="right",
                         size="xs",
                         radius="xs",
@@ -408,6 +409,9 @@ def build_tab_layout(
     dataset_key=None,
 ):
     """Return the full layout for a viewer tab."""
+    # Use sessionStorage to persist state across tab switches
+    # Don't set initial data - let sessionStorage restore it if it exists
+    # The viewer callback will initialize it on first render
     return html.Div([
         html.Div([
             build_controls(
@@ -425,9 +429,14 @@ def build_tab_layout(
                 include_range_section=include_range_section,
                 include_hidden_line_toggle=include_hidden_line_toggle
             ),
-            build_graph_section(viewer_id, initial_figure=initial_figure, initial_colorbar=initial_colorbar, fig_width=fig_width)
+            build_graph_section(viewer_id, state, initial_figure=initial_figure, initial_colorbar=initial_colorbar, fig_width=fig_width)
         ], className='stacked-card'),
-        dcc.Store(id=component_id(viewer_id, 'state'), data=state.to_dict()),
+        dcc.Store(
+            id=component_id(viewer_id, 'state'),
+            storage_type='session',
+            # Don't set data here - it overwrites sessionStorage on tab rebuild
+            # The viewer callback will initialize it if sessionStorage is empty
+        ),
         dcc.Store(id=component_id(viewer_id, 'datasetKey'), data=dataset_key),
     ], className='viewer-tab')
 

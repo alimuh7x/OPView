@@ -86,6 +86,32 @@ def register_comparison_callbacks(app):
 
     print("[PNG Export] Clientside callback registered")
 
+    # SessionStorage Persistence: Restore selected files when stores are recreated
+    app.clientside_callback(
+        ClientsideFunction(
+            namespace='comparison_persistence',
+            function_name='restore_selected_files'
+        ),
+        Output({'type': 'comparison-selected-files-store', 'group': MATCH}, 'data', allow_duplicate=True),
+        Input({'type': 'comparison-selected-files-store', 'group': MATCH}, 'data'),
+        State({'type': 'comparison-selected-files-store', 'group': MATCH}, 'id'),
+        prevent_initial_call='initial_duplicate'  # Fire on initial creation to restore from sessionStorage
+    )
+
+    # SessionStorage Persistence: Restore control settings when stores are recreated
+    app.clientside_callback(
+        ClientsideFunction(
+            namespace='comparison_persistence',
+            function_name='restore_controls'
+        ),
+        Output({'type': 'comparison-controls-store', 'group': MATCH}, 'data', allow_duplicate=True),
+        Input({'type': 'comparison-controls-store', 'group': MATCH}, 'data'),
+        State({'type': 'comparison-controls-store', 'group': MATCH}, 'id'),
+        prevent_initial_call='initial_duplicate'  # Fire on initial creation to restore from sessionStorage
+    )
+
+    print("[Persistence] Clientside callbacks registered for sessionStorage restoration")
+
     @app.callback(
         Output({'type': 'comparison-selected-files-store', 'group': MATCH}, 'data'),
         Output({'type': 'comparison-vtk-picker', 'group': MATCH}, 'value'),
@@ -129,29 +155,53 @@ def register_comparison_callbacks(app):
         Input({'type': 'comparison-heatmap-palette', 'group': MATCH}, 'value'),
         Input({'type': 'comparison-heatmap-full-scale', 'group': MATCH}, 'checked'),
         Input({'type': 'comparison-overlay-toggle', 'group': MATCH}, 'checked'),
+        Input({'type': 'comparison-selected-files-store', 'group': MATCH}, 'data'),  # Input so callback fires when data restored
         State({'type': 'comparison-heatmap-rows', 'group': MATCH}, 'id'),
         State('comparison-files-store', 'data'),
-        State({'type': 'comparison-selected-files-store', 'group': MATCH}, 'data'),
     )
-    def _update_comparison_heatmaps(field, range_min, range_max, palette, full_scale, overlay_checked, rows_id, files, selected_paths):
+    def _update_comparison_heatmaps(field, range_min, range_max, palette, full_scale, overlay_checked, selected_paths, rows_id, files):
         """Update heatmaps for a single comparison group."""
         group = rows_id.get('group') if isinstance(rows_id, dict) else None
+
+        # Debug logging
+        print(f"\n[HEATMAP UPDATE] Callback fired for group: {group}")
+        print(f"[HEATMAP UPDATE] Selected paths: {selected_paths} (type: {type(selected_paths)})")
+        print(f"[HEATMAP UPDATE] Field: {field}, Range: {range_min}-{range_max}, Palette: {palette}")
+
+        # Check if we have selected files (handle None from sessionStorage)
+        if not selected_paths or selected_paths is None:
+            print("[HEATMAP UPDATE] No selected paths - returning empty")
+            return []
+
         group_entries = _comparison_entries_from_selected(selected_paths)
+        print(f"[HEATMAP UPDATE] Group entries count: {len(group_entries)}")
+        if not group_entries:
+            print("[HEATMAP UPDATE] No group entries - returning empty")
+            return []
+
         panels = get_comparison_panels(group_entries)
+        print(f"[HEATMAP UPDATE] Panels created: {len(panels)}")
+        if not panels:
+            print("[HEATMAP UPDATE] No panels created - returning empty")
+            return []
+
         panels_for_group = {
             entry.get('path'): panels.get(entry.get('path'))
             for entry in group_entries
             if entry and entry.get('path') in panels
         }
+        print(f"[HEATMAP UPDATE] Panels for group: {len(panels_for_group)}")
         if not panels_for_group:
+            print("[HEATMAP UPDATE] No panels for group - returning empty")
             return []
 
         settings, _, _ = _comparison_settings(
-            panels_for_group, field, range_min, range_max, palette, full_scale
+            panels_for_group, field, range_min, range_max, palette, full_scale,
+            interfaces_overlay_visible=overlay_checked
         )
-
-        settings['interfaces_overlay_visible'] = bool(overlay_checked)
-        return build_comparison_heatmap_row(panels_for_group, group_entries, settings, group, app=app)
+        result = build_comparison_heatmap_row(panels_for_group, group_entries, settings, group, app=app)
+        print(f"[HEATMAP UPDATE] Returning {len(result) if isinstance(result, list) else 'non-list'} heatmap rows")
+        return result
 
     @app.callback(
         Output({'type': 'comparison-heatmap-field', 'group': MATCH}, 'options'),
@@ -175,14 +225,16 @@ def register_comparison_callbacks(app):
 
         has_selection = bool(panels_for_group)
         stored = stored_controls or {}
+        # Use stored values regardless of file selection to preserve settings during tab switches
         settings, scalar_options, palette_options = _comparison_settings(
             panels_for_group,
-            scalar_value=stored.get('scalar') if has_selection else None,
-            range_min=stored.get('range_min') if has_selection else None,
-            range_max=stored.get('range_max') if has_selection else None,
+            scalar_value=stored.get('scalar'),
+            range_min=stored.get('range_min'),
+            range_max=stored.get('range_max'),
             palette_value=stored.get('palette'),
-            full_scale=stored.get('full_scale', False) if has_selection else False,
-            slider_range=stored.get('slider_range') if has_selection else None,
+            full_scale=stored.get('full_scale', False),
+            slider_range=stored.get('slider_range'),
+            interfaces_overlay_visible=stored.get('interfaces_overlay_visible', False),
         )
 
         return (
@@ -361,9 +413,10 @@ def register_comparison_callbacks(app):
         State({'type': 'comparison-range-selection', 'group': MATCH}, 'data'),
         State({'type': 'comparison-heatmap-rows', 'group': MATCH}, 'id'),
         State({'type': 'comparison-heatmap-full-scale', 'group': MATCH}, 'checked'),
+        State({'type': 'comparison-controls-store', 'group': MATCH}, 'data'),
         prevent_initial_call=True
     )
-    def _update_comparison_range(reset_clicks, clicks, slider_values, selected_paths, field, input_min, input_max, files, store_data, rows_id, full_scale_checked):
+    def _update_comparison_range(reset_clicks, clicks, slider_values, selected_paths, field, input_min, input_max, files, store_data, rows_id, full_scale_checked, controls_store):
         """Handle range updates from reset, graph clicks, slider, file selection, or scalar change."""
         group = rows_id.get('group') if isinstance(rows_id, dict) else None
         group_entries = _comparison_entries_from_selected(selected_paths)
@@ -378,23 +431,54 @@ def register_comparison_callbacks(app):
             default_lo, default_hi = _comparison_range_defaults(panels_for_group, field)
 
         triggered = ctx.triggered_id
+        print(f"[DEBUG RANGE] Triggered: {triggered}, type={triggered.get('type') if isinstance(triggered, dict) else 'N/A'}")
         if isinstance(triggered, dict):
             t_type = triggered.get('type')
             if t_type in ('comparison-selected-files-store', 'comparison-heatmap-reset', 'comparison-heatmap-field'):
                 if not panels_for_group:
                     raise PreventUpdate
-                min_val, max_val = _comparison_range_defaults(panels_for_group, field)
-                if min_val is None or max_val is None:
-                    raise PreventUpdate
-                return (
-                    min_val,
-                    max_val,
-                    {'click_count': 0, 'first_click': None},
-                    [min_val, max_val],
-                    min_val,
-                    max_val,
-                    full_scale_checked,
-                )
+
+                print(f"[DEBUG RANGE] t_type={t_type}, controls_store={controls_store}, input_min={input_min}, input_max={input_max}")
+
+                # For reset button or field change, reset to defaults
+                if t_type in ('comparison-heatmap-reset', 'comparison-heatmap-field'):
+                    # User explicitly requested reset or changed field - reset to defaults
+                    min_val, max_val = _comparison_range_defaults(panels_for_group, field)
+                    if min_val is None or max_val is None:
+                        raise PreventUpdate
+                    print(f"[DEBUG RANGE] User action - resetting to defaults: {min_val} to {max_val}")
+                    return (
+                        min_val,
+                        max_val,
+                        {'click_count': 0, 'first_click': None},
+                        [min_val, max_val],
+                        min_val,
+                        max_val,
+                        full_scale_checked,
+                    )
+
+                # For file selection change, preserve existing range
+                if t_type == 'comparison-selected-files-store':
+                    # If inputs already have values (from UI initialization), don't overwrite them
+                    if input_min is not None and input_max is not None:
+                        print(f"[DEBUG RANGE] Inputs already initialized, preventing update")
+                        raise PreventUpdate
+
+                    # First-time file selection - set defaults
+                    min_val, max_val = _comparison_range_defaults(panels_for_group, field)
+                    if min_val is None or max_val is None:
+                        raise PreventUpdate
+                    print(f"[DEBUG RANGE] First-time file selection - setting defaults: {min_val} to {max_val}")
+                    return (
+                        min_val,
+                        max_val,
+                        {'click_count': 0, 'first_click': None},
+                        [min_val, max_val],
+                        min_val,
+                        max_val,
+                        full_scale_checked,
+                    )
+
 
         if isinstance(triggered, dict) and triggered.get('type') == 'comparison-graph':
             triggered_value = ctx.triggered[0].get('value') if ctx.triggered else None
