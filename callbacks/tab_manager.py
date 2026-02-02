@@ -36,6 +36,7 @@ class TabCallbackManager(BaseCallbackManager):
         self._register_add_tab_from_dropdown()
         self._register_render_tab_headers()
         self._register_activate_tab_from_header()
+        self._register_clientside_panel_visibility()  # NEW: Clientside visibility toggle to prevent flash
         self._register_close_tab()
         # Multi View has its own panel system (separate from Single View)
         self._register_comparison_panel_dropdown_update()
@@ -330,48 +331,63 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'none'},         # graphs-content - HIDE
                     )
 
-                # Build comparison content for all open comparison panels and hide inactive ones.
-                stored_by_group = {}
-                if group_controls_data and group_controls_ids:
-                    for store_id, store_data in zip(group_controls_ids, group_controls_data):
-                        if not isinstance(store_id, dict) or not store_data:
-                            continue
-                        grp = store_id.get('group')
-                        if grp is not None:
-                            stored_by_group[grp] = store_data
+                # Check if we need to rebuild comparison panels
+                # Be LESS restrictive - rebuild on most changes except pure visibility switches
+                # Only skip rebuild if ONLY comparison-active-tab changed (pure visibility switch)
+                is_pure_visibility_change = (triggered == 'comparison-active-tab' and
+                                             comparison_open_tabs and
+                                             comparison_active_tab in comparison_open_tabs)
 
-                selected_by_group = {}
-                if selected_group_data and selected_group_ids:
-                    for store_id, store_data in zip(selected_group_ids, selected_group_data):
-                        if not isinstance(store_id, dict):
-                            continue
-                        grp = store_id.get('group')
-                        if grp is not None:
-                            selected_by_group[grp] = store_data or []
+                if not is_pure_visibility_change:
+                    # Rebuild panels for any structural or data change
+                    # Build comparison content for all open comparison panels and hide inactive ones.
+                    # Only pass store data if it actually exists - otherwise let stores load from sessionStorage
+                    stored_by_group = {}
+                    if group_controls_data and group_controls_ids:
+                        for store_id, store_data in zip(group_controls_ids, group_controls_data):
+                            if not isinstance(store_id, dict) or not store_data:
+                                continue
+                            grp = store_id.get('group')
+                            if grp is not None:
+                                stored_by_group[grp] = store_data
 
-                panels = []
-                for tab_id in comparison_open_tabs or []:
-                    groups = sorted(self._get_comparison_groups_for_open_tabs([tab_id]))
-                    group = groups[0] if groups else None
-                    if not group:
-                        content = [html.Div(f"Failed to resolve comparison group for: {tab_id}", className='dataset-empty')]
-                    else:
-                        content = build_comparison_group_content(group, comparison_files or [], stored_by_group, selected_by_group, app=self.app)
-                    panels.append(
-                        html.Div(
-                            content,
-                            id={'type': 'comparison-panel', 'tab': tab_id},
-                            style={'display': 'block'} if tab_id == comparison_active_tab else {'display': 'none'},
+                    selected_by_group = {}
+                    if selected_group_data and selected_group_ids:
+                        for store_id, store_data in zip(selected_group_ids, selected_group_data):
+                            if not isinstance(store_id, dict):
+                                continue
+                            grp = store_id.get('group')
+                            # Include even if data is empty list - it's valid state
+                            if grp is not None and store_data is not None:
+                                selected_by_group[grp] = store_data
+
+                    panels = []
+                    for tab_id in comparison_open_tabs or []:
+                        groups = sorted(self._get_comparison_groups_for_open_tabs([tab_id]))
+                        group = groups[0] if groups else None
+                        if not group:
+                            content = [html.Div(f"Failed to resolve comparison group for: {tab_id}", className='dataset-empty')]
+                        else:
+                            content = build_comparison_group_content(group, comparison_files or [], stored_by_group, selected_by_group, app=self.app)
+                        panels.append(
+                            html.Div(
+                                content,
+                                id={'type': 'comparison-panel', 'tab': tab_id},
+                                style={'display': 'block'} if tab_id == comparison_active_tab else {'display': 'none'},
+                                className='panel-container'
+                            )
                         )
-                    )
 
-                return (
-                    no_update,                   # tab-content children
-                    {'display': 'none'},         # tab-content - HIDE VTK modules
-                    panels,                      # comparison-content children
-                    {'display': 'block'},        # comparison-content - SHOW
-                    {'display': 'none'},         # graphs-content - HIDE
-                )
+                    return (
+                        no_update,                   # tab-content children
+                        {'display': 'none'},         # tab-content - HIDE VTK modules
+                        panels,                      # comparison-content children
+                        {'display': 'block'},        # comparison-content - SHOW
+                        {'display': 'none'},         # graphs-content - HIDE
+                    )
+                else:
+                    # Pure visibility change - let clientside handle it
+                    raise PreventUpdate
 
             # === HANDLE VTK TAB (current) ===
             # Show placeholder if no modules open on VTK tab
@@ -389,26 +405,35 @@ class TabCallbackManager(BaseCallbackManager):
             # Build VTK tab content for all open panels and hide inactive ones.
             # This preserves per-panel control + dcc.Store state when switching tabs.
             if active_tab:
-                panels = []
-                for tab_id in open_tabs or []:
-                    try:
-                        content = build_tab_children(tab_id)
-                    except Exception as e:
-                        content = [html.Div(f"Failed to render panel: {tab_id} ({e})", className='dataset-empty')]
-                    panels.append(
-                        html.Div(
-                            content,
-                            id={'type': 'tab-panel', 'tab': tab_id},
-                            style={'display': 'block'} if tab_id == active_tab else {'display': 'none'},
+                # Check if we need to rebuild panels (structure change)
+                structure_changed = triggered in ['open-tabs', 'vtk-folder-tabs', 'selected-project-folder']
+
+                if structure_changed or not hasattr(ctx, 'outputs_list'):
+                    # Rebuild panels when tabs are added/removed or first render
+                    panels = []
+                    for tab_id in open_tabs or []:
+                        try:
+                            content = build_tab_children(tab_id)
+                        except Exception as e:
+                            content = [html.Div(f"Failed to render panel: {tab_id} ({e})", className='dataset-empty')]
+                        panels.append(
+                            html.Div(
+                                content,
+                                id={'type': 'tab-panel', 'tab': tab_id},
+                                style={'display': 'block'} if tab_id == active_tab else {'display': 'none'},
+                                className='panel-container'
+                            )
                         )
+                    return (
+                        panels,                      # tab-content children
+                        {'display': 'block'},        # tab-content - SHOW VTK modules
+                        no_update,                   # comparison-content children - don't update
+                        {'display': 'none'},         # comparison-content - HIDE
+                        {'display': 'none'},         # graphs-content - HIDE
                     )
-                return (
-                    panels,                      # tab-content children
-                    {'display': 'block'},        # tab-content - SHOW VTK modules
-                    no_update,                   # comparison-content children - don't update
-                    {'display': 'none'},         # comparison-content - HIDE
-                    {'display': 'none'},         # graphs-content - HIDE
-                )
+                else:
+                    # Structure didn't change, just visibility - let clientside handle it
+                    raise PreventUpdate
 
             # Fallback - should not reach here
             raise PreventUpdate
@@ -646,6 +671,61 @@ class TabCallbackManager(BaseCallbackManager):
             return ctx.triggered_id['tab']
 
         self._track_callback(activate_comparison_tab_from_header)
+
+    def _register_clientside_panel_visibility(self):
+        """Register clientside callback to toggle panel visibility without server round-trip."""
+
+        # VTK panels
+        self.app.clientside_callback(
+            """
+            function(activeTab) {
+                // Get all panel elements
+                const panels = document.querySelectorAll('[id*="tab-panel"]');
+
+                panels.forEach(panel => {
+                    try {
+                        const panelId = JSON.parse(panel.id);
+                        if (panelId.type === 'tab-panel') {
+                            // Show only the active panel
+                            panel.style.display = (panelId.tab === activeTab) ? 'block' : 'none';
+                        }
+                    } catch (e) {
+                        // Ignore panels with non-JSON ids
+                    }
+                });
+
+                return window.dash_clientside.no_update;
+            }
+            """,
+            Output('panel-visibility-dummy', 'children'),
+            Input('active-tab', 'data'),
+            prevent_initial_call=True
+        )
+
+        # Comparison panels
+        self.app.clientside_callback(
+            """
+            function(activeTab) {
+                const panels = document.querySelectorAll('[id*="comparison-panel"]');
+
+                panels.forEach(panel => {
+                    try {
+                        const panelId = JSON.parse(panel.id);
+                        if (panelId.type === 'comparison-panel') {
+                            panel.style.display = (panelId.tab === activeTab) ? 'block' : 'none';
+                        }
+                    } catch (e) {
+                        // Ignore panels with non-JSON ids
+                    }
+                });
+
+                return window.dash_clientside.no_update;
+            }
+            """,
+            Output('comparison-panel-visibility-dummy', 'children'),
+            Input('comparison-active-tab', 'data'),
+            prevent_initial_call=True
+        )
 
     def _register_close_tab(self):
         """Register callback to close tab when X button is clicked."""
