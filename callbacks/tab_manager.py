@@ -320,6 +320,16 @@ class TabCallbackManager(BaseCallbackManager):
 
             # === HANDLE COMPARISON TAB ===
             if active_folder == 'comparison':
+                # Switching tabs or project metadata changes should not rebuild comparison panels if they already exist.
+                if triggered in {'vtk-folder-tabs', 'selected-project-folder', 'loaded-vtk-folders', 'comparison-active-tab'} and comparison_open_tabs:
+                    return (
+                        no_update,                   # tab-content children
+                        {'display': 'none'},         # tab-content - HIDE VTK modules
+                        no_update,                   # comparison-content children - keep existing
+                        {'display': 'block'},        # comparison-content - SHOW
+                        {'display': 'none'},         # graphs-content - HIDE
+                    )
+
                 # Multi View has its own panels; start empty until user adds one.
                 if not comparison_open_tabs or not comparison_active_tab:
                     return (

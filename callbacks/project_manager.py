@@ -111,6 +111,14 @@ class ProjectCallbackManager(BaseCallbackManager):
             folders_dict = OPView.app_context.discovered_project_folders if use_context else OPView.discovered_project_folders
             selected_folders = [f for f in selected_folders if f in folders_dict]
 
+            # If selection hasn't changed, do nothing (avoid rebuilds on tab switches/DOM rehydration)
+            prev_vtk = current_vtk_loaded or []
+            prev_text = current_text_loaded or []
+            prev_all = sorted(list(prev_vtk) + list(prev_text))
+            curr_all = sorted(selected_folders)
+            if prev_all == curr_all:
+                raise PreventUpdate
+
             # Smart PreventUpdate: Only prevent if input is empty BUT stores have existing data
             # This indicates a DOM rebuild/transition, not a genuine user action to uncheck all
             if not selected_folders:
@@ -118,7 +126,6 @@ class ProjectCallbackManager(BaseCallbackManager):
                 if (current_vtk_loaded and len(current_vtk_loaded) > 0) or \
                    (current_text_loaded and len(current_text_loaded) > 0):
                     # We have existing selections but input is empty - this is a rebuild/transition
-                    from dash.exceptions import PreventUpdate
                     raise PreventUpdate
                 # If stores are also empty, let callback proceed (genuine "uncheck all" action)
 
@@ -554,22 +561,28 @@ class ProjectCallbackManager(BaseCallbackManager):
         self._track_callback(filter_projects_by_tab)
 
     def _register_clear_comparison_on_project(self):
-        """Clear comparison selections when a new project is selected (fresh Multi View)."""
+        """Clear comparison selections only when the project selection actually changes."""
         @self.app.callback(
             Output({'type': 'comparison-selected-files-store', 'group': ALL}, 'data', allow_duplicate=True),
             Output({'type': 'comparison-controls-store', 'group': ALL}, 'data', allow_duplicate=True),
+            Output('comparison-clear-flag-global', 'data', allow_duplicate=True),
             Input('selected-project-folder', 'data'),
+            State('comparison-clear-flag-global', 'data'),
             State({'type': 'comparison-selected-files-store', 'group': ALL}, 'id'),
             State({'type': 'comparison-controls-store', 'group': ALL}, 'id'),
             prevent_initial_call=True
         )
-        def clear_comparison_on_project(_selected_project, sel_ids, ctrl_ids):
+        def clear_comparison_on_project(selected_project, last_project, sel_ids, ctrl_ids):
             # If no comparison components are mounted yet, do nothing.
             if not sel_ids and not ctrl_ids:
                 raise PreventUpdate
 
+            # Only clear if the project actually changed.
+            if selected_project == last_project:
+                raise PreventUpdate
+
             sel_out = [[] for _ in (sel_ids or [])]
             ctrl_out = [{} for _ in (ctrl_ids or [])]
-            return sel_out, ctrl_out
+            return sel_out, ctrl_out, selected_project
 
         self._track_callback(clear_comparison_on_project)

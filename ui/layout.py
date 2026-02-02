@@ -59,6 +59,7 @@ def build_app_layout(
                 dcc.Store(id='comparison-active-tab', data=None),  # Active comparison panel (memory only)
                 dcc.Store(id='comparison-open-tabs', data=[]),  # Open comparison panels (memory only)
                 dcc.Store(id='comparison-files-store', data=comparison_files),
+                dcc.Store(id='comparison-clear-flag-global', data=None),  # Track last cleared project
                 dcc.Store(id='comparison-png-export-trigger', data=None),  # PNG export trigger (memory only)
                 html.Div(id='comparison-png-export-dummy', style={'display': 'none'}),  # PNG export dummy output
                 html.Div(id='panel-visibility-dummy', style={'display': 'none'}),  # Panel visibility clientside callback dummy
