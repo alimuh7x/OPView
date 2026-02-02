@@ -25,6 +25,10 @@ window.dash_clientside.comparison_persistence.restore_selected_files = function(
                 sessionStorage.setItem(key, JSON.stringify(store_data));
                 return store_data;
             }
+            // If store is empty, try restoring from sessionStorage (tab rebuilds can momentarily empty the store)
+            if (Array.isArray(store_data) && store_data.length === 0) {
+                // fall through to restore logic below
+            }
 
             // Try to load from sessionStorage
             const stored = sessionStorage.getItem(key);
@@ -59,6 +63,10 @@ window.dash_clientside.comparison_persistence.restore_controls = function(store_
             if (store_data && Object.keys(store_data).length > 0) {
                 sessionStorage.setItem(key, JSON.stringify(store_data));
                 return store_data;
+            }
+            // If store is empty, try restoring from sessionStorage (tab rebuilds can momentarily empty the store)
+            if (store_data && typeof store_data === 'object' && Object.keys(store_data).length === 0) {
+                // fall through to restore logic below
             }
 
             // Try to load from sessionStorage

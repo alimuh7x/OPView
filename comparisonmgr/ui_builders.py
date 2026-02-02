@@ -606,12 +606,20 @@ def build_comparison_content(files, group_controls_by_group=None, group_selected
             data={'click_count': 0, 'first_click': None},
             storage_type='session',
         )
-
-        group_selected_store = dcc.Store(
-            id={'type': 'comparison-selected-files-store', 'group': group},
-            data=selected_paths,
-            storage_type='session',
+        clear_flag_store = dcc.Store(
+            id={'type': 'comparison-clear-flag', 'group': group},
+            data=False,
+            storage_type='memory',
         )
+
+        group_selected_store_props = {
+            'id': {'type': 'comparison-selected-files-store', 'group': group},
+            'storage_type': 'session',
+        }
+        # Only set data when we actually have a selection.
+        if selected_paths:
+            group_selected_store_props['data'] = selected_paths
+        group_selected_store = dcc.Store(**group_selected_store_props)
 
         group_controls_store = dcc.Store(
             id={'type': 'comparison-controls-store', 'group': group},
@@ -639,7 +647,9 @@ def build_comparison_content(files, group_controls_by_group=None, group_selected
             html.Div([
                 controls_layout,
                 # add_path_control removed (Phase 16 - consolidated to Sidebar)
+                html.Div(id={'type': 'comparison-remove-file-dummy', 'group': group}, style={'display': 'none'}),
                 range_selector_store,
+                clear_flag_store,
                 group_selected_store,
                 group_controls_store,
                 html.Div(heatmap_sections, id={'type': 'comparison-heatmap-rows', 'group': group}, className='comparison-heatmap-area-inner')
@@ -903,6 +913,11 @@ def build_comparison_group_content(group, files, group_controls_by_group=None, g
         data={'click_count': 0, 'first_click': None},
         storage_type='session',
     )
+    clear_flag_store = dcc.Store(
+        id={'type': 'comparison-clear-flag', 'group': group},
+        data=False,
+        storage_type='memory',
+    )
 
     # Only initialize data if we have selected paths from arguments, otherwise load from sessionStorage
     group_selected_store_props = {
@@ -944,7 +959,9 @@ def build_comparison_group_content(group, files, group_controls_by_group=None, g
         ], className='dataset-header'),
         html.Div([
             controls_layout,
+            html.Div(id={'type': 'comparison-remove-file-dummy', 'group': group}, style={'display': 'none'}),
             range_selector_store,
+            clear_flag_store,
             group_selected_store,
             group_controls_store,
             html.Div(heatmap_sections, id={'type': 'comparison-heatmap-rows', 'group': group}, className='comparison-heatmap-area-inner')

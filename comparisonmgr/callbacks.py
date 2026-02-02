@@ -98,6 +98,9 @@ def register_comparison_callbacks(app):
                 sessionStorage.setItem(key, JSON.stringify(store_data));
                 return store_data;
             }
+            if (Array.isArray(store_data) && store_data.length === 0) {
+                // fall through to restore from sessionStorage
+            }
             const stored = sessionStorage.getItem(key);
             if (stored) {
                 try {
@@ -131,6 +134,9 @@ def register_comparison_callbacks(app):
                 sessionStorage.setItem(key, JSON.stringify(store_data));
                 return store_data;
             }
+            if (store_data && typeof store_data === 'object' && Object.keys(store_data).length === 0) {
+                // fall through to restore from sessionStorage
+            }
             const stored = sessionStorage.getItem(key);
             if (stored) {
                 try {
@@ -154,9 +160,38 @@ def register_comparison_callbacks(app):
 
     print("[Persistence] Clientside callbacks registered for sessionStorage restoration")
 
+    # Clear persisted selection when the user explicitly removes the last file.
+    app.clientside_callback(
+        """
+        function(remove_clicks, remove_ids, current_selected) {
+            if (!remove_ids || !current_selected) {
+                return window.dash_clientside.no_update;
+            }
+            // Only act on real clicks
+            const trig = (dash_clientside && dash_clientside.callback_context) ? dash_clientside.callback_context.triggered_id : null;
+            if (!trig || trig.type !== 'comparison-remove-file') {
+                return window.dash_clientside.no_update;
+            }
+            // If this click removes the last file, clear persisted key for this group.
+            if (Array.isArray(current_selected) && current_selected.length <= 1) {
+                const group = trig.group;
+                const key = `comparison-selected-files-${group}`;
+                sessionStorage.removeItem(key);
+            }
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output({'type': 'comparison-remove-file-dummy', 'group': MATCH}, 'children'),
+        Input({'type': 'comparison-remove-file', 'group': MATCH, 'path': ALL}, 'n_clicks'),
+        State({'type': 'comparison-remove-file', 'group': MATCH, 'path': ALL}, 'id'),
+        State({'type': 'comparison-selected-files-store', 'group': MATCH}, 'data'),
+        prevent_initial_call=True
+    )
+
     @app.callback(
         Output({'type': 'comparison-selected-files-store', 'group': MATCH}, 'data'),
         Output({'type': 'comparison-vtk-picker', 'group': MATCH}, 'value'),
+        Output({'type': 'comparison-clear-flag', 'group': MATCH}, 'data'),
         Input({'type': 'comparison-vtk-picker', 'group': MATCH}, 'value'),
         Input({'type': 'comparison-remove-file', 'group': MATCH, 'path': ALL}, 'n_clicks'),
         State({'type': 'comparison-remove-file', 'group': MATCH, 'path': ALL}, 'id'),
@@ -175,7 +210,7 @@ def register_comparison_callbacks(app):
             for p in picked:
                 if p not in values:
                     values.append(p)
-            return values, []
+            return values, [], False
         # Remove button clicked.
         if isinstance(triggered, dict) and triggered.get('type') == 'comparison-remove-file':
             # Ignore spurious triggers from layout re-rendering (n_clicks == 0/None).
@@ -186,7 +221,8 @@ def register_comparison_callbacks(app):
             values = list(current_selected or [])
             if path in values:
                 values.remove(path)
-            return values, []
+            cleared = (len(values) == 0)
+            return values, [], cleared
         raise PreventUpdate
 
     @app.callback(
@@ -198,10 +234,11 @@ def register_comparison_callbacks(app):
         Input({'type': 'comparison-heatmap-full-scale', 'group': MATCH}, 'checked'),
         Input({'type': 'comparison-overlay-toggle', 'group': MATCH}, 'checked'),
         Input({'type': 'comparison-selected-files-store', 'group': MATCH}, 'data'),  # Input so callback fires when data restored
+        Input({'type': 'comparison-clear-flag', 'group': MATCH}, 'data'),
         State({'type': 'comparison-heatmap-rows', 'group': MATCH}, 'id'),
         State('comparison-files-store', 'data'),
     )
-    def _update_comparison_heatmaps(field, range_min, range_max, palette, full_scale, overlay_checked, selected_paths, rows_id, files):
+    def _update_comparison_heatmaps(field, range_min, range_max, palette, full_scale, overlay_checked, selected_paths, clear_flag, rows_id, files):
         """Update heatmaps for a single comparison group."""
         group = rows_id.get('group') if isinstance(rows_id, dict) else None
 
@@ -212,8 +249,11 @@ def register_comparison_callbacks(app):
 
         # Check if we have selected files (handle None from sessionStorage)
         if not selected_paths or selected_paths is None:
-            print("[HEATMAP UPDATE] No selected paths - returning empty")
-            return []
+            if clear_flag:
+                print("[HEATMAP UPDATE] No selected paths (cleared) - returning empty")
+                return []
+            print("[HEATMAP UPDATE] No selected paths - keeping previous")
+            return no_update
 
         group_entries = _comparison_entries_from_selected(selected_paths)
         print(f"[HEATMAP UPDATE] Group entries count: {len(group_entries)}")
