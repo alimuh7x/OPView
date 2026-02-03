@@ -62,14 +62,25 @@ fi
 # Auto-install via Homebrew if possible
 if [ -z "$PY_CMD" ]; then
     if command -v brew >/dev/null 2>&1; then
-        echo "  Python 3.12/3.13 not found. Installing via Homebrew..."
-        brew install python@3.13
-        for prefix in "${BREW_PREFIXES[@]}"; do
-            if [ -x "${prefix}/bin/python3.13" ]; then
-                PY_CMD="${prefix}/bin/python3.13"
-                break
-            fi
-        done
+        echo ""
+        echo "  Python 3.12/3.13 not found."
+        echo "  Install with: brew install python@3.13"
+        echo ""
+        read -r -p "  Install Python 3.13 via Homebrew now? [y/N]: " reply
+        if [[ $reply =~ ^[Yy]$ ]]; then
+            echo "  Installing Python 3.13 via Homebrew..."
+            brew install python@3.13
+            for prefix in "${BREW_PREFIXES[@]}"; do
+                if [ -x "${prefix}/bin/python3.13" ]; then
+                    PY_CMD="${prefix}/bin/python3.13"
+                    break
+                fi
+            done
+        else
+            echo ""
+            echo "  Installation declined. Cannot continue without Python 3.12 or 3.13."
+            echo ""
+        fi
     fi
 fi
 

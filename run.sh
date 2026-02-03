@@ -26,9 +26,16 @@ for lib in libXrender libXcursor libXrandr libXinerama libXi; do
 done
 
 if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
-    echo "  Installing missing system libraries: ${MISSING_PKGS[*]}"
+    echo ""
+    echo "  WARNING: Missing system libraries required for VTK:"
+    for pkg in "${MISSING_PKGS[@]}"; do
+        echo "    - $pkg"
+    done
+    echo ""
+    
     if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update -qq && sudo apt-get install -y -qq "${MISSING_PKGS[@]}"
+        echo "  Install them with:"
+        echo "    sudo apt-get update && sudo apt-get install -y ${MISSING_PKGS[*]}"
     elif command -v dnf >/dev/null 2>&1; then
         # Map Debian names to Fedora names
         FEDORA_PKGS=()
@@ -38,12 +45,32 @@ if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
                 *) FEDORA_PKGS+=("${pkg%-dev}-devel") ;;
             esac
         done
-        sudo dnf install -y "${FEDORA_PKGS[@]}"
+        echo "  Install them with:"
+        echo "    sudo dnf install -y ${FEDORA_PKGS[*]}"
     elif command -v pacman >/dev/null 2>&1; then
-        sudo pacman -Sy --noconfirm mesa libxrender libxcursor libxrandr libxinerama libxi
+        echo "  Install them with:"
+        echo "    sudo pacman -Sy mesa libxrender libxcursor libxrandr libxinerama libxi"
     else
-        echo "  WARNING: Could not auto-install system libraries."
+        echo "  WARNING: Could not determine package manager."
         echo "  Please install manually: ${MISSING_PKGS[*]}"
+    fi
+    
+    echo ""
+    read -r -p "  Install missing packages now? [y/N]: " reply
+    if [[ $reply =~ ^[Yy]$ ]]; then
+        echo "  Installing missing system libraries..."
+        if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq "${MISSING_PKGS[@]}"
+        elif command -v dnf >/dev/null 2>&1; then
+            sudo dnf install -y "${FEDORA_PKGS[@]}"
+        elif command -v pacman >/dev/null 2>&1; then
+            sudo pacman -Sy --noconfirm mesa libxrender libxcursor libxrandr libxinerama libxi
+        fi
+    else
+        echo ""
+        echo "  Skipping system package installation."
+        echo "  Note: The application may not work without these libraries."
+        echo ""
     fi
 else
     echo "  System dependencies OK"
@@ -89,10 +116,24 @@ echo "  Found $($PY_CMD --version 2>&1)"
 
 # ── Step 3: Ensure venv module is available ──────────────────────────────
 if ! $PY_CMD -m venv --help >/dev/null 2>&1; then
-    echo "  Installing python venv module..."
     ver=$($PY_CMD --version 2>&1 | sed -n 's/Python \([0-9]*\.[0-9]*\).*/\1/p')
+    echo ""
+    echo "  Python venv module not found."
     if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get install -y -qq "python${ver}-venv"
+        echo "  Install with: sudo apt-get install -y python${ver}-venv"
+        echo ""
+        read -r -p "  Install python venv module now? [y/N]: " reply
+        if [[ $reply =~ ^[Yy]$ ]]; then
+            echo "  Installing python venv module..."
+            sudo apt-get install -y -qq "python${ver}-venv"
+        else
+            echo ""
+            echo "  ERROR: venv module is required to continue."
+            exit 1
+        fi
+    else
+        echo "  ERROR: venv module is required but not available."
+        exit 1
     fi
 fi
 
