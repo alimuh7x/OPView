@@ -1,6 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: Configuration
+set "APP_URL=http://127.0.0.1:8050"
+
 echo.
 echo ==========================================
 echo  OPView - One-Click Launcher (Windows)
@@ -94,13 +97,13 @@ if %errorlevel% neq 0 (
 echo [4/4] Starting OPView server...
 echo.
 echo ==========================================
-echo  OPView will open at http://127.0.0.1:8050
+echo  OPView will open at %APP_URL%
 echo  Press Ctrl+C to stop the server
 echo ==========================================
 echo.
 
 :: Open browser after a short delay (gives the server time to start)
-start "" cmd /c "timeout /t 3 /nobreak >nul & start http://127.0.0.1:8050"
+start "" cmd /c "timeout /t 3 /nobreak >nul & start %APP_URL%"
 
 :: Run the application (this blocks until Ctrl+C)
 python OPView.py
