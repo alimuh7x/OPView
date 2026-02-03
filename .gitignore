@@ -1,35 +1,10 @@
-# Python cache/bytecode
+# Python cache/virtualenv
 __pycache__/
-*.py[cod]
-*$py.class
-*.pyo
 .pytest_cache/
-
-# Virtual environments
-myenv/
 venv*/
-.venv/
-env/
-ENV/
+*.pyc
 
-# Distribution / packaging
-*.egg-info/
-*.egg
-dist/
-build/
-*.whl
-
-# Python tools
-.mypy_cache/
-.ruff_cache/
-.tox/
-.coverage
-htmlcov/
-*.cover
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Dash / Flask artifacts
+# Dash artifacts
 .DS_Store
 
 # Large simulation outputs
