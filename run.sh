@@ -3,6 +3,9 @@
 # Usage: chmod +x run.sh && ./run.sh
 set -e
 
+# Configuration
+APP_URL="http://127.0.0.1:8050"
+
 echo ""
 echo "=========================================="
 echo " OPView - One-Click Launcher (Linux)"
@@ -165,7 +168,7 @@ python -c "import dash, vtk, pyvista, numpy; print('  All core modules OK')"
 echo "[5/5] Starting OPView server..."
 echo ""
 echo "=========================================="
-echo " OPView will open at http://127.0.0.1:8050"
+echo " OPView will open at $APP_URL"
 echo " Press Ctrl+C to stop the server"
 echo "=========================================="
 echo ""
@@ -174,13 +177,13 @@ echo ""
 (
     sleep 3
     if command -v xdg-open >/dev/null 2>&1; then
-        xdg-open "http://127.0.0.1:8050" 2>/dev/null
+        xdg-open "$APP_URL" 2>/dev/null
     elif command -v sensible-browser >/dev/null 2>&1; then
-        sensible-browser "http://127.0.0.1:8050" 2>/dev/null
+        sensible-browser "$APP_URL" 2>/dev/null
     elif command -v firefox >/dev/null 2>&1; then
-        firefox "http://127.0.0.1:8050" 2>/dev/null
+        firefox "$APP_URL" 2>/dev/null
     elif command -v google-chrome >/dev/null 2>&1; then
-        google-chrome "http://127.0.0.1:8050" 2>/dev/null
+        google-chrome "$APP_URL" 2>/dev/null
     fi
 ) &
 

@@ -3,6 +3,9 @@
 # Usage: chmod +x run-macos.sh && ./run-macos.sh
 set -e
 
+# Configuration
+APP_URL="http://127.0.0.1:8050"
+
 echo ""
 echo "=========================================="
 echo " OPView - One-Click Launcher (macOS)"
@@ -127,7 +130,7 @@ python -c "import dash, vtk, pyvista, numpy; print('  All core modules OK')"
 echo "[4/4] Starting OPView server..."
 echo ""
 echo "=========================================="
-echo " OPView will open at http://127.0.0.1:8050"
+echo " OPView will open at $APP_URL"
 echo " Press Ctrl+C to stop the server"
 echo "=========================================="
 echo ""
@@ -135,7 +138,7 @@ echo ""
 # Open browser after a short delay (background)
 (
     sleep 3
-    open "http://127.0.0.1:8050" 2>/dev/null
+    open "$APP_URL" 2>/dev/null
 ) &
 
 # Run the application (blocks until Ctrl+C)
