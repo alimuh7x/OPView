@@ -97,7 +97,7 @@ else
 fi
 
 # Install / update dependencies
-echo "  Installing dependencies..."
+echo "[3/4] Installing dependencies..."
 # shellcheck disable=SC1091
 source myenv/bin/activate
 
