@@ -76,6 +76,10 @@ if [ -z "$PY_CMD" ]; then
                     break
                 fi
             done
+        else
+            echo ""
+            echo "  Installation declined. Cannot continue without Python 3.12 or 3.13."
+            echo ""
         fi
     fi
 fi
