@@ -55,7 +55,7 @@ PY_CMD=""
 
 for candidate in python3.13 python3.12 /home/linuxbrew/.linuxbrew/bin/python3.13 /home/linuxbrew/.linuxbrew/bin/python3.12; do
     if command -v "$candidate" >/dev/null 2>&1; then
-        ver=$("$candidate" --version 2>&1 | grep -oP '\d+\.\d+')
+        ver=$("$candidate" --version 2>&1 | sed -n 's/Python \([0-9]*\.[0-9]*\).*/\1/p')
         if [[ "$ver" == "3.13" || "$ver" == "3.12" ]]; then
             PY_CMD="$candidate"
             break
@@ -66,7 +66,7 @@ done
 # Try generic python3
 if [ -z "$PY_CMD" ]; then
     if command -v python3 >/dev/null 2>&1; then
-        ver=$(python3 --version 2>&1 | grep -oP '\d+\.\d+')
+        ver=$(python3 --version 2>&1 | sed -n 's/Python \([0-9]*\.[0-9]*\).*/\1/p')
         if [[ "$ver" == "3.13" || "$ver" == "3.12" ]]; then
             PY_CMD="python3"
         fi
@@ -90,7 +90,7 @@ echo "  Found $($PY_CMD --version 2>&1)"
 # ── Step 3: Ensure venv module is available ──────────────────────────────
 if ! $PY_CMD -m venv --help >/dev/null 2>&1; then
     echo "  Installing python venv module..."
-    ver=$($PY_CMD --version 2>&1 | grep -oP '\d+\.\d+')
+    ver=$($PY_CMD --version 2>&1 | sed -n 's/Python \([0-9]*\.[0-9]*\).*/\1/p')
     if command -v apt-get >/dev/null 2>&1; then
         sudo apt-get install -y -qq "python${ver}-venv"
     fi
