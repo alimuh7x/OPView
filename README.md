@@ -205,4 +205,6 @@ The codebase follows OOP patterns for managers and functional patterns for utili
 
 ## License
 
-This project is part of the OpenPhase simulation framework.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Part of the OpenPhase simulation framework.
