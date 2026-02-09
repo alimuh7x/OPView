@@ -10,47 +10,71 @@ A modular, web-based visualization tool for phase field simulation data built wi
 - **Project Management**: Automatically scan and load multiple simulation projects
 - **Modular Architecture**: Clean separation of UI, callbacks, data handling, and utilities
 
-## Quick Start
+## Quick Start (One-Click Launchers)
 
-### Prerequisites
+Each platform has a single script that handles everything automatically: finds or installs Python, creates a virtual environment, installs all dependencies, starts the server, and opens the browser.
 
-**System Dependencies (Linux/WSL):**
+### Windows
 
-VTK requires OpenGL and X11 libraries. Install them before running setup:
-
-```bash
-# Ubuntu/Debian
-sudo apt update
-sudo apt install python3.13 python3.13-venv \
-  libgl1-mesa-dev libxrender-dev libxcursor-dev \
-  libxrandr-dev libxinerama-dev libxi-dev
-
-# Fedora/RHEL
-sudo dnf install python3.13 mesa-libGL-devel \
-  libXrender-devel libXcursor-devel libXrandr-devel \
-  libXinerama-devel libXi-devel
+Double-click `run.bat` or run from a terminal:
+```powershell
+run.bat
 ```
 
-**macOS:**
-```bash
-# Install Python via Homebrew
-brew install python@3.13
-
-# Xcode Command Line Tools (usually already installed)
-xcode-select --install
-```
-
-**Windows:**
+**Prerequisite:** Python 3.12 or 3.13 must be installed and on PATH.
 ```powershell
 # Install Python via winget (Windows 10/11)
 winget install Python.Python.3.12
-
 # Or download from https://www.python.org/downloads/
 # Make sure to check "Add Python to PATH" during installation
 ```
 
-### Installation (Windows)
+### Linux
 
+```bash
+chmod +x run.sh    # one time
+./run.sh
+```
+
+The script auto-installs missing system libraries (OpenGL, X11) via your package manager and the Python `venv` module if needed. Python 3.12 or 3.13 must be available on the system.
+
+```bash
+# If Python is not installed:
+# Ubuntu/Debian
+sudo apt install python3.13 python3.13-venv
+# Fedora/RHEL
+sudo dnf install python3.13
+```
+
+### macOS
+
+```bash
+chmod +x run-macos.sh    # one time
+./run-macos.sh
+```
+
+The script checks for Xcode Command Line Tools, finds Python via Homebrew (Apple Silicon and Intel paths), and auto-installs `python@3.13` via Homebrew if no supported version is found.
+
+```bash
+# If Homebrew is not installed:
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+### What the scripts do
+
+1. Find Python 3.12 or 3.13 (install system dependencies if needed)
+2. Create a `myenv` virtual environment (or reuse an existing one)
+3. Install/update all dependencies from `requirements.txt`
+4. Start the OPView server and open http://127.0.0.1:8050 in the browser
+
+Press `Ctrl+C` to stop the server.
+
+### Manual Installation
+
+<details>
+<summary>Click to expand manual setup steps</summary>
+
+**Windows:**
 ```powershell
 cd E:\path\to\OPView
 py -3.12 -m venv myenv
@@ -59,33 +83,18 @@ pip install -r requirements.txt
 python OPView.py
 ```
 
-Open http://127.0.0.1:8050 in your browser. Stop the server with `Ctrl+C`, and exit the virtual environment with `deactivate`.
-
-**Restarting Later (Windows):**
-```powershell
-cd E:\path\to\OPView
-myenv\Scripts\activate
-python OPView.py
-```
-
-### Installation (Linux / macOS / WSL)
-
+**Linux / macOS / WSL:**
 ```bash
 cd /path/to/OPView
-chmod +x setup.sh          # one time
-./setup.sh                 # creates myenv and installs requirements
+chmod +x setup.sh
+./setup.sh
 source myenv/bin/activate
 python OPView.py
 ```
 
 Open http://127.0.0.1:8050 in your browser. Stop the server with `Ctrl+C`, and exit the virtual environment with `deactivate`.
 
-**Restarting Later (Linux/macOS/WSL):**
-```bash
-cd /path/to/OPView
-source myenv/bin/activate
-python OPView.py
-```
+</details>
 
 ## Data Layout
 
@@ -150,10 +159,16 @@ myenv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-**Linux/macOS/WSL:**
+**Linux:**
 ```bash
 rm -rf myenv
-./setup.sh  # Recreate from scratch
+./run.sh  # Recreate from scratch
+```
+
+**macOS:**
+```bash
+rm -rf myenv
+./run-macos.sh  # Recreate from scratch
 ```
 
 ### Python Version
