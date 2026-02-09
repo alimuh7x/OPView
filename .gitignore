@@ -32,9 +32,6 @@ pip-delete-this-directory.txt
 # Dash / Flask artifacts
 .DS_Store
 
-# Large simulation outputs
-sample_data/*.vti
-
 # AI assistant files
 claude.md
 .claude/

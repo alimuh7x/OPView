@@ -19,7 +19,7 @@ TAB_ORDER = [tab['id'] for tab in TAB_CONFIGS]
 SKIP_FOLDERS = {
     '.git', '.vscode', '.claude', '.gemini', '__pycache__',
     'venv', 'venv312', 'venv_py312', 'assets', 'utils',
-    'viewer', 'sample_data', 'node_modules', 'app', 'config',
+    'viewer', 'node_modules', 'app', 'config',
     'callbacks', 'comparison', 'data', 'ui'
 }
 
