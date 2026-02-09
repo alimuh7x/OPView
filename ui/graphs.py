@@ -595,7 +595,7 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
                             dcc.Input(
                                 id={'type': 'multifile-yaxis2-title', 'panel': panel_id},
                                 type='text',
-                                value=panel_state.get('yaxis_titles', {}).get('yaxis2', ''),
+                                value=panel_state.get('yaxis_titles', {}).get('y2', ''),
                                 placeholder='Y-Axis 2 Title...',
                                 style={'width': '100%', 'padding': '5px', 'fontSize': '14px', 'marginBottom': '8px'}
                             ),
