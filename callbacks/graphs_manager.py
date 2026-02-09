@@ -117,6 +117,12 @@ class GraphsCallbackManager(BaseCallbackManager):
             State({'type': 'multifile-column-legend', 'panel': ALL, 'file': ALL, 'column': ALL}, 'id'),
             State({'type': 'multifile-x-axis-column', 'panel': ALL}, 'value'),
             State({'type': 'multifile-x-axis-column', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-x-axis-title', 'panel': ALL}, 'value'),
+            State({'type': 'multifile-x-axis-title', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-y-axis-title', 'panel': ALL}, 'value'),
+            State({'type': 'multifile-y-axis-title', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-yaxis2-title', 'panel': ALL}, 'value'),
+            State({'type': 'multifile-yaxis2-title', 'panel': ALL}, 'id'),
             State({'type': 'multifile-yaxis1-units', 'panel': ALL}, 'value'),
             State({'type': 'multifile-yaxis2-units', 'panel': ALL}, 'value'),
             State({'type': 'multifile-yaxis1-units', 'panel': ALL}, 'id'),
@@ -125,7 +131,11 @@ class GraphsCallbackManager(BaseCallbackManager):
             prevent_initial_call=True
         )
         def update_multifile_files(all_file_selections, all_column_selections, all_yaxis_values, all_legend_values,
-                                   all_file_ids, all_column_ids, all_yaxis_ids, all_legend_ids, all_x_axis_values, all_x_axis_ids,
+                                   all_file_ids, all_column_ids, all_yaxis_ids, all_legend_ids,
+                                   all_x_axis_values, all_x_axis_ids,
+                                   all_x_axis_titles, all_x_axis_title_ids,
+                                   all_y_axis_titles, all_y_axis_title_ids,
+                                   all_yaxis2_titles, all_yaxis2_title_ids,
                                    all_yaxis1_units, all_yaxis2_units, all_yaxis_units_ids,
                                    panels_state, loaded_projects):
             """Update panels when file selections or column settings change."""
@@ -195,6 +205,25 @@ class GraphsCallbackManager(BaseCallbackManager):
                 panel_id = x_axis_id['panel']
                 if panel_id in panels_state and x_axis_val is not None:
                     panels_state[panel_id]['x_axis_column'] = x_axis_val
+
+            # Preserve X-axis title
+            for x_title_val, x_title_id in zip(all_x_axis_titles, all_x_axis_title_ids):
+                panel_id = x_title_id['panel']
+                if panel_id in panels_state and x_title_val is not None:
+                    panels_state[panel_id]['x_axis_title'] = x_title_val
+
+            # Preserve Y-axis titles
+            for y_title_val, y_title_id in zip(all_y_axis_titles, all_y_axis_title_ids):
+                panel_id = y_title_id['panel']
+                if panel_id in panels_state and y_title_val is not None:
+                    panels_state[panel_id]['y_axis_title'] = y_title_val
+
+            for yaxis2_title_val, yaxis2_title_id in zip(all_yaxis2_titles, all_yaxis2_title_ids):
+                panel_id = yaxis2_title_id['panel']
+                if panel_id in panels_state and yaxis2_title_val is not None:
+                    if 'yaxis_titles' not in panels_state[panel_id]:
+                        panels_state[panel_id]['yaxis_titles'] = {}
+                    panels_state[panel_id]['yaxis_titles']['y2'] = yaxis2_title_val
 
             # Preserve Y-axis units
             for yaxis1_val, yaxis2_val, yaxis_id in zip(all_yaxis1_units, all_yaxis2_units, all_yaxis_units_ids):
