@@ -939,4 +939,3 @@ class TabCallbackManager(BaseCallbackManager):
             Input('server-session-id', 'data'),
             prevent_initial_call=False  # Run on first load
         )
-        print("[CALLBACKS] Registered server session checker")

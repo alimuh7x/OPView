@@ -28,13 +28,15 @@ import markdown
 import dash_mantine_components as dmc
 from viewer.state import initial_state
 
-print(f"[{time.time()-_start_time:.2f}s] Third-party imports done")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Third-party imports done")
 
 from utils.vtk_reader import VTKReader
 # Defer ViewerPanel import for faster startup - import only when needed
 ViewerPanel = None  # Lazy import later
 
-print(f"[{time.time()-_start_time:.2f}s] Local imports done (ViewerPanel deferred)")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Local imports done (ViewerPanel deferred)")
 
 # OOP Data Sources
 from data import (
@@ -244,32 +246,40 @@ ALLOWED_VTK_EXTENSIONS = ('.vtk', '.vti', '.vtp', '.vtr', '.vts')
 
 
 
-print(f"[{time.time()-_start_time:.2f}s] Creating Dash app...")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Creating Dash app...")
 app = Dash(__name__, suppress_callback_exceptions=True)
 app.title = APP_TITLE
 app._favicon = APP_FAVICON
-print(f"[{time.time()-_start_time:.2f}s] Dash app created")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Dash app created")
 
 # Register comparison callbacks (Phase 10.3)
-print(f"[{time.time()-_start_time:.2f}s] Registering comparison callbacks...")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Registering comparison callbacks...")
 register_comparison_callbacks(app)
-print(f"[{time.time()-_start_time:.2f}s] Comparison callbacks registered")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Comparison callbacks registered")
 
 # Register project callbacks (Phase 13)
-print(f"[{time.time()-_start_time:.2f}s] Registering callbacks...")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Registering callbacks...")
 from callbacks import ProjectCallbackManager, TabCallbackManager, GraphsCallbackManager
 project_cb_manager = ProjectCallbackManager(app, app_context)
 project_cb_manager.register()
-print(f"[{time.time()-_start_time:.2f}s] Project callbacks registered: {project_cb_manager.count()}")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Project callbacks registered: {project_cb_manager.count()}")
 
 tab_cb_manager = TabCallbackManager(app, app_context)
 tab_cb_manager.register()
-print(f"[{time.time()-_start_time:.2f}s] Tab callbacks registered: {tab_cb_manager.count()}")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Tab callbacks registered: {tab_cb_manager.count()}")
 
 # Register graphs tab callbacks (Phase 17)
 graphs_cb_manager = GraphsCallbackManager(app, app_context)
 graphs_cb_manager.register()
-print(f"[{time.time()-_start_time:.2f}s] Graphs callbacks registered: {graphs_cb_manager.count()}")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Graphs callbacks registered: {graphs_cb_manager.count()}")
 
 TEXTDATA_DIR = Path("TextData")
 SIZE_DETAILS_FILE   = TEXTDATA_DIR / "SizeDetails.dat"
@@ -479,7 +489,8 @@ for slot_id in AUTO_PANEL_SLOTS:
         main_panels_by_id[slot_id] = ViewerPanel(app, get_reader, slot_config, debug=DEBUG)
     except Exception as e:
         print(f"[auto-slots] Failed to init slot {slot_id}: {e}")
-print(f"[{time.time()-_start_time:.2f}s] Auto panel slots initialized ({len(AUTO_PANEL_SLOTS)})")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Auto panel slots initialized ({len(AUTO_PANEL_SLOTS)})")
 
 comparison_panels = {}
 
@@ -775,12 +786,15 @@ def get_default_active_tab():
 INITIAL_ACTIVE_TAB = get_default_active_tab()
 
 # Scan for project folders at startup (before layout creation)
-print(f"[{time.time()-_start_time:.2f}s] Scanning for project folders...")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Scanning for project folders...")
 discovered_project_folders = scan_project_folders()
-print(f"[{time.time()-_start_time:.2f}s] Found {len(discovered_project_folders)} project folder(s)")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Found {len(discovered_project_folders)} project folder(s)")
 
 # Initialize OOP data sources (before card builders)
-print(f"[{time.time()-_start_time:.2f}s] Creating OOP data sources...")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Creating OOP data sources...")
 data_dir = Path('TextData')
 grain_data = GrainSizeData(data_dir)
 stress_strain_data = StressStrainData(data_dir)
@@ -794,10 +808,12 @@ stress_strain_data.load()
 stress_data.load()
 strain_data.load()
 crss_data.load()
-print(f"[{time.time()-_start_time:.2f}s] OOP data sources created and loaded")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] OOP data sources created and loaded")
 
 # Phase 9: Instantiate UIManager with data sources
-print(f"[{time.time()-_start_time:.2f}s] Creating UIManager...")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Creating UIManager...")
 ui_manager = UIManager(
     grain_data=grain_data,
     stress_strain_data=stress_strain_data,
@@ -807,7 +823,8 @@ ui_manager = UIManager(
     get_legacy_data_fn=get_legacy_data,
     build_histogram_figure_fn=build_histogram_figure
 )
-print(f"[{time.time()-_start_time:.2f}s] UIManager created")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] UIManager created")
 
 
 def build_crss_figure(selected=None):
@@ -886,7 +903,8 @@ app.layout = html.Div(
     ),
     style={"backgroundColor": APP_BG_COLOR, "minHeight": "100vh"},
 )
-print(f"[{time.time()-_start_time:.2f}s] App layout built")
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] App layout built")
 
 # =============================================================================
 # PROJECT MANAGEMENT CALLBACKS - Extracted to callbacks/project_manager.py (Phase 13) ✅
@@ -1066,7 +1084,8 @@ if __name__ == '__main__':
             continue
         for dataset_label, panel in info['panels']:
             print(f"  - {dataset_label}: {panel.file_path}")
-    print(f"\n[{time.time()-_start_time:.2f}s] Total startup time")
+    if DEBUG:
+        print(f"\n[{time.time()-_start_time:.2f}s] Total startup time")
     print("\nStarting Dash server on http://127.0.0.1:8050\n")
 
     # Disable reloader to prevent double initialization

@@ -242,29 +242,18 @@ def register_comparison_callbacks(app):
         """Update heatmaps for a single comparison group."""
         group = rows_id.get('group') if isinstance(rows_id, dict) else None
 
-        # Debug logging
-        print(f"\n[HEATMAP UPDATE] Callback fired for group: {group}")
-        print(f"[HEATMAP UPDATE] Selected paths: {selected_paths} (type: {type(selected_paths)})")
-        print(f"[HEATMAP UPDATE] Field: {field}, Range: {range_min}-{range_max}, Palette: {palette}")
-
         # Check if we have selected files (handle None from sessionStorage)
         if not selected_paths or selected_paths is None:
             if clear_flag:
-                print("[HEATMAP UPDATE] No selected paths (cleared) - returning empty")
                 return []
-            print("[HEATMAP UPDATE] No selected paths - keeping previous")
             return no_update
 
         group_entries = _comparison_entries_from_selected(selected_paths)
-        print(f"[HEATMAP UPDATE] Group entries count: {len(group_entries)}")
         if not group_entries:
-            print("[HEATMAP UPDATE] No group entries - returning empty")
             return []
 
         panels = get_comparison_panels(group_entries)
-        print(f"[HEATMAP UPDATE] Panels created: {len(panels)}")
         if not panels:
-            print("[HEATMAP UPDATE] No panels created - returning empty")
             return []
 
         panels_for_group = {
@@ -272,9 +261,7 @@ def register_comparison_callbacks(app):
             for entry in group_entries
             if entry and entry.get('path') in panels
         }
-        print(f"[HEATMAP UPDATE] Panels for group: {len(panels_for_group)}")
         if not panels_for_group:
-            print("[HEATMAP UPDATE] No panels for group - returning empty")
             return []
 
         settings, _, _ = _comparison_settings(
@@ -282,7 +269,6 @@ def register_comparison_callbacks(app):
             interfaces_overlay_visible=overlay_checked
         )
         result = build_comparison_heatmap_row(panels_for_group, group_entries, settings, group, app=app)
-        print(f"[HEATMAP UPDATE] Returning {len(result) if isinstance(result, list) else 'non-list'} heatmap rows")
         return result
 
     @app.callback(
@@ -513,14 +499,11 @@ def register_comparison_callbacks(app):
             default_lo, default_hi = _comparison_range_defaults(panels_for_group, field)
 
         triggered = ctx.triggered_id
-        print(f"[DEBUG RANGE] Triggered: {triggered}, type={triggered.get('type') if isinstance(triggered, dict) else 'N/A'}")
         if isinstance(triggered, dict):
             t_type = triggered.get('type')
             if t_type in ('comparison-selected-files-store', 'comparison-heatmap-reset', 'comparison-heatmap-field'):
                 if not panels_for_group:
                     raise PreventUpdate
-
-                print(f"[DEBUG RANGE] t_type={t_type}, controls_store={controls_store}, input_min={input_min}, input_max={input_max}")
 
                 # For reset button or field change, reset to defaults
                 if t_type in ('comparison-heatmap-reset', 'comparison-heatmap-field'):
@@ -528,7 +511,6 @@ def register_comparison_callbacks(app):
                     min_val, max_val = _comparison_range_defaults(panels_for_group, field)
                     if min_val is None or max_val is None:
                         raise PreventUpdate
-                    print(f"[DEBUG RANGE] User action - resetting to defaults: {min_val} to {max_val}")
                     return (
                         min_val,
                         max_val,
@@ -543,14 +525,12 @@ def register_comparison_callbacks(app):
                 if t_type == 'comparison-selected-files-store':
                     # If inputs already have values (from UI initialization), don't overwrite them
                     if input_min is not None and input_max is not None:
-                        print(f"[DEBUG RANGE] Inputs already initialized, preventing update")
                         raise PreventUpdate
 
                     # First-time file selection - set defaults
                     min_val, max_val = _comparison_range_defaults(panels_for_group, field)
                     if min_val is None or max_val is None:
                         raise PreventUpdate
-                    print(f"[DEBUG RANGE] First-time file selection - setting defaults: {min_val} to {max_val}")
                     return (
                         min_val,
                         max_val,

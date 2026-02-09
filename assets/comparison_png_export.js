@@ -7,7 +7,7 @@ window.dash_clientside.comparison.export_png = function(trigger_data) {
             }
 
             const group = trigger_data.group;
-            console.log('[PNG Export] Exporting group:', group);
+            // console.log('[PNG Export] Exporting group:', group);
 
             const rowId = 'comparison-heatmap-row-' + group;
             const colorbarId = 'comparison-colorbar-' + group;
@@ -15,7 +15,7 @@ window.dash_clientside.comparison.export_png = function(trigger_data) {
             const rowEl = document.getElementById(rowId);
             const colorbarContainer = document.getElementById(colorbarId);
 
-            console.log('[PNG Export] Found rowEl:', !!rowEl, 'colorbarContainer:', !!colorbarContainer);
+            // console.log('[PNG Export] Found rowEl:', !!rowEl, 'colorbarContainer:', !!colorbarContainer);
 
             if (!rowEl) {
                 console.error('[PNG Export] ERROR: rowEl not found with ID:', rowId);

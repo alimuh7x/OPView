@@ -733,7 +733,6 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
                         x_col = available_cols[0] if available_cols else 'col_0'
 
                 x_data = ds_x._data[x_col]
-                print(f"X-axis source: {x_source_file}[{x_col}], length={len(x_data)}")
         except Exception as e:
             print(f"Error loading x-axis from {first_file_path}: {e}")
 

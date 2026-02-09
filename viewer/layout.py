@@ -202,7 +202,6 @@ def build_controls(
 
 def build_graph_section(viewer_id: str, state, *, initial_figure=None, initial_colorbar=None, fig_width=None):
     """Graph container - main heatmap block."""
-    print(f"[DEBUG build_graph_section {viewer_id}] Initializing interfacesOverlay toggle with checked={state.interfaces_overlay_visible}")
     return html.Div([
 
         # -------------------------
