@@ -640,35 +640,11 @@ def register_comparison_callbacks(app):
         prevent_initial_call=True
     )
     def _comparison_browse_folder(n_clicks):
-        """Open system folder dialog via easygui or plyer."""
-        # Try easygui first
-        try:
-            import easygui
-            # Check for tkinter issue early if possible, or let it throw
-            path = easygui.diropenbox(title="Select Folder containing VTK files")
-            if path:
-                return path
-        except ImportError as e:
-            pass # Try next
-        except Exception as e:
-            # If tkinter missing, try plyer
-            pass
-
-        # Try plyer
-        try:
-            from plyer import filechooser
-            # choose_dir returns a list of paths
-            selection = filechooser.choose_dir(title="Select Folder containing VTK files")
-
-            if selection and len(selection) > 0:
-                return selection[0]
-        except ImportError:
-            pass
-        except Exception as e:
-            return f"Error with plyer: {e}"
-
-        return "Error: Please install 'plyer' (pip install plyer) to use Browse."
-        
+        """Open system folder dialog."""
+        from utils.path_utils import choose_folder
+        path = choose_folder(title="Select Folder containing VTK files")
+        if path:
+            return path
         return no_update
 
     @app.callback(

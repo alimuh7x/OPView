@@ -10,4 +10,6 @@ vtk
 markdown
 kaleido
 plyer
+pyobjus; sys_platform == 'darwin'
 pywin32; sys_platform == 'win32'
+easygui

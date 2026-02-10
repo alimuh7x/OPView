@@ -320,29 +320,11 @@ class ProjectCallbackManager(BaseCallbackManager):
             import os
             import sys
             from utils.project_scanner import group_projects_by_parent
+            from utils.path_utils import choose_folder
             from dash import html, dcc
 
             # 1. Open Dialog
-            path = None
-            try:
-                # Try easygui first (Tkinter based)
-                import easygui
-                path = easygui.diropenbox(title="Select Project Folder containing VTK files")
-            except Exception:
-                pass
-
-            # Fallback to plyer if easygui fails or returns None (though diropenbox returns None on cancel)
-            if not path:
-                try:
-                    from plyer import filechooser
-                    selection = filechooser.choose_dir(title="Select Project Folder containing VTK files")
-                    if selection and len(selection) > 0:
-                        path = selection[0]
-                except Exception as e:
-                    print(f"File selection failed: {e}")
-                    # If both fail, we can't do much without client-side interaction
-                    from dash.exceptions import PreventUpdate
-                    raise PreventUpdate
+            path = choose_folder(title="Select Project Folder containing VTK files")
 
             if not path:
                 from dash.exceptions import PreventUpdate
