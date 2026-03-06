@@ -131,47 +131,111 @@ fi
 
 if [ -z "$PY_CMD" ]; then
     echo ""
-    echo "ERROR: Python 3.12 or 3.13 not found."
+    echo "  Python 3.12 or 3.13 not found."
     echo ""
-    echo "Install with:"
-    echo "  Ubuntu/Debian: sudo apt install python3.13 python3.13-venv"
-    echo "  Fedora:        sudo dnf install python3.13"
-    echo "  Arch:          sudo pacman -S python"
-    echo ""
-    exit 1
-fi
 
-echo "  Found $($PY_CMD --version 2>&1)"
-
-# ── Step 4: Ensure venv module is available ──────────────────────────────
-if ! $PY_CMD -m venv --help >/dev/null 2>&1; then
-    ver=$($PY_CMD --version 2>&1 | sed -n 's/Python \([0-9]*\.[0-9]*\).*/\1/p')
-    echo ""
-    echo "  Python venv module not found."
     if command -v apt-get >/dev/null 2>&1; then
-        echo "  Install with: sudo apt-get install -y python${ver}-venv"
-        echo ""
-        read -r -p "  Install python venv module now? [y/N]: " reply
+        read -r -p "  Install Python 3.13 now? (requires sudo) [y/N]: " reply
         if [[ $reply =~ ^[Yy]$ ]]; then
-            echo "  Installing python venv module..."
-            sudo apt-get install -y -qq "python${ver}-venv"
+            sudo apt-get update -qq
+            sudo apt-get install -y python3.13 python3.13-venv
         else
             echo ""
-            echo "  ERROR: venv module is required to continue."
+            echo "ERROR: Python 3.12 or 3.13 is required. Exiting."
+            exit 1
+        fi
+    elif command -v dnf >/dev/null 2>&1; then
+        read -r -p "  Install Python 3.13 now? (requires sudo) [y/N]: " reply
+        if [[ $reply =~ ^[Yy]$ ]]; then
+            sudo dnf install -y python3.13
+        else
+            echo ""
+            echo "ERROR: Python 3.12 or 3.13 is required. Exiting."
+            exit 1
+        fi
+    elif command -v pacman >/dev/null 2>&1; then
+        read -r -p "  Install Python now? (requires sudo) [y/N]: " reply
+        if [[ $reply =~ ^[Yy]$ ]]; then
+            sudo pacman -Sy --noconfirm python
+        else
+            echo ""
+            echo "ERROR: Python 3.12 or 3.13 is required. Exiting."
             exit 1
         fi
     else
-        echo "  ERROR: venv module is required but not available."
+        echo "ERROR: Could not find a supported package manager."
+        echo "Please install Python 3.12 or 3.13 manually and re-run."
+        echo ""
+        exit 1
+    fi
+
+    # Re-detect after installation
+    for candidate in python3.13 python3.12; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            ver=$("$candidate" --version 2>&1 | sed -n 's/Python \([0-9]*\.[0-9]*\).*/\1/p')
+            if [[ "$ver" == "3.13" || "$ver" == "3.12" ]]; then
+                PY_CMD="$candidate"
+                break
+            fi
+        fi
+    done
+
+    if [ -z "$PY_CMD" ]; then
+        echo ""
+        echo "ERROR: Installation succeeded but Python 3.12/3.13 still not found. Exiting."
         exit 1
     fi
 fi
 
+echo "  Found $($PY_CMD --version 2>&1)"
+
+# ── Helper: install python venv package and retry ────────────────────────
+install_venv_pkg() {
+    local ver
+    ver=$($PY_CMD --version 2>&1 | sed -n 's/Python \([0-9]*\.[0-9]*\).*/\1/p')
+    echo ""
+    echo "  Python venv package (python${ver}-venv) is not installed."
+    if command -v apt-get >/dev/null 2>&1; then
+        read -r -p "  Install python${ver}-venv now? (requires sudo) [y/N]: " reply
+        if [[ $reply =~ ^[Yy]$ ]]; then
+            sudo apt-get install -y "python${ver}-venv"
+        else
+            echo ""
+            echo "  ERROR: python${ver}-venv is required to continue."
+            exit 1
+        fi
+    else
+        echo "  ERROR: python${ver}-venv is required but could not be installed automatically."
+        echo "  Please install it manually and re-run."
+        exit 1
+    fi
+}
+
 # ── Step 4: Create or reuse virtual environment ──────────────────────────
-if [ -f "myenv/bin/python" ]; then
-    echo "[3/5] Virtual environment already exists - reusing"
+if [ -f "myenv/bin/python" ] && [ -f "myenv/bin/activate" ]; then
+    existing_ver=$(myenv/bin/python --version 2>&1 | sed -n 's/Python \([0-9]*\.[0-9]*\).*/\1/p')
+    if [[ "$existing_ver" == "3.12" || "$existing_ver" == "3.13" ]]; then
+        echo "[4/6] Virtual environment already exists - reusing"
+    else
+        echo "[4/6] Existing venv uses Python ${existing_ver:-unknown} (not 3.12/3.13) — removing it..."
+        rm -rf myenv
+        echo "  Creating new virtual environment with $($PY_CMD --version 2>&1)..."
+            if ! $PY_CMD -m venv myenv >/dev/null 2>&1; then
+            install_venv_pkg
+            $PY_CMD -m venv myenv
+        fi
+    fi
 else
-    echo "[3/5] Creating virtual environment..."
-    $PY_CMD -m venv myenv
+    if [ -d "myenv" ]; then
+        echo "[4/6] Existing venv is incomplete — removing it..."
+        rm -rf myenv
+    else
+        echo "[4/6] Creating virtual environment..."
+    fi
+    if ! $PY_CMD -m venv myenv >/dev/null 2>&1; then
+        install_venv_pkg
+        $PY_CMD -m venv myenv
+    fi
 fi
 
 # ── Step 5: Activate virtual environment ─────────────────────────────────
