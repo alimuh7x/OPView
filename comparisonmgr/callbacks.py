@@ -590,7 +590,7 @@ def register_comparison_callbacks(app):
                 full_scale_checked,
             )
 
-        if triggered == {'type': 'comparison-heatmap-range-slider', 'group': group}:
+        if isinstance(triggered, dict) and triggered.get('type') == 'comparison-heatmap-range-slider':
             if not slider_values or len(slider_values) != 2:
                 raise PreventUpdate
             try:
@@ -606,7 +606,7 @@ def register_comparison_callbacks(app):
                 [lo, hi],
                 default_lo if default_lo is not None else lo,
                 default_hi if default_hi is not None else hi,
-                full_scale_checked,
+                False,
             )
 
         raise PreventUpdate

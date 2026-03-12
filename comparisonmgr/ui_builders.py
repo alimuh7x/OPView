@@ -440,6 +440,8 @@ def build_comparison_content(files, group_controls_by_group=None, group_selected
             slider_min_default, slider_max_default = 0.0, 1.0
         slider_value_min = settings['range_min'] if settings['range_min'] is not None else slider_min_default
         slider_value_max = settings['range_max'] if settings['range_max'] is not None else slider_max_default
+        slider_span = float(slider_max_default) - float(slider_min_default)
+        slider_step = (slider_span / 500.0) if slider_span > 0 else 0.001
 
         # Extract unique project/VTK paths from available entries for the project picker
         projects_found = set()
@@ -588,6 +590,7 @@ def build_comparison_content(files, group_controls_by_group=None, group_selected
                         id={'type': 'comparison-heatmap-range-slider', 'group': group},
                         min=slider_min_default,
                         max=slider_max_default,
+                        step=slider_step,
                         value=[slider_value_min, slider_value_max],
                         marks=None,
                         allowCross=False,
@@ -793,6 +796,8 @@ def build_comparison_group_content(group, files, group_controls_by_group=None, g
         slider_min_default, slider_max_default = 0.0, 1.0
     slider_value_min = settings['range_min'] if settings['range_min'] is not None else slider_min_default
     slider_value_max = settings['range_max'] if settings['range_max'] is not None else slider_max_default
+    slider_span = float(slider_max_default) - float(slider_min_default)
+    slider_step = (slider_span / 500.0) if slider_span > 0 else 0.001
 
     controls_layout = html.Div([
         html.Div([
@@ -892,6 +897,7 @@ def build_comparison_group_content(group, files, group_controls_by_group=None, g
                     id={'type': 'comparison-heatmap-range-slider', 'group': group},
                     min=slider_min_default,
                     max=slider_max_default,
+                    step=slider_step,
                     value=[slider_value_min, slider_value_max],
                     marks=None,
                     allowCross=False,

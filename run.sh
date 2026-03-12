@@ -137,7 +137,11 @@ if [ -z "$PY_CMD" ]; then
     if command -v apt-get >/dev/null 2>&1; then
         read -r -p "  Install Python 3.13 now? (requires sudo) [y/N]: " reply
         if [[ $reply =~ ^[Yy]$ ]]; then
-            sudo apt-get update -qq
+            if ! command -v add-apt-repository >/dev/null 2>&1; then
+                sudo apt-get install -y -qq software-properties-common
+            fi
+            sudo add-apt-repository -y ppa:deadsnakes/ppa
+            sudo apt-get update -qq || true
             sudo apt-get install -y python3.13 python3.13-venv
         else
             echo ""
@@ -220,7 +224,7 @@ if [ -f "myenv/bin/python" ] && [ -f "myenv/bin/activate" ]; then
         echo "[4/6] Existing venv uses Python ${existing_ver:-unknown} (not 3.12/3.13) — removing it..."
         rm -rf myenv
         echo "  Creating new virtual environment with $($PY_CMD --version 2>&1)..."
-            if ! $PY_CMD -m venv myenv >/dev/null 2>&1; then
+        if ! $PY_CMD -m venv myenv >/dev/null 2>&1; then
             install_venv_pkg
             $PY_CMD -m venv myenv
         fi
@@ -239,7 +243,7 @@ else
 fi
 
 # ── Step 5: Activate virtual environment ─────────────────────────────────
-echo "[4/5] Activating virtual environment..."
+echo "[5/6] Activating virtual environment..."
 # shellcheck disable=SC1091
 source myenv/bin/activate
 
@@ -248,7 +252,7 @@ ACTIVE_PYTHON=$(which python)
 echo "  Using: $ACTIVE_PYTHON"
 
 # ── Step 6: Check and install dependencies ───────────────────────────────
-echo "[5/5] Checking dependencies..."
+echo "[6/6] Checking dependencies..."
 
 # Fast startup policy: verify essential runtime deps only.
 # To force a full dependency repair, run with OPVIEW_REPAIR_DEPS=1.
