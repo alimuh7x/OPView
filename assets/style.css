@@ -1470,6 +1470,13 @@ h1.app-title {
     box-shadow: 0 4px 10px rgba(182, 0, 33, 0.4) !important;
 }
 
+/* Hide Dash RangeSlider end-value number boxes */
+.range-slider-dual .dash-range-slider-input,
+input.dash-input-container.dash-range-slider-input.dash-range-slider-min-input,
+input.dash-input-container.dash-range-slider-input.dash-range-slider-max-input {
+    display: none !important;
+}
+
 .range-labels {
     display: flex;
     justify-content: space-between;

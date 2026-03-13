@@ -22,7 +22,10 @@ def choose_folder(title: str = "Select Folder") -> str | None:
     Returns:
         Selected folder path as string, or None if cancelled/failed
     """
+    print(f"[choose_folder] platform={sys.platform} title={title!r}", flush=True)
+
     if sys.platform == "darwin":
+        print("[choose_folder] trying osascript chooser", flush=True)
         # macOS: Use osascript to avoid NSWindow threading issues
         script = f'''
         set folderPath to POSIX path of (choose folder with prompt "{title}")
@@ -36,28 +39,57 @@ def choose_folder(title: str = "Select Folder") -> str | None:
                 timeout=120
             )
             if result.returncode == 0 and result.stdout.strip():
+                print("[choose_folder] selected via osascript", flush=True)
                 return result.stdout.strip()
         except (subprocess.TimeoutExpired, Exception):
+            print("[choose_folder] osascript failed", flush=True)
             pass
+        print("[choose_folder] no folder selected via osascript", flush=True)
         return None
+
+    # Linux/WSL: prefer zenity, then fall back to easygui/plyer
+    if sys.platform.startswith("linux"):
+        try:
+            print("[choose_folder] trying zenity --file-selection --directory", flush=True)
+            result = subprocess.run(
+                ["zenity", "--file-selection", "--directory", f"--title={title}"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                print("[choose_folder] selected via zenity", flush=True)
+                return result.stdout.strip()
+            print("[choose_folder] zenity returned no selection", flush=True)
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            print("[choose_folder] zenity unavailable/failed", flush=True)
 
     # Windows/Linux: Try easygui first, then plyer
     try:
+        print("[choose_folder] trying easygui.diropenbox", flush=True)
         import easygui
         path = easygui.diropenbox(title=title)
         if path:
+            print("[choose_folder] selected via easygui", flush=True)
             return path
+        print("[choose_folder] easygui returned no selection", flush=True)
     except Exception:
+        print("[choose_folder] easygui unavailable/failed", flush=True)
         pass
 
     try:
+        print("[choose_folder] trying plyer.filechooser.choose_dir", flush=True)
         from plyer import filechooser
         selection = filechooser.choose_dir(title=title)
         if selection and len(selection) > 0:
+            print("[choose_folder] selected via plyer", flush=True)
             return selection[0]
+        print("[choose_folder] plyer returned no selection", flush=True)
     except Exception:
+        print("[choose_folder] plyer unavailable/failed", flush=True)
         pass
 
+    print("[choose_folder] no folder selected (all methods failed or cancelled)", flush=True)
     return None
 
 
