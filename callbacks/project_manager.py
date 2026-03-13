@@ -7,7 +7,7 @@ Extracted from OPView.py Phase 13.
 
 import os
 from pathlib import Path
-from dash import Output, Input, State, html, ALL, no_update
+from dash import Output, Input, State, html, ALL, no_update, ctx
 from dash.exceptions import PreventUpdate
 
 from .base import BaseCallbackManager
@@ -41,6 +41,7 @@ class ProjectCallbackManager(BaseCallbackManager):
         # Removed: self._register_project_checkbox_controls() - Select/Deselect All buttons removed per user request
         self._register_dynamic_project_updates()
         self._register_sidebar_add_project()
+        self._register_sidebar_path_modal()
         self._register_project_filter_by_tab()
         self._register_clear_comparison_on_project()
 
@@ -303,15 +304,18 @@ class ProjectCallbackManager(BaseCallbackManager):
             Output('loaded-textdata-folders', 'data', allow_duplicate=True),
             Output('project-checkboxes-container', 'children', allow_duplicate=True),
             Input('sidebar-add-project-btn', 'n_clicks'),
+            Input('sidebar-path-submit-btn', 'n_clicks'),
             State('comparison-files-store', 'data'),
             State('loaded-vtk-folders', 'data'),
             State('loaded-textdata-folders', 'data'),
             State('vtk-folder-tabs', 'value'),
+            State('sidebar-path-input', 'value'),
             prevent_initial_call=True
         )
-        def handle_sidebar_add_project(n_clicks, current_files, loaded_vtk_folders, loaded_textdata_folders, active_tab):
+        def handle_sidebar_add_project(n_clicks, path_submit_clicks, current_files, loaded_vtk_folders, loaded_textdata_folders, active_tab, manual_path):
             """Handle adding a project folder from the sidebar."""
-            if not n_clicks:
+            trig = ctx.triggered_id
+            if not trig:
                 from dash.exceptions import PreventUpdate
                 raise PreventUpdate
 
@@ -323,8 +327,14 @@ class ProjectCallbackManager(BaseCallbackManager):
             from utils.path_utils import choose_folder
             from dash import html, dcc
 
-            # 1. Open Dialog
-            path = choose_folder(title="Select Project Folder containing VTK files")
+            # 1. Get path from dialog or pasted input
+            if trig == 'sidebar-path-submit-btn':
+                path = (manual_path or '').strip()
+                if not path:
+                    from dash.exceptions import PreventUpdate
+                    raise PreventUpdate
+            else:
+                path = choose_folder(title="Select Project Folder containing VTK files")
 
             if not path:
                 from dash.exceptions import PreventUpdate
@@ -462,6 +472,27 @@ class ProjectCallbackManager(BaseCallbackManager):
             return updated_files, loaded_vtk_folders, loaded_textdata_folders, children
 
         self._track_callback(handle_sidebar_add_project)
+
+    def _register_sidebar_path_modal(self):
+        """Open/close modal for manual project path input."""
+        @self.app.callback(
+            Output('sidebar-path-modal', 'opened'),
+            Output('sidebar-path-input', 'value'),
+            Input('sidebar-add-project-path-btn', 'n_clicks'),
+            Input('sidebar-path-cancel-btn', 'n_clicks'),
+            Input('sidebar-path-submit-btn', 'n_clicks'),
+            State('sidebar-path-modal', 'opened'),
+            prevent_initial_call=True
+        )
+        def toggle_sidebar_path_modal(open_clicks, cancel_clicks, submit_clicks, opened):
+            trig = ctx.triggered_id
+            if trig == 'sidebar-add-project-path-btn':
+                return True, no_update
+            if trig in ('sidebar-path-cancel-btn', 'sidebar-path-submit-btn'):
+                return False, ''
+            raise PreventUpdate
+
+        self._track_callback(toggle_sidebar_path_modal)
 
     def _register_project_filter_by_tab(self):
         """Register callback to filter project list based on active tab (hierarchical UI)."""

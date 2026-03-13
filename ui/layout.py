@@ -169,6 +169,13 @@ def build_app_layout(
                                     className='sidebar-add-project-btn',
                                     style={'marginTop': '10px', 'width': '100%'}
                                 ),
+                                html.Button(
+                                    "Paste Project Path",
+                                    id='sidebar-add-project-path-btn',
+                                    n_clicks=0,
+                                    className='sidebar-add-project-btn',
+                                    style={'marginTop': '8px', 'width': '100%'}
+                                ),
                             ], className='sidebar-add-project-container'),
                         ], className='sidebar-projects-section'),
 
@@ -255,7 +262,37 @@ def build_app_layout(
                             style={'display': 'none'}
                         ),
                     ], className='main-panel')
-                ], className='layout-shell')
+                ], className='layout-shell'),
+                dmc.Modal(
+                    id='sidebar-path-modal',
+                    title="Select Path",
+                    opened=False,
+                    centered=True,
+                    size="md",
+                    children=[
+                        dcc.Input(
+                            id='sidebar-path-input',
+                            type='text',
+                            placeholder="Paste folder path here",
+                            style={'width': '100%'}
+                        ),
+                        html.Div([
+                            html.Button(
+                                "Cancel",
+                                id='sidebar-path-cancel-btn',
+                                n_clicks=0,
+                                className='btn'
+                            ),
+                            html.Button(
+                                "Add",
+                                id='sidebar-path-submit-btn',
+                                n_clicks=0,
+                                className='btn btn-danger',
+                                style={'marginLeft': '8px'}
+                            ),
+                        ], style={'display': 'flex', 'justifyContent': 'flex-end', 'marginTop': '12px'})
+                    ],
+                )
             ]
         )
     )
