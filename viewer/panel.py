@@ -389,9 +389,9 @@ class ViewerPanel:
             )
         )
         colorbar_fig.update_layout(
-            width=90,
+            width=110,
             height=380,
-            margin=dict(l=0, r=0, t=40, b=0),
+            margin=dict(l=0, r=8, t=40, b=0),
             xaxis=dict(visible=False),
             yaxis=dict(visible=False),
             paper_bgcolor="#ffffff",

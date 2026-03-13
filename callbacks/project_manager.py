@@ -324,7 +324,7 @@ class ProjectCallbackManager(BaseCallbackManager):
             import os
             import sys
             from utils.project_scanner import group_projects_by_parent
-            from utils.path_utils import choose_folder
+            from utils.path_utils import choose_folder, normalize_folder_path_for_runtime
             from dash import html, dcc
 
             # 1. Get path from dialog or pasted input
@@ -339,6 +339,9 @@ class ProjectCallbackManager(BaseCallbackManager):
             if not path:
                 from dash.exceptions import PreventUpdate
                 raise PreventUpdate
+
+            # Accept both Windows and Linux path formats across runtimes (e.g. WSL).
+            path = normalize_folder_path_for_runtime(path)
 
             # 2. Register Global Project
             import OPView

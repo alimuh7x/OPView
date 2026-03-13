@@ -282,7 +282,7 @@ def build_graph_section(viewer_id: str, state, *, initial_figure=None, initial_c
                         }
                     ),
                     className='heatmap-colorbar-card',
-                    style={'width': '90px', 'height': '380px'}
+                    style={'width': '110px', 'height': '380px'}
                 ),
 
             ], className='heatmap-row'),   # <-- correct

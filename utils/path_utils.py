@@ -6,6 +6,7 @@ Provides functions for resolving VTK paths and cross-platform folder dialogs.
 
 import subprocess
 import sys
+import re
 from pathlib import Path
 
 
@@ -91,6 +92,41 @@ def choose_folder(title: str = "Select Folder") -> str | None:
 
     print("[choose_folder] no folder selected (all methods failed or cancelled)", flush=True)
     return None
+
+
+def normalize_folder_path_for_runtime(path_str: str | None) -> str | None:
+    """
+    Normalize pasted folder paths across Windows/WSL runtimes.
+
+    - On Linux/WSL, convert `X:\\foo\\bar` -> `/mnt/x/foo/bar`
+    - On Windows, convert `/mnt/x/foo/bar` -> `X:\\foo\\bar`
+    """
+    if not path_str:
+        return path_str
+
+    raw = path_str.strip()
+    if not raw:
+        return raw
+
+    if sys.platform.startswith("linux"):
+        # Windows drive path (e.g. E:\RUB\OpenPhase\...)
+        m = re.match(r"^([A-Za-z]):[\\/](.*)$", raw)
+        if m:
+            drive = m.group(1).lower()
+            rest = m.group(2).replace("\\", "/")
+            return f"/mnt/{drive}/{rest}"
+        return raw
+
+    if sys.platform.startswith("win"):
+        # WSL mount path (e.g. /mnt/e/RUB/OpenPhase/...)
+        m = re.match(r"^/mnt/([A-Za-z])/(.*)$", raw)
+        if m:
+            drive = m.group(1).upper()
+            rest = m.group(2).replace("/", "\\")
+            return f"{drive}:\\{rest}"
+        return raw
+
+    return raw
 
 
 def resolve_vtk_path(pattern: str, current_project_vtk_path: Path = None) -> Path:

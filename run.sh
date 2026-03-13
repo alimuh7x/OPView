@@ -15,30 +15,30 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# ── Step 1: Check GUI dependencies for WSL2 (file dialogs) ───────────────
-echo "[1/6] Checking GUI dependencies for file dialogs (WSL2)..."
+# ── Step 1: Check GUI dependencies for file dialogs ───────────────────────
+echo "[1/6] Checking GUI dependencies for file dialogs..."
 IS_WSL=0
 if grep -qiE "(microsoft|wsl)" /proc/version 2>/dev/null || grep -qiE "(microsoft|wsl)" /proc/sys/kernel/osrelease 2>/dev/null; then
     IS_WSL=1
 fi
 
-if [ "$IS_WSL" -eq 1 ]; then
-    if command -v apt-get >/dev/null 2>&1 && command -v dpkg-query >/dev/null 2>&1; then
-        MISSING_GUI_PKGS=()
+if command -v apt-get >/dev/null 2>&1 && command -v dpkg-query >/dev/null 2>&1; then
+    MISSING_GUI_PKGS=()
+    # zenity is used for folder selection on Linux/WSL
+    dpkg-query -W -f='${Status}' zenity 2>/dev/null | grep -q "install ok installed" || MISSING_GUI_PKGS+=("zenity")
+    # WSL often needs python3-tk for fallback dialogs
+    if [ "$IS_WSL" -eq 1 ]; then
         dpkg-query -W -f='${Status}' python3-tk 2>/dev/null | grep -q "install ok installed" || MISSING_GUI_PKGS+=("python3-tk")
-        dpkg-query -W -f='${Status}' zenity 2>/dev/null | grep -q "install ok installed" || MISSING_GUI_PKGS+=("zenity")
+    fi
 
-        if [ ${#MISSING_GUI_PKGS[@]} -gt 0 ]; then
-            echo "  Installing missing WSL GUI dependencies: ${MISSING_GUI_PKGS[*]}"
-            sudo apt-get install -y -qq "${MISSING_GUI_PKGS[@]}" 2>/dev/null || true
-        else
-            echo "  WSL GUI dependencies already installed"
-        fi
+    if [ ${#MISSING_GUI_PKGS[@]} -gt 0 ]; then
+        echo "  Installing missing GUI dependencies: ${MISSING_GUI_PKGS[*]}"
+        sudo apt-get install -y -qq "${MISSING_GUI_PKGS[@]}" 2>/dev/null || true
     else
-        echo "  WSL detected, but apt/dpkg-query not available; skipping GUI dependency install"
+        echo "  GUI dependencies already installed"
     fi
 else
-    echo "  Non-WSL environment - skipping WSL GUI dependency check"
+    echo "  apt/dpkg-query not available; skipping GUI dependency install"
 fi
 
 # ── Step 2: Check VTK system dependencies ────────────────────────────────
