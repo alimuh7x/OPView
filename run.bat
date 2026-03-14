@@ -12,7 +12,6 @@ echo.
 
 :: ── Step 1: Find a supported Python (3.12 or 3.13) ──────────────────────
 set "PY_CMD="
-
 :: Try the Windows 'py' launcher first (most reliable on Windows)
 where py >nul 2>&1
 if %errorlevel% equ 0 (
@@ -49,6 +48,7 @@ echo Install Python from https://www.python.org/downloads/
 echo Or run:  winget install Python.Python.3.12
 echo.
 echo IMPORTANT: Check "Add Python to PATH" during installation.
+echo Then Restart Terminal / Powershell again.
 echo.
 pause
 exit /b 1
