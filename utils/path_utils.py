@@ -7,7 +7,62 @@ Provides functions for resolving VTK paths and cross-platform folder dialogs.
 import subprocess
 import sys
 import re
+import os
 from pathlib import Path
+
+
+def _running_in_wsl() -> bool:
+    """Return True when running inside WSL."""
+    if not sys.platform.startswith("linux"):
+        return False
+    if os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP"):
+        return True
+    try:
+        return "microsoft" in Path("/proc/version").read_text(encoding="utf-8", errors="ignore").lower()
+    except Exception:
+        return False
+
+
+def _choose_folder_via_windows_powershell(title: str) -> str | None:
+    """Open Windows folder picker from WSL and return Windows path."""
+    safe_title = title.replace("'", "''")
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "$dlg = New-Object System.Windows.Forms.FolderBrowserDialog; "
+        f"$dlg.Description = '{safe_title}'; "
+        "if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { "
+        "Write-Output $dlg.SelectedPath }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except Exception:
+        return None
+    return None
+
+
+def _choose_folder_via_tk_windows(title: str) -> str | None:
+    """Open a topmost Tk folder chooser on Windows."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        root.lift()
+        root.focus_force()
+        path = filedialog.askdirectory(title=title, parent=root, mustexist=True)
+        root.destroy()
+        return path or None
+    except Exception:
+        return None
 
 
 def choose_folder(title: str = "Select Folder") -> str | None:
@@ -48,8 +103,24 @@ def choose_folder(title: str = "Select Folder") -> str | None:
         print("[choose_folder] no folder selected via osascript", flush=True)
         return None
 
-    # Linux/WSL: prefer zenity, then fall back to easygui/plyer
+    if sys.platform.startswith("win"):
+        print("[choose_folder] trying topmost Tk folder picker (Windows)", flush=True)
+        path = _choose_folder_via_tk_windows(title)
+        if path:
+            print("[choose_folder] selected via Tk folder picker", flush=True)
+            return path
+        print("[choose_folder] Tk folder picker unavailable/failed or cancelled", flush=True)
+        return None
+
+    # Linux/WSL: under WSL prefer Windows dialog first, then zenity.
     if sys.platform.startswith("linux"):
+        if _running_in_wsl():
+            print("[choose_folder] trying Windows PowerShell folder picker (WSL)", flush=True)
+            path = _choose_folder_via_windows_powershell(title)
+            if path:
+                print("[choose_folder] selected via Windows PowerShell", flush=True)
+                return path
+            print("[choose_folder] Windows PowerShell picker unavailable/failed", flush=True)
         try:
             print("[choose_folder] trying zenity --file-selection --directory", flush=True)
             result = subprocess.run(
@@ -74,6 +145,9 @@ def choose_folder(title: str = "Select Folder") -> str | None:
             print("[choose_folder] selected via easygui", flush=True)
             return path
         print("[choose_folder] easygui returned no selection", flush=True)
+        # On native Windows, treat dialog cancel as final user intent.
+        if sys.platform.startswith("win"):
+            return None
     except Exception:
         print("[choose_folder] easygui unavailable/failed", flush=True)
         pass
