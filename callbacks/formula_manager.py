@@ -56,12 +56,16 @@ def _default_panel_state(panel_number: int) -> dict:
         'show_extrema_markers': True,
         'show_intersection_markers': True,
         'show_area_shading': False,
+        'show_monotonicity_regions': True,
+        'show_concavity_regions': True,
         'example_formula': 'sin(x)',
         'analysis_formula': '',
         'analysis_x0': 0.0,
         'interval_min': -2.0,
         'interval_max': 2.0,
-        'threshold_value': 0.0,
+        'threshold_value': None,
+        'click_mode': 'focus',
+        'pending_interval_start': None,
         'params': {},
         'formulas': [_default_formula_row()],
     }
@@ -75,6 +79,26 @@ def _default_param_state() -> dict:
         'max': 10.0,
         'step': 0.1,
     }
+
+
+def _safe_float(value, fallback: float) -> float:
+    """Convert callback values to float without crashing on empty/text input."""
+    try:
+        if value in (None, ""):
+            return fallback
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _safe_int(value, fallback: int) -> int:
+    """Convert callback values to int without crashing on empty/text input."""
+    try:
+        if value in (None, ""):
+            return fallback
+        return int(float(value))
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _sync_panel_params(panel_state: dict) -> None:
@@ -101,8 +125,11 @@ class FormulaCallbackManager(BaseCallbackManager):
         self._register_add_formula_row()
         self._register_apply_example_formula()
         self._register_remove_formula_row()
+        self._register_formula_steppers()
         self._register_sync_formula_panels()
         self._register_sync_parameter_controls()
+        self._register_graph_click_selection()
+        self._register_analysis_jump()
         self._register_reset_formula_params()
         self._register_export_formula_csv()
         self._register_update_formula_graph()
@@ -270,6 +297,61 @@ class FormulaCallbackManager(BaseCallbackManager):
 
         self._track_callback(remove_formula_row)
 
+    def _register_formula_steppers(self):
+        @self.app.callback(
+            Output('formula-panels', 'data', allow_duplicate=True),
+            Output('formula-panels-container', 'children', allow_duplicate=True),
+            Input({'type': 'formula-stepper-btn', 'panel': ALL, 'field': ALL, 'row': ALL, 'direction': ALL}, 'n_clicks'),
+            State('formula-panels', 'data'),
+            prevent_initial_call=True
+        )
+        def apply_formula_stepper(n_clicks, panels_state):
+            from ui.formula_graphs import build_formula_panel
+
+            if not ctx.triggered_id or not panels_state:
+                raise PreventUpdate
+            if not n_clicks or all(value is None or value == 0 for value in n_clicks):
+                raise PreventUpdate
+
+            panels_state = copy.deepcopy(panels_state or {})
+            panel_id = ctx.triggered_id['panel']
+            field = ctx.triggered_id['field']
+            row_id = ctx.triggered_id['row']
+            direction = ctx.triggered_id['direction']
+
+            panel_state = panels_state.get(panel_id)
+            if not panel_state:
+                raise PreventUpdate
+
+            delta = -1 if direction == 'minus' else 1
+
+            if field == 'x_min':
+                current = float(panel_state.get('x_min', -10.0))
+                panel_state['x_min'] = current + delta * 1.0
+            elif field == 'x_max':
+                current = float(panel_state.get('x_max', 10.0))
+                panel_state['x_max'] = current + delta * 1.0
+            elif field == 'points':
+                current = int(panel_state.get('points', 400))
+                panel_state['points'] = max(50, min(5000, current + delta * 50))
+            elif field == 'width':
+                for formula in panel_state.get('formulas', []):
+                    if formula.get('id') != row_id:
+                        continue
+                    current = float(formula.get('width', 3.0))
+                    formula['width'] = max(1.0, min(8.0, round(current + delta * 0.5, 2)))
+                    break
+            else:
+                raise PreventUpdate
+
+            panels = [
+                build_formula_panel(pid, panels_state[pid])
+                for pid in sorted(panels_state.keys())
+            ]
+            return panels_state, panels
+
+        self._track_callback(apply_formula_stepper)
+
     def _register_sync_formula_panels(self):
         @self.app.callback(
             Output('formula-panels', 'data', allow_duplicate=True),
@@ -291,6 +373,7 @@ class FormulaCallbackManager(BaseCallbackManager):
             Input({'type': 'formula-interval-min', 'panel': ALL}, 'value'),
             Input({'type': 'formula-interval-max', 'panel': ALL}, 'value'),
             Input({'type': 'formula-threshold', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-click-mode', 'panel': ALL}, 'value'),
             Input({'type': 'formula-param-slider', 'panel': ALL, 'param': ALL}, 'value'),
             Input({'type': 'formula-param-value', 'panel': ALL, 'param': ALL}, 'value'),
             Input({'type': 'formula-param-min', 'panel': ALL, 'param': ALL}, 'value'),
@@ -313,6 +396,7 @@ class FormulaCallbackManager(BaseCallbackManager):
             State({'type': 'formula-interval-min', 'panel': ALL}, 'id'),
             State({'type': 'formula-interval-max', 'panel': ALL}, 'id'),
             State({'type': 'formula-threshold', 'panel': ALL}, 'id'),
+            State({'type': 'formula-click-mode', 'panel': ALL}, 'id'),
             State({'type': 'formula-param-slider', 'panel': ALL, 'param': ALL}, 'id'),
             State({'type': 'formula-param-value', 'panel': ALL, 'param': ALL}, 'id'),
             State({'type': 'formula-param-min', 'panel': ALL, 'param': ALL}, 'id'),
@@ -324,11 +408,11 @@ class FormulaCallbackManager(BaseCallbackManager):
         def sync_formula_panels(
             formula_expressions, formula_labels, formula_colors, formula_dashes, formula_widths,
             x_mins, x_maxs, points_values, plot_titles, x_titles, y_titles, display_options,
-            analysis_formula_values, analysis_x0_values, interval_min_values, interval_max_values, threshold_values,
+            analysis_formula_values, analysis_x0_values, interval_min_values, interval_max_values, threshold_values, click_mode_values,
             param_slider_values, param_input_values, param_min_values, param_max_values, param_step_values,
             expression_ids, label_ids, color_ids, dash_ids, width_ids,
             x_min_ids, x_max_ids, points_ids, plot_title_ids, x_title_ids, y_title_ids, display_ids,
-            analysis_formula_ids, analysis_x0_ids, interval_min_ids, interval_max_ids, threshold_ids,
+            analysis_formula_ids, analysis_x0_ids, interval_min_ids, interval_max_ids, threshold_ids, click_mode_ids,
             param_slider_ids, param_input_ids, param_min_ids, param_max_ids, param_step_ids,
             panels_state
         ):
@@ -377,15 +461,31 @@ class FormulaCallbackManager(BaseCallbackManager):
                 row_id = component_id['row']
                 for formula in panels_state.get(panel_id, {}).get('formulas', []):
                     if formula.get('id') == row_id and value is not None:
-                        formula['width'] = value
+                        current = _safe_float(formula.get('width', 3.0), 3.0)
+                        formula['width'] = max(1.0, min(8.0, _safe_float(value, current)))
 
             for panel_state in panels_state.values():
                 _sync_panel_params(panel_state)
 
+            for component_id, value in zip(x_min_ids, x_mins):
+                panel_id = component_id['panel']
+                if panel_id in panels_state and value is not None:
+                    current = _safe_float(panels_state[panel_id].get('x_min', -10.0), -10.0)
+                    panels_state[panel_id]['x_min'] = _safe_float(value, current)
+
+            for component_id, value in zip(x_max_ids, x_maxs):
+                panel_id = component_id['panel']
+                if panel_id in panels_state and value is not None:
+                    current = _safe_float(panels_state[panel_id].get('x_max', 10.0), 10.0)
+                    panels_state[panel_id]['x_max'] = _safe_float(value, current)
+
+            for component_id, value in zip(points_ids, points_values):
+                panel_id = component_id['panel']
+                if panel_id in panels_state and value is not None:
+                    current = _safe_int(panels_state[panel_id].get('points', 400), 400)
+                    panels_state[panel_id]['points'] = max(10, min(5000, _safe_int(value, current)))
+
             for ids, values, key in (
-                (x_min_ids, x_mins, 'x_min'),
-                (x_max_ids, x_maxs, 'x_max'),
-                (points_ids, points_values, 'points'),
                 (plot_title_ids, plot_titles, 'plot_title'),
                 (x_title_ids, x_titles, 'x_axis_title'),
                 (y_title_ids, y_titles, 'y_axis_title'),
@@ -410,18 +510,25 @@ class FormulaCallbackManager(BaseCallbackManager):
                     panels_state[panel_id]['show_extrema_markers'] = 'extrema_markers' in opts
                     panels_state[panel_id]['show_intersection_markers'] = 'intersection_markers' in opts
                     panels_state[panel_id]['show_area_shading'] = 'area_shading' in opts
+                    panels_state[panel_id]['show_monotonicity_regions'] = 'monotonicity_regions' in opts
+                    panels_state[panel_id]['show_concavity_regions'] = 'concavity_regions' in opts
 
             for ids, values, key in (
                 (analysis_formula_ids, analysis_formula_values, 'analysis_formula'),
                 (analysis_x0_ids, analysis_x0_values, 'analysis_x0'),
                 (interval_min_ids, interval_min_values, 'interval_min'),
                 (interval_max_ids, interval_max_values, 'interval_max'),
-                (threshold_ids, threshold_values, 'threshold_value'),
+                (click_mode_ids, click_mode_values, 'click_mode'),
             ):
                 for component_id, value in zip(ids, values):
                     panel_id = component_id['panel']
                     if panel_id in panels_state and value is not None:
                         panels_state[panel_id][key] = value
+
+            for component_id, value in zip(threshold_ids, threshold_values):
+                panel_id = component_id['panel']
+                if panel_id in panels_state:
+                    panels_state[panel_id]['threshold_value'] = value
 
             param_updates = []
             if triggered_type == 'formula-param-slider':
@@ -449,7 +556,11 @@ class FormulaCallbackManager(BaseCallbackManager):
                         continue
                     panel_state.setdefault('params', {})
                     panel_state['params'].setdefault(param_name, _default_param_state())
-                    panel_state['params'][param_name][field] = value
+                    current = _safe_float(
+                        panel_state['params'][param_name].get(field, _default_param_state()[field]),
+                        _default_param_state()[field]
+                    )
+                    panel_state['params'][param_name][field] = _safe_float(value, current)
 
             structure_trigger_types = {
                 'formula-row-expression',
@@ -523,6 +634,97 @@ class FormulaCallbackManager(BaseCallbackManager):
             )
 
         self._track_callback(sync_parameter_controls)
+
+    def _register_graph_click_selection(self):
+        @self.app.callback(
+            Output('formula-panels', 'data', allow_duplicate=True),
+            Output('formula-panels-container', 'children', allow_duplicate=True),
+            Input({'type': 'formula-plot', 'panel': ALL}, 'clickData'),
+            State({'type': 'formula-plot', 'panel': ALL}, 'id'),
+            State('formula-panels', 'data'),
+            prevent_initial_call=True
+        )
+        def update_from_graph_click(click_data_list, plot_ids, panels_state):
+            from ui.formula_graphs import build_formula_panel
+
+            if not ctx.triggered_id or not panels_state:
+                raise PreventUpdate
+
+            panel_id = ctx.triggered_id['panel']
+            panel_state = copy.deepcopy((panels_state or {}).get(panel_id))
+            if not panel_state:
+                raise PreventUpdate
+
+            click_data = None
+            for component_id, value in zip(plot_ids, click_data_list):
+                if component_id.get('panel') == panel_id:
+                    click_data = value
+                    break
+
+            if not click_data or not click_data.get('points'):
+                raise PreventUpdate
+
+            x_value = click_data['points'][0].get('x')
+            if x_value is None:
+                raise PreventUpdate
+
+            click_mode = panel_state.get('click_mode', 'focus')
+            if click_mode == 'interval':
+                pending = panel_state.get('pending_interval_start')
+                if pending is None:
+                    panel_state['pending_interval_start'] = float(x_value)
+                    panel_state['interval_min'] = float(x_value)
+                    panel_state['interval_max'] = float(x_value)
+                else:
+                    panel_state['interval_min'] = min(float(pending), float(x_value))
+                    panel_state['interval_max'] = max(float(pending), float(x_value))
+                    panel_state['pending_interval_start'] = None
+            else:
+                panel_state['analysis_x0'] = float(x_value)
+
+            updated = copy.deepcopy(panels_state)
+            updated[panel_id] = panel_state
+            panels = [
+                build_formula_panel(pid, updated[pid])
+                for pid in sorted(updated.keys())
+            ]
+            return updated, panels
+
+        self._track_callback(update_from_graph_click)
+
+    def _register_analysis_jump(self):
+        @self.app.callback(
+            Output('formula-panels', 'data', allow_duplicate=True),
+            Output('formula-panels-container', 'children', allow_duplicate=True),
+            Input({'type': 'formula-analysis-jump', 'panel': ALL, 'x': ALL}, 'n_clicks'),
+            State('formula-panels', 'data'),
+            prevent_initial_call=True
+        )
+        def jump_to_analysis_point(n_clicks, panels_state):
+            from ui.formula_graphs import build_formula_panel
+
+            if not ctx.triggered_id or not panels_state:
+                raise PreventUpdate
+            if not n_clicks or all(value is None or value == 0 for value in n_clicks):
+                raise PreventUpdate
+
+            panel_id = ctx.triggered_id['panel']
+            x_value = ctx.triggered_id.get('x')
+            if x_value is None:
+                raise PreventUpdate
+
+            updated = copy.deepcopy(panels_state)
+            if panel_id not in updated:
+                raise PreventUpdate
+
+            updated[panel_id]['analysis_x0'] = float(x_value)
+            panels = [
+                build_formula_panel(pid, updated[pid])
+                for pid in sorted(updated.keys())
+            ]
+            return updated, panels
+
+        self._track_callback(jump_to_analysis_point)
 
     def _register_reset_formula_params(self):
         @self.app.callback(
@@ -605,7 +807,8 @@ class FormulaCallbackManager(BaseCallbackManager):
             if not plot_id:
                 raise PreventUpdate
 
-            panel_state = (panels_state or {}).get(plot_id['panel'], {})
+            panel_state = copy.deepcopy((panels_state or {}).get(plot_id['panel'], {}))
+            panel_state['_panel_id'] = plot_id['panel']
             figure, summary = build_formula_figure(panel_state)
             return figure, summary
 

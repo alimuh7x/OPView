@@ -15,7 +15,7 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# ── Step 1: Check GUI dependencies for file dialogs ───────────────────────
+# -- Step 1: Check GUI dependencies for file dialogs --
 echo "[1/6] Checking GUI dependencies for file dialogs..."
 IS_WSL=0
 if grep -qiE "(microsoft|wsl)" /proc/version 2>/dev/null || grep -qiE "(microsoft|wsl)" /proc/sys/kernel/osrelease 2>/dev/null; then
@@ -41,7 +41,7 @@ else
     echo "  apt/dpkg-query not available; skipping GUI dependency install"
 fi
 
-# ── Step 2: Check VTK system dependencies ────────────────────────────────
+# -- Step 2: Check VTK system dependencies --
 echo "[2/6] Checking VTK system dependencies..."
 MISSING_PKGS=()
 
@@ -61,7 +61,7 @@ if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
         echo "    - $pkg"
     done
     echo ""
-    
+
     if command -v apt-get >/dev/null 2>&1; then
         echo "  Install them with:"
         echo "    sudo apt-get update && sudo apt-get install -y ${MISSING_PKGS[*]}"
@@ -83,7 +83,7 @@ if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
         echo "  WARNING: Could not determine package manager."
         echo "  Please install manually: ${MISSING_PKGS[*]}"
     fi
-    
+
     echo ""
     read -r -p "  Install missing packages now? [y/N]: " reply
     if [[ $reply =~ ^[Yy]$ ]]; then
@@ -105,7 +105,7 @@ else
     echo "  System dependencies OK"
 fi
 
-# ── Step 3: Find a supported Python (3.12 or 3.13) ──────────────────────
+# -- Step 3: Find a supported Python (3.12 or 3.13) --
 echo "[3/6] Looking for Python 3.12 or 3.13..."
 PY_CMD=""
 
@@ -193,7 +193,7 @@ fi
 
 echo "  Found $($PY_CMD --version 2>&1)"
 
-# ── Helper: install python venv package and retry ────────────────────────
+# -- Helper: install python venv package and retry --
 install_venv_pkg() {
     local ver
     ver=$($PY_CMD --version 2>&1 | sed -n 's/Python \([0-9]*\.[0-9]*\).*/\1/p')
@@ -215,13 +215,13 @@ install_venv_pkg() {
     fi
 }
 
-# ── Step 4: Create or reuse virtual environment ──────────────────────────
+# -- Step 4: Create or reuse virtual environment --
 if [ -f "myenv/bin/python" ] && [ -f "myenv/bin/activate" ]; then
     existing_ver=$(myenv/bin/python --version 2>&1 | sed -n 's/Python \([0-9]*\.[0-9]*\).*/\1/p')
     if [[ "$existing_ver" == "3.12" || "$existing_ver" == "3.13" ]]; then
         echo "[4/6] Virtual environment already exists - reusing"
     else
-        echo "[4/6] Existing venv uses Python ${existing_ver:-unknown} (not 3.12/3.13) — removing it..."
+        echo "[4/6] Existing venv uses Python ${existing_ver:-unknown} (not 3.12/3.13) - removing it..."
         rm -rf myenv
         echo "  Creating new virtual environment with $($PY_CMD --version 2>&1)..."
         if ! $PY_CMD -m venv myenv >/dev/null 2>&1; then
@@ -231,7 +231,7 @@ if [ -f "myenv/bin/python" ] && [ -f "myenv/bin/activate" ]; then
     fi
 else
     if [ -d "myenv" ]; then
-        echo "[4/6] Existing venv is incomplete — removing it..."
+        echo "[4/6] Existing venv is incomplete - removing it..."
         rm -rf myenv
     else
         echo "[4/6] Creating virtual environment..."
@@ -242,7 +242,7 @@ else
     fi
 fi
 
-# ── Step 5: Activate virtual environment ─────────────────────────────────
+# -- Step 5: Activate virtual environment --
 echo "[5/6] Activating virtual environment..."
 # shellcheck disable=SC1091
 source myenv/bin/activate
@@ -251,7 +251,7 @@ source myenv/bin/activate
 ACTIVE_PYTHON=$(which python)
 echo "  Using: $ACTIVE_PYTHON"
 
-# ── Step 6: Check and install dependencies ───────────────────────────────
+# -- Step 6: Check and install dependencies --
 echo "[6/6] Checking dependencies..."
 
 # Fast startup policy: verify essential runtime deps only.
@@ -260,7 +260,7 @@ NEED_REPAIR=0
 if [ "${OPVIEW_REPAIR_DEPS:-0}" = "1" ]; then
     NEED_REPAIR=1
     echo "  Repair mode enabled: installing all dependencies"
-elif python -c "import dash, numpy, plotly, pandas, scipy, markdown, plyer" 2>/dev/null; then
+elif python -c "import dash, numpy, plotly, pandas, scipy, markdown, plyer" >/dev/null 2>&1; then
     echo "  Essential dependencies present (skipping heavyweight import check)"
 else
     NEED_REPAIR=1
@@ -278,12 +278,39 @@ if [ "$NEED_REPAIR" -eq 1 ]; then
     python -c "import dash, vtk, pyvista, numpy; print('  All core modules OK')"
 fi
 
-# ── Step 7: Launch server and open browser ───────────────────────────────
+# -- Step 7: Launch server and open browser --
+
+# WSL2: bind to all interfaces so Windows browser can reach the server
+DISPLAY_URL="$APP_URL"
+if [ "$IS_WSL" -eq 1 ]; then
+    export OPVIEW_HOST="0.0.0.0"
+    WSL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    export WSL_IP
+    if [ -n "$WSL_IP" ]; then
+        DISPLAY_URL="http://${WSL_IP}:8050"
+    fi
+    echo "[DEBUG] WSL detected"
+    echo "[DEBUG] OPVIEW_HOST=$OPVIEW_HOST"
+    echo "[DEBUG] WSL_IP=$WSL_IP"
+    echo "[DEBUG] DISPLAY_URL=$DISPLAY_URL"
+else
+    export OPVIEW_HOST="127.0.0.1"
+    echo "[DEBUG] Not WSL — host=$OPVIEW_HOST"
+fi
+
+# Free port 8050 if something is already using it
+_OLD_PID=$(lsof -ti :8050 2>/dev/null || true)
+if [ -n "$_OLD_PID" ]; then
+    echo "[DEBUG] Port 8050 in use by PID $_OLD_PID — stopping it..."
+    kill "$_OLD_PID" 2>/dev/null || true
+    sleep 1
+fi
+
 echo ""
 echo "Starting OPView server..."
 echo ""
 echo "=========================================="
-echo " OPView will open at $APP_URL"
+echo " OPView will open at $DISPLAY_URL"
 echo " Press Ctrl+C to stop the server"
 echo "=========================================="
 echo ""
@@ -291,18 +318,18 @@ echo ""
 # Open browser after a short delay (background)
 (
     sleep 3
-    if command -v xdg-open >/dev/null 2>&1; then
-        xdg-open "$APP_URL" 2>/dev/null
+    echo "[DEBUG] Opening browser at $DISPLAY_URL"
+    if [ "$IS_WSL" -eq 1 ] && command -v wslview >/dev/null 2>&1; then
+        wslview "$DISPLAY_URL" 2>/dev/null
+    elif command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$DISPLAY_URL" 2>/dev/null
     elif command -v sensible-browser >/dev/null 2>&1; then
-        sensible-browser "$APP_URL" 2>/dev/null
-    elif command -v firefox >/dev/null 2>&1; then
-        firefox "$APP_URL" 2>/dev/null
-    elif command -v google-chrome >/dev/null 2>&1; then
-        google-chrome "$APP_URL" 2>/dev/null
+        sensible-browser "$DISPLAY_URL" 2>/dev/null
     fi
 ) &
 
 # Run the application (blocks until Ctrl+C)
+echo "[DEBUG] Launching: OPVIEW_HOST=$OPVIEW_HOST python OPView.py"
 python OPView.py
 
 echo ""

@@ -1091,8 +1091,11 @@ if __name__ == '__main__':
             print(f"  - {dataset_label}: {panel.file_path}")
     if DEBUG:
         print(f"\n[{time.time()-_start_time:.2f}s] Total startup time")
-    print("\nStarting Dash server on http://127.0.0.1:8050\n")
+    host = os.environ.get("OPVIEW_HOST", "127.0.0.1")
+    port = int(os.environ.get("OPVIEW_PORT", "8050"))
+    display_host = os.environ.get("WSL_IP", "127.0.0.1") if host == "0.0.0.0" else host
+    print(f"\nStarting Dash server on http://{display_host}:{port}\n")
 
     # Disable reloader to prevent double initialization
     # use_reloader=False keeps debug features but prevents spawning two processes
-    app.run(debug=True, use_reloader=False, host='127.0.0.1', port=8050)
+    app.run(debug=True, use_reloader=False, host=host, port=port)
