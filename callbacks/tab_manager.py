@@ -280,6 +280,7 @@ class TabCallbackManager(BaseCallbackManager):
             Output('comparison-content', 'children'),
             Output('comparison-content', 'style'),
             Output('graphs-content', 'style'),
+            Output('formula-content', 'style'),
             Input('active-tab', 'data'),
             Input('open-tabs', 'data'),
             Input('comparison-active-tab', 'data'),
@@ -316,6 +317,18 @@ class TabCallbackManager(BaseCallbackManager):
                     no_update,                   # comparison-content children - don't update
                     {'display': 'none'},         # comparison-content style - HIDE comparison
                     {'display': 'block'},        # graphs-content style - SHOW graphs
+                    {'display': 'none'},        # formula-content style - HIDE formula
+                )
+
+            # === HANDLE FORMULA PLOT TAB ===
+            if active_folder == 'formula-plot':
+                return (
+                    no_update,                   # tab-content children
+                    {'display': 'none'},         # tab-content style - HIDE VTK content
+                    no_update,                   # comparison-content children - don't update
+                    {'display': 'none'},         # comparison-content style - HIDE comparison
+                    {'display': 'none'},         # graphs-content style - HIDE graphs
+                    {'display': 'block'},        # formula-content style - SHOW formula
                 )
 
             # === HANDLE COMPARISON TAB ===
@@ -328,6 +341,7 @@ class TabCallbackManager(BaseCallbackManager):
                         no_update,                   # comparison-content children - keep existing
                         {'display': 'block'},        # comparison-content - SHOW
                         {'display': 'none'},         # graphs-content - HIDE
+                        {'display': 'none'},         # formula-content - HIDE
                     )
 
                 # Multi View has its own panels; start empty until user adds one.
@@ -340,6 +354,7 @@ class TabCallbackManager(BaseCallbackManager):
                                 style={'padding': '40px', 'text-align': 'center'}),
                         {'display': 'block'},        # comparison-content - SHOW placeholder
                         {'display': 'none'},         # graphs-content - HIDE
+                        {'display': 'none'},         # formula-content - HIDE
                     )
 
                 # Check if we need to rebuild comparison panels
@@ -395,6 +410,7 @@ class TabCallbackManager(BaseCallbackManager):
                         panels,                      # comparison-content children
                         {'display': 'block'},        # comparison-content - SHOW
                         {'display': 'none'},         # graphs-content - HIDE
+                        {'display': 'none'},         # formula-content - HIDE
                     )
                 else:
                     # Pure visibility change - let clientside handle it
@@ -411,6 +427,7 @@ class TabCallbackManager(BaseCallbackManager):
                     no_update,                    # comparison-content children - don't update
                     {'display': 'none'},          # comparison-content - HIDE
                     {'display': 'none'},          # graphs-content - HIDE
+                    {'display': 'none'},          # formula-content - HIDE
                 )
 
             # Build VTK tab content for all open panels and hide inactive ones.
@@ -441,6 +458,7 @@ class TabCallbackManager(BaseCallbackManager):
                         no_update,                   # comparison-content children - don't update
                         {'display': 'none'},         # comparison-content - HIDE
                         {'display': 'none'},         # graphs-content - HIDE
+                        {'display': 'none'},         # formula-content - HIDE
                     )
                 else:
                     # Structure didn't change, just visibility - let clientside handle it
@@ -818,6 +836,9 @@ class TabCallbackManager(BaseCallbackManager):
             if active_folder == 'custom-graph':
                 # On Custom Graph tab: hide modules, show custom graph selector.
                 return {'display': 'none'}, {'display': 'none'}, {'display': 'block'}
+            if active_folder == 'formula-plot':
+                # On Formula Plot tab: hide sidebar selectors, panel controls live in the content area.
+                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
             if active_folder == 'comparison':
                 # On Multi View: show comparison panel selector, hide Single View selector.
                 return {'display': 'none'}, {'display': 'block'}, {'display': 'none'}

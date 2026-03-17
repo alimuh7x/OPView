@@ -88,6 +88,10 @@ from .graphs import (
     build_multifile_panel,
     build_multifile_figure,
 )
+from .formula_graphs import (
+    build_formula_panel,
+    build_formula_figure,
+)
 
 # Callback factories
 from .callbacks import (
@@ -165,6 +169,8 @@ __all__ = [
     'get_textdata_files',
     'build_multifile_panel',
     'build_multifile_figure',
+    'build_formula_panel',
+    'build_formula_figure',
 
     # Callback API
     'create_histogram_callback',

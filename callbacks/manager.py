@@ -7,6 +7,8 @@ Coordinates all callback managers and registers callbacks.
 from .tab_manager import TabCallbackManager
 from .project_manager import ProjectCallbackManager
 from .data_manager import DataCallbackManager
+from .graphs_manager import GraphsCallbackManager
+from .formula_manager import FormulaCallbackManager
 
 
 class CallbackManager:
@@ -41,6 +43,8 @@ class CallbackManager:
         self.tab_manager = TabCallbackManager(app, context, ui_manager)
         self.project_manager = ProjectCallbackManager(app, context)
         self.data_manager_callbacks = DataCallbackManager(app, context, data_manager)
+        self.graphs_manager = GraphsCallbackManager(app, context)
+        self.formula_manager = FormulaCallbackManager(app, context)
 
     def register_all(self):
         """
@@ -64,6 +68,12 @@ class CallbackManager:
         self.data_manager_callbacks.register()
         print(f"  ✓ Data callbacks: {self.data_manager_callbacks.count()}")
 
+        self.graphs_manager.register()
+        print(f"  ✓ Graph callbacks: {self.graphs_manager.count()}")
+
+        self.formula_manager.register()
+        print(f"  ✓ Formula callbacks: {self.formula_manager.count()}")
+
         # Note: Comparison callbacks are already registered by ComparisonManager
         if self.comparison_manager:
             print(f"  ✓ Comparison callbacks: registered via ComparisonManager")
@@ -71,7 +81,9 @@ class CallbackManager:
         total = (
             self.tab_manager.count() +
             self.project_manager.count() +
-            self.data_manager_callbacks.count()
+            self.data_manager_callbacks.count() +
+            self.graphs_manager.count() +
+            self.formula_manager.count()
         )
         print(f"[CallbackManager] Total callbacks registered: {total}")
 
@@ -86,9 +98,13 @@ class CallbackManager:
             'tab': self.tab_manager.count(),
             'project': self.project_manager.count(),
             'data': self.data_manager_callbacks.count(),
+            'graphs': self.graphs_manager.count(),
+            'formula': self.formula_manager.count(),
             'total': (
                 self.tab_manager.count() +
                 self.project_manager.count() +
-                self.data_manager_callbacks.count()
+                self.data_manager_callbacks.count() +
+                self.graphs_manager.count() +
+                self.formula_manager.count()
             )
         }

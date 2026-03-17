@@ -264,7 +264,7 @@ if DEBUG:
 # Register project callbacks (Phase 13)
 if DEBUG:
     print(f"[{time.time()-_start_time:.2f}s] Registering callbacks...")
-from callbacks import ProjectCallbackManager, TabCallbackManager, GraphsCallbackManager
+from callbacks import ProjectCallbackManager, TabCallbackManager, GraphsCallbackManager, FormulaCallbackManager
 project_cb_manager = ProjectCallbackManager(app, app_context)
 project_cb_manager.register()
 if DEBUG:
@@ -280,6 +280,11 @@ graphs_cb_manager = GraphsCallbackManager(app, app_context)
 graphs_cb_manager.register()
 if DEBUG:
     print(f"[{time.time()-_start_time:.2f}s] Graphs callbacks registered: {graphs_cb_manager.count()}")
+
+formula_cb_manager = FormulaCallbackManager(app, app_context)
+formula_cb_manager.register()
+if DEBUG:
+    print(f"[{time.time()-_start_time:.2f}s] Formula callbacks registered: {formula_cb_manager.count()}")
 
 TEXTDATA_DIR = Path("TextData")
 SIZE_DETAILS_FILE   = TEXTDATA_DIR / "SizeDetails.dat"

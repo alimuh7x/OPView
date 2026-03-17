@@ -9,6 +9,7 @@ from .tab_manager import TabCallbackManager
 from .project_manager import ProjectCallbackManager
 from .data_manager import DataCallbackManager
 from .graphs_manager import GraphsCallbackManager
+from .formula_manager import FormulaCallbackManager
 from .manager import CallbackManager
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     'ProjectCallbackManager',
     'DataCallbackManager',
     'GraphsCallbackManager',
+    'FormulaCallbackManager',
     'CallbackManager',
 ]

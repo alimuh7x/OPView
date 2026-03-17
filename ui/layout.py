@@ -69,6 +69,7 @@ def build_app_layout(
                 dcc.Store(id='selected-project-folder', data=None),
                 dcc.Store(id='projects-store', data={'names': [], 'active': None, 'files_by_project': {}}, storage_type='session'),
                 dcc.Store(id='graphs-multifile-panels', data={}),  # Graph panels state (memory - resets on refresh)
+                dcc.Store(id='formula-panels', data={}),  # Formula panels state (memory - resets on refresh)
                 dcc.Location(id='url', refresh=False),
                 html.Div([
                     html.Div([
@@ -121,6 +122,12 @@ def build_app_layout(
                             dcc.Tab(
                                 label='Custom Graph',
                                 value='custom-graph',
+                                className='vtk-tab',
+                                selected_className='vtk-tab--selected'
+                            ),
+                            dcc.Tab(
+                                label='Formula Plot',
+                                value='formula-plot',
                                 className='vtk-tab',
                                 selected_className='vtk-tab--selected'
                             )
@@ -258,6 +265,19 @@ def build_app_layout(
                                     n_clicks=0
                                 ),
                                 html.Div(id='graphs-multifile-container', className='multifile-panels-container'),
+                            ],
+                            style={'display': 'none'}
+                        ),
+                        html.Div(
+                            id='formula-content',
+                            children=[
+                                html.Button(
+                                    "+ Add Formula Panel",
+                                    id='formula-add-panel-btn',
+                                    className='graphs-add-panel-btn',
+                                    n_clicks=0
+                                ),
+                                html.Div(id='formula-panels-container', className='multifile-panels-container'),
                             ],
                             style={'display': 'none'}
                         ),
