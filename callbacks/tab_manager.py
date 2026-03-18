@@ -317,7 +317,7 @@ class TabCallbackManager(BaseCallbackManager):
                     no_update,                   # comparison-content children - don't update
                     {'display': 'none'},         # comparison-content style - HIDE comparison
                     {'display': 'block'},        # graphs-content style - SHOW graphs
-                    {'display': 'none'},        # formula-content style - HIDE formula
+                    {'display': 'none'},         # formula-content style - HIDE formula
                 )
 
             # === HANDLE FORMULA PLOT TAB ===
@@ -355,6 +355,7 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'block'},        # comparison-content - SHOW placeholder
                         {'display': 'none'},         # graphs-content - HIDE
                         {'display': 'none'},         # formula-content - HIDE
+                        {'display': 'none'},         # geometry-content - HIDE
                     )
 
                 # Check if we need to rebuild comparison panels
@@ -411,6 +412,7 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'block'},        # comparison-content - SHOW
                         {'display': 'none'},         # graphs-content - HIDE
                         {'display': 'none'},         # formula-content - HIDE
+                        {'display': 'none'},         # geometry-content - HIDE
                     )
                 else:
                     # Pure visibility change - let clientside handle it

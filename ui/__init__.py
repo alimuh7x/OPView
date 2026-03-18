@@ -171,7 +171,6 @@ __all__ = [
     'build_multifile_figure',
     'build_formula_panel',
     'build_formula_figure',
-
     # Callback API
     'create_histogram_callback',
     'create_time_series_callback',

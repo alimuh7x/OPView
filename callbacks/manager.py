@@ -8,7 +8,7 @@ from .tab_manager import TabCallbackManager
 from .project_manager import ProjectCallbackManager
 from .data_manager import DataCallbackManager
 from .graphs_manager import GraphsCallbackManager
-from .formula_manager import FormulaCallbackManager
+from .formula_manager_v2 import FormulaCallbackManager
 
 
 class CallbackManager:

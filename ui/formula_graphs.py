@@ -18,10 +18,15 @@ from utils.formula_parser import FormulaValidationError, evaluate_formula, extra
 FORMULA_EXAMPLES = [
     {"label": "Sine Wave", "value": "sin(x)"},
     {"label": "Damped Sine", "value": "a*exp(-b*x) * sin(c*x)"},
+    {"label": "Gaussian Peak", "value": "a*exp(-((x-b)**2)/(2*c**2))"},
+    {"label": "Logistic Front", "value": "1 / (1 + exp(-a*(x-b)))"},
+    {"label": "Exponential Decay", "value": "a*exp(-x/tau) + c"},
+    {"label": "Relaxation Growth", "value": "a*(1-exp(-x/tau)) + c"},
+    {"label": "Sigmoid Window", "value": "a / (1 + exp(-(x-b)/c)) + d"},
+    {"label": "Arrhenius-like", "value": "a*exp(-q/(r*x))"},
+    {"label": "Hyperbola", "value": "a/(x-b) + c"},
     {"label": "Parabola", "value": "x**2"},
     {"label": "Cubic", "value": "x**3 - 3*x"},
-    {"label": "Gaussian", "value": "a*exp(-(x**2)/b)"},
-    {"label": "Logistic", "value": "1 / (1 + exp(-a*x))"},
 ]
 
 TRACE_COLORS = [
@@ -113,6 +118,7 @@ def _default_formula_row(row_id: str, expression: str = "sin(x)") -> Dict:
         "color": "black",
         "dash": "solid",
         "width": 3.0,
+        "visible": True,
     }
 
 
@@ -255,6 +261,26 @@ def _format_interval_values(intervals: list[tuple[float, float]]) -> str:
     if not intervals:
         return "none"
     return ", ".join(f"[{start:.3g}, {end:.3g}]" for start, end in intervals[:5])
+
+
+def _find_invalid_intervals(x_values: np.ndarray, y_values: np.ndarray) -> list[tuple[float, float]]:
+    """Return contiguous x-intervals where the formula is non-finite."""
+    invalid_mask = ~np.isfinite(y_values)
+    intervals: list[tuple[float, float]] = []
+    if not np.any(invalid_mask):
+        return intervals
+
+    start_idx = None
+    for idx, is_invalid in enumerate(invalid_mask):
+        if is_invalid and start_idx is None:
+            start_idx = idx
+        elif not is_invalid and start_idx is not None:
+            intervals.append((float(x_values[start_idx]), float(x_values[idx - 1])))
+            start_idx = None
+
+    if start_idx is not None:
+        intervals.append((float(x_values[start_idx]), float(x_values[-1])))
+    return intervals
 
 
 def _build_stepper_input(
@@ -409,10 +435,23 @@ def _build_formula_rows(panel_id: str, formulas: List[Dict]) -> List[html.Div]:
                     ],
                     style=GRID_FIELD_STYLE,
                 ),
+                html.Div(
+                    [
+                        html.Label("Visible", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
+                        dcc.Checklist(
+                            id={'type': 'formula-row-visible', 'panel': panel_id, 'row': row_id},
+                            options=[{'label': 'Show', 'value': 'visible'}],
+                            value=['visible'] if formula.get('visible', True) else [],
+                            style={'fontSize': '13px'},
+                            labelStyle={'fontSize': '13px', 'display': 'block', 'paddingTop': '8px'}
+                        ),
+                    ],
+                    style=GRID_FIELD_STYLE,
+                ),
             ],
             style={
                 'display': 'grid',
-                'gridTemplateColumns': 'minmax(280px, 2.2fr) minmax(180px, 1.2fr) minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(150px, 0.95fr)',
+                'gridTemplateColumns': 'minmax(280px, 2.2fr) minmax(180px, 1.2fr) minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(150px, 0.95fr) minmax(110px, 0.6fr)',
                 'gap': '10px',
                 'alignItems': 'end',
                 'flex': '1',
@@ -680,6 +719,7 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
     formulas = state.get("formulas") or [_default_formula_row("formula_1", "sin(x)")]
     formulas = [
         {
+            'visible': True,
             **formula,
             'error': _validate_formula_expression(formula.get('expression', ''), state.get('params', {})),
         }
@@ -821,9 +861,16 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                         n_clicks=0,
                         style={'marginBottom': '0', 'alignSelf': 'flex-end', 'padding': '8px 12px', 'fontSize': '13px'}
                     ),
+                    html.Button(
+                        "Export PNG",
+                        id={'type': 'formula-export-png-btn', 'panel': panel_id},
+                        className='graphs-add-panel-btn',
+                        n_clicks=0,
+                        style={'marginBottom': '0', 'alignSelf': 'flex-end', 'padding': '8px 12px', 'fontSize': '13px'}
+                    ),
                 ], style={
                     'display': 'grid',
-                    'gridTemplateColumns': 'minmax(190px, 1fr) minmax(260px, 1.7fr) minmax(180px, 1fr) minmax(150px, 0.9fr) minmax(150px, 0.9fr) auto auto auto',
+                    'gridTemplateColumns': 'minmax(190px, 1fr) minmax(260px, 1.7fr) minmax(180px, 1fr) minmax(150px, 0.9fr) minmax(150px, 0.9fr) auto auto auto auto',
                     'gap': '10px',
                     'marginBottom': '8px',
                     'alignItems': 'end',
@@ -899,6 +946,16 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                             input_style={'minHeight': '34px'}
                         ),
                     ], style=GRID_FIELD_STYLE),
+                    html.Div([
+                        html.Label("Visible", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
+                        dcc.Checklist(
+                            id={'type': 'formula-row-visible', 'panel': panel_id, 'row': primary_formula['id']},
+                            options=[{'label': 'Show', 'value': 'visible'}],
+                            value=['visible'] if primary_formula.get('visible', True) else [],
+                            style={'fontSize': '13px'},
+                            labelStyle={'fontSize': '13px', 'display': 'block', 'paddingTop': '8px'}
+                        ),
+                    ], style=GRID_FIELD_STYLE),
                     html.Button(
                         '×',
                         id={'type': 'formula-row-remove-btn', 'panel': panel_id, 'row': primary_formula['id']},
@@ -916,7 +973,7 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                     ),
                 ], style={
                     'display': 'grid',
-                    'gridTemplateColumns': 'minmax(140px, 0.9fr) minmax(140px, 0.9fr) minmax(130px, 0.8fr) minmax(140px, 0.9fr) minmax(140px, 0.9fr) minmax(170px, 1.1fr) auto',
+                    'gridTemplateColumns': 'minmax(140px, 0.9fr) minmax(140px, 0.9fr) minmax(130px, 0.8fr) minmax(140px, 0.9fr) minmax(140px, 0.9fr) minmax(170px, 1.1fr) minmax(110px, 0.65fr) auto',
                     'gap': '10px',
                     'marginBottom': '6px',
                     'alignItems': 'end',
@@ -940,7 +997,11 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                 html.Div([
                     dcc.Graph(
                         id={'type': 'formula-plot', 'panel': panel_id},
-                        config={'displayModeBar': True, 'displaylogo': False},
+                        config={
+                            'displayModeBar': True,
+                            'displaylogo': False,
+                            'toImageButtonOptions': {'format': 'png', 'filename': f'{panel_id}_formula_plot', 'scale': 2}
+                        },
                         style={'height': '700px', 'width': '1000px'}
                     ),
                     html.Div([
@@ -977,7 +1038,8 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                         className='hist-summary',
                         style={'margin': '12px 10px 10px 10px', 'width': '1000px', 'maxWidth': '1000px'}
                     ),
-                    dcc.Download(id={'type': 'formula-download', 'panel': panel_id})
+                    dcc.Download(id={'type': 'formula-download', 'panel': panel_id}),
+                    dcc.Download(id={'type': 'formula-image-download', 'panel': panel_id})
                 ], className='multifile-graph-column', style={'display': 'flex', 'flexDirection': 'column', 'alignSelf': 'stretch'}),
                 html.Div([
                     html.Div([
@@ -1115,9 +1177,12 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
             color = formula.get('color') or 'black'
             dash = formula.get('dash') or 'solid'
             width = _as_float(formula.get('width', 3.0), 3.0)
+            visible = formula.get('visible', True)
 
             if not expression:
                 error_rows.append([label, "Please enter a formula"])
+                continue
+            if not visible:
                 continue
 
             try:
@@ -1129,6 +1194,7 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
             spline = _safe_spline(x_values, y_values)
             roots = _solve_spline_roots(x_values, y_values, limit=24)
             extrema, extrema_spline = _find_extrema(x_values, y_values, limit=24)
+            invalid_intervals = _find_invalid_intervals(x_values, y_values)
             threshold_crossings = (
                 _solve_spline_roots(x_values, y_values - threshold_value, limit=24)
                 if threshold_enabled else []
@@ -1146,6 +1212,7 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
                 'spline': spline or extrema_spline,
                 'roots': roots,
                 'extrema': extrema,
+                'invalid_intervals': invalid_intervals,
                 'threshold_crossings': threshold_crossings,
                 'cumulative': cumulative,
             })
@@ -1222,6 +1289,7 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
         intersection_jump_x = []
         threshold_rows = []
         threshold_jump_x = []
+        invalid_rows = []
         summary_blocks = []
 
         for series in series_results:
@@ -1233,6 +1301,8 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
                 summary_blocks.append(html.Div(
                     f"{series['label']}: min={finite_values.min():.4g}, max={finite_values.max():.4g}, mean={finite_values.mean():.4g}"
                 ))
+            if series['invalid_intervals']:
+                invalid_rows.append([series['label'], _format_interval_values(series['invalid_intervals'])])
 
             if spline is not None:
                 derivative_values = spline.derivative()(x_values)
@@ -1275,8 +1345,6 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
                     mode='markers',
                     marker={'color': series['color'], 'size': 10, 'symbol': 'x'},
                     name=f"{series['label']} roots",
-                    text=[f"r{i + 1}" for i in range(len(series['roots']))],
-                    textposition='top center',
                     hovertemplate="<b>%{fullData.name}</b><br>x=%{x:.6g}<br>y=0<extra></extra>",
                 ))
 
@@ -1287,8 +1355,6 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
                     mode='markers',
                     marker={'color': series['color'], 'size': 11, 'symbol': 'diamond'},
                     name=f"{series['label']} extrema",
-                    text=[item['type'][0].upper() for item in series['extrema']],
-                    textposition='top center',
                     hovertemplate="<b>%{fullData.name}</b><br>x=%{x:.6g}<br>y=%{y:.6g}<extra></extra>",
                 ))
 
@@ -1324,8 +1390,6 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
                 mode='markers',
                 marker={'color': '#444', 'size': 10, 'symbol': 'cross'},
                 name='Intersections',
-                text=[f"i{i + 1}" for i in range(len(intersections))],
-                textposition='top center',
                 hovertemplate="<b>Intersection</b><br>x=%{x:.6g}<br>y=%{y:.6g}<extra></extra>",
             ))
 
@@ -1418,6 +1482,7 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
             ("Formula", selected_series['label']),
             ("Point", f"x0 = {analysis_x0:.6g}, y = {y0:.6g}"),
             ("Slope / Curvature", f"{slope:.6g} / {second_at_x0:.6g}"),
+            ("Valid domain", f"{100.0 * np.isfinite(selected_series['y']).sum() / max(len(selected_series['y']), 1):.1f}% finite"),
             ("Interval", f"[{interval_min:.6g}, {interval_max:.6g}]"),
             ("Threshold", f"{threshold_value:.6g}" if threshold_enabled else "Disabled"),
             (
@@ -1437,6 +1502,8 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
 
         if param_values:
             summary_rows.append(("Parameters", ", ".join(f"{name}={value:.4g}" for name, value in sorted(param_values.items()))))
+        if selected_series['invalid_intervals']:
+            summary_rows.append(("Invalid regions", _format_interval_values(selected_series['invalid_intervals'])))
         for stat_line in summary_blocks:
             if hasattr(stat_line, 'children'):
                 text_value = stat_line.children
@@ -1505,6 +1572,17 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
             line_width=0,
             layer='below',
         )
+        for series in series_results:
+            for start, end in series['invalid_intervals']:
+                fig.add_vrect(
+                    x0=start,
+                    x1=end,
+                    fillcolor='rgba(176, 0, 32, 0.10)',
+                    line_width=0,
+                    layer='below',
+                    annotation_text='invalid',
+                    annotation_position='top left',
+                )
         if threshold_enabled:
             fig.add_hline(
                 y=threshold_value,
@@ -1521,6 +1599,7 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
                 _build_table("Roots", ["Formula", "x", "y"], root_rows),
                 _build_table("Extrema", ["Formula", "Type", "x", "y"], extrema_rows),
                 _build_table("Intersections", ["Pair", "x", "y"], intersection_rows),
+                _build_table("Invalid Regions", ["Formula", "x interval"], invalid_rows),
                 _build_table("Threshold Crossings", ["Formula", "x", "y"], threshold_rows) if threshold_enabled else html.Div(),
             ],
             style={'display': 'flex', 'flexDirection': 'column', 'gap': '4px'}
