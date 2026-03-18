@@ -271,12 +271,20 @@ def build_app_layout(
                         html.Div(
                             id='formula-content',
                             children=[
-                                html.Button(
-                                    "+ Add Formula Panel",
-                                    id='formula-add-panel-btn',
-                                    className='graphs-add-panel-btn',
-                                    n_clicks=0
-                                ),
+                                html.Div([
+                                    html.Button(
+                                        "+ Add Formula Panel 1D",
+                                        id='formula-add-panel-1d-btn',
+                                        className='graphs-add-panel-btn',
+                                        n_clicks=0
+                                    ),
+                                    html.Button(
+                                        "+ Add Formula Panel 2D",
+                                        id='formula-add-panel-2d-btn',
+                                        className='graphs-add-panel-btn',
+                                        n_clicks=0
+                                    ),
+                                ], style={'display': 'flex', 'gap': '10px', 'flexWrap': 'wrap'}),
                                 html.Div(id='formula-panels-container', className='multifile-panels-container'),
                             ],
                             style={'display': 'none'}

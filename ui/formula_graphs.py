@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 from scipy.integrate import cumulative_trapezoid, trapezoid
 from scipy.interpolate import CubicSpline
 
-from utils.formula_parser import FormulaValidationError, evaluate_formula, extract_formula_variables
+from utils.formula_parser_v2 import FormulaValidationError, evaluate_formula, evaluate_formula_2d, extract_formula_variables
 
 
 FORMULA_EXAMPLES = [
@@ -498,7 +498,7 @@ def _build_formula_rows(panel_id: str, formulas: List[Dict]) -> List[html.Div]:
     return rows
 
 
-def _build_parameter_controls(panel_id: str, params: Dict[str, Dict]) -> html.Div:
+def _build_parameter_controls(panel_id: str, params: Dict[str, Dict], id_prefix: str = 'formula-param') -> html.Div:
     """Build slider + numeric controls for detected parameters."""
     if not params:
         return html.Div(
@@ -523,7 +523,7 @@ def _build_parameter_controls(panel_id: str, params: Dict[str, Dict]) -> html.Di
             html.Div([
                 html.Label(name, className='multifile-mini-label', style={'fontSize': '15px', 'fontWeight': '700'}),
                 dcc.Slider(
-                    id={'type': 'formula-param-slider', 'panel': panel_id, 'param': name},
+                    id={'type': f'{id_prefix}-slider', 'panel': panel_id, 'param': name},
                     min=settings['min'],
                     max=settings['max'],
                     step=settings['step'],
@@ -534,7 +534,7 @@ def _build_parameter_controls(panel_id: str, params: Dict[str, Dict]) -> html.Di
                     html.Div([
                         html.Label("Value", className='multifile-mini-label'),
                         dcc.Input(
-                            id={'type': 'formula-param-value', 'panel': panel_id, 'param': name},
+                            id={'type': f'{id_prefix}-value', 'panel': panel_id, 'param': name},
                             type='number',
                             value=settings['value'],
                             debounce=True,
@@ -544,7 +544,7 @@ def _build_parameter_controls(panel_id: str, params: Dict[str, Dict]) -> html.Di
                     html.Div([
                         html.Label("Min", className='multifile-mini-label'),
                         dcc.Input(
-                            id={'type': 'formula-param-min', 'panel': panel_id, 'param': name},
+                            id={'type': f'{id_prefix}-min', 'panel': panel_id, 'param': name},
                             type='number',
                             value=settings['min'],
                             debounce=True,
@@ -554,7 +554,7 @@ def _build_parameter_controls(panel_id: str, params: Dict[str, Dict]) -> html.Di
                     html.Div([
                         html.Label("Max", className='multifile-mini-label'),
                         dcc.Input(
-                            id={'type': 'formula-param-max', 'panel': panel_id, 'param': name},
+                            id={'type': f'{id_prefix}-max', 'panel': panel_id, 'param': name},
                             type='number',
                             value=settings['max'],
                             debounce=True,
@@ -564,7 +564,7 @@ def _build_parameter_controls(panel_id: str, params: Dict[str, Dict]) -> html.Di
                     html.Div([
                         html.Label("Step", className='multifile-mini-label'),
                         dcc.Input(
-                            id={'type': 'formula-param-step', 'panel': panel_id, 'param': name},
+                            id={'type': f'{id_prefix}-step', 'panel': panel_id, 'param': name},
                             type='number',
                             value=settings['step'],
                             debounce=True,
@@ -682,7 +682,11 @@ def _build_key_value_grid(title: str, rows: list[tuple[str, str]], columns: int 
 
 def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.Div:
     """Build a formula plotting panel that matches existing graph panels."""
+    if (panel_state or {}).get('panel_type') == '2d':
+        return build_formula_panel_2d(panel_id, panel_state)
+
     state = {
+        "panel_type": "1d",
         "panel_number": 1,
         "x_min": -10.0,
         "x_max": 10.0,
@@ -1132,8 +1136,237 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
     ], className='dataset-block multifile-panel', id=f'formula-{panel_id}')
 
 
+def build_formula_panel_2d(panel_id: str, panel_state: Dict | None = None) -> html.Div:
+    """Build a 2D formula plotting panel."""
+    state = {
+        'panel_type': '2d',
+        'panel_number': 1,
+        'preset_2d': 'periodic_surface',
+        'expression_2d': 'sin(x)*cos(y)',
+        'label_2d': 'sin(x)*cos(y)',
+        'x_min': -5.0,
+        'x_max': 5.0,
+        'y_min': -5.0,
+        'y_max': 5.0,
+        'x_points_2d': 80,
+        'y_points_2d': 80,
+        'x_axis_title': 'x',
+        'y_axis_title': 'y',
+        'z_axis_title': 'f(x,y)',
+        'surface_colorscale': 'Viridis',
+        'display_mode_2d': 'surface',
+        'contour_levels_2d': 12,
+        'contour_style_2d': 'filled',
+        'auto_z_range_2d': True,
+        'z_min_2d': None,
+        'z_max_2d': None,
+        'probe_x_2d': 0.0,
+        'probe_y_2d': 0.0,
+        'params': {},
+    }
+    if panel_state:
+        state.update(panel_state)
+
+    detected_params = {}
+    for param_name in extract_formula_variables(state.get('expression_2d', ''), coordinate_names=('x', 'y')):
+        detected_params[param_name] = {
+            **_default_param_state(),
+            **(state.get('params', {}).get(param_name, {}) or {}),
+        }
+
+    display_mode = state.get('display_mode_2d', 'surface')
+
+    colorscale_options = [
+        {'label': 'Viridis', 'value': 'Viridis'},
+        {'label': 'Cividis', 'value': 'Cividis'},
+        {'label': 'Plasma', 'value': 'Plasma'},
+        {'label': 'Turbo', 'value': 'Turbo'},
+        {'label': 'RdBu', 'value': 'RdBu'},
+    ]
+    preset_options = [
+        {'label': 'Periodic Surface', 'value': 'periodic_surface'},
+        {'label': 'Gaussian Hill', 'value': 'gaussian_hill'},
+        {'label': 'Saddle', 'value': 'saddle'},
+        {'label': 'Paraboloid', 'value': 'paraboloid'},
+        {'label': 'Radial Decay', 'value': 'radial_decay'},
+    ]
+
+    return html.Div([
+        html.Div([
+            html.Div([html.H3(f"Formula Panel {state['panel_number']} (2D)", className='dataset-title')], style={'flex': '1'}),
+            html.Button(
+                '×',
+                id={'type': 'formula-close-btn', 'panel': panel_id},
+                className='graph-close-btn',
+                style={'background': 'none', 'border': 'none', 'color': '#999', 'fontSize': '24px', 'cursor': 'pointer', 'padding': '0 8px'}
+            ),
+        ], className='dataset-header'),
+        html.Div([
+            html.Div([
+                html.Div([
+                    html.Div([
+                        html.Label("2D Preset", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
+                        dcc.Dropdown(
+                            id={'type': 'formula-2d-preset', 'panel': panel_id},
+                            options=preset_options,
+                            value=state.get('preset_2d', 'periodic_surface'),
+                            clearable=False,
+                            style={'fontSize': '13px', 'minHeight': '34px'}
+                        ),
+                    ], style=GRID_FIELD_STYLE),
+                    html.Div([
+                        html.Label("Formula f(x, y)", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
+                        dcc.Input(
+                            id={'type': 'formula-2d-expression', 'panel': panel_id},
+                            type='text',
+                            value=state.get('expression_2d', ''),
+                            debounce=True,
+                            style={**INPUT_STYLE, 'padding': '5px 8px', 'minHeight': '34px'}
+                        ),
+                    ], style=GRID_FIELD_STYLE),
+                    html.Div([
+                        html.Label("Legend", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
+                        dcc.Input(
+                            id={'type': 'formula-2d-label', 'panel': panel_id},
+                            type='text',
+                            value=state.get('label_2d', ''),
+                            debounce=True,
+                            style={**INPUT_STYLE, 'padding': '5px 8px', 'minHeight': '34px'}
+                        ),
+                    ], style=GRID_FIELD_STYLE),
+                    html.Button("Reset Params", id={'type': 'formula-reset-params-btn', 'panel': panel_id}, className='graphs-add-panel-btn', n_clicks=0, style={'marginBottom': '0', 'alignSelf': 'flex-end', 'padding': '8px 12px', 'fontSize': '13px'}),
+                    html.Button("Export CSV", id={'type': 'formula-export-btn', 'panel': panel_id}, className='graphs-add-panel-btn', n_clicks=0, style={'marginBottom': '0', 'alignSelf': 'flex-end', 'padding': '8px 12px', 'fontSize': '13px'}),
+                    html.Button("Export PNG", id={'type': 'formula-export-png-btn', 'panel': panel_id}, className='graphs-add-panel-btn', n_clicks=0, style={'marginBottom': '0', 'alignSelf': 'flex-end', 'padding': '8px 12px', 'fontSize': '13px'}),
+                ], style={'display': 'grid', 'gridTemplateColumns': 'minmax(190px, 1fr) minmax(320px, 2fr) minmax(220px, 1.2fr) auto auto auto', 'gap': '10px', 'marginBottom': '8px', 'alignItems': 'end'}),
+                html.Div([
+                    html.Div([html.Label("X Min", className='multifile-mini-label', style=FIELD_LABEL_STYLE), dcc.Input(id={'type': 'formula-2d-x-min', 'panel': panel_id}, type='number', value=state['x_min'], debounce=True, style=INPUT_STYLE)], style=GRID_FIELD_STYLE),
+                    html.Div([html.Label("X Max", className='multifile-mini-label', style=FIELD_LABEL_STYLE), dcc.Input(id={'type': 'formula-2d-x-max', 'panel': panel_id}, type='number', value=state['x_max'], debounce=True, style=INPUT_STYLE)], style=GRID_FIELD_STYLE),
+                    html.Div([html.Label("Y Min", className='multifile-mini-label', style=FIELD_LABEL_STYLE), dcc.Input(id={'type': 'formula-2d-y-min', 'panel': panel_id}, type='number', value=state['y_min'], debounce=True, style=INPUT_STYLE)], style=GRID_FIELD_STYLE),
+                    html.Div([html.Label("Y Max", className='multifile-mini-label', style=FIELD_LABEL_STYLE), dcc.Input(id={'type': 'formula-2d-y-max', 'panel': panel_id}, type='number', value=state['y_max'], debounce=True, style=INPUT_STYLE)], style=GRID_FIELD_STYLE),
+                    html.Div([html.Label("X Points", className='multifile-mini-label', style=FIELD_LABEL_STYLE), dcc.Input(id={'type': 'formula-2d-x-points', 'panel': panel_id}, type='number', value=state['x_points_2d'], debounce=True, style=INPUT_STYLE)], style=GRID_FIELD_STYLE),
+                    html.Div([html.Label("Y Points", className='multifile-mini-label', style=FIELD_LABEL_STYLE), dcc.Input(id={'type': 'formula-2d-y-points', 'panel': panel_id}, type='number', value=state['y_points_2d'], debounce=True, style=INPUT_STYLE)], style=GRID_FIELD_STYLE),
+                    html.Div([html.Label("X Title", className='multifile-mini-label', style=FIELD_LABEL_STYLE), dcc.Input(id={'type': 'formula-2d-x-title', 'panel': panel_id}, type='text', value=state['x_axis_title'], debounce=True, style=INPUT_STYLE)], style=GRID_FIELD_STYLE),
+                    html.Div([html.Label("Y Title", className='multifile-mini-label', style=FIELD_LABEL_STYLE), dcc.Input(id={'type': 'formula-2d-y-title', 'panel': panel_id}, type='text', value=state['y_axis_title'], debounce=True, style=INPUT_STYLE)], style=GRID_FIELD_STYLE),
+                    html.Div([html.Label("Z Title", className='multifile-mini-label', style=FIELD_LABEL_STYLE), dcc.Input(id={'type': 'formula-2d-z-title', 'panel': panel_id}, type='text', value=state['z_axis_title'], debounce=True, style=INPUT_STYLE)], style=GRID_FIELD_STYLE),
+                    html.Div([html.Label("Colorscale", className='multifile-mini-label', style=FIELD_LABEL_STYLE), dcc.Dropdown(id={'type': 'formula-2d-colorscale', 'panel': panel_id}, options=colorscale_options, value=state.get('surface_colorscale', 'Viridis'), clearable=False, style={'fontSize': '13px'})], style=GRID_FIELD_STYLE),
+                ], style={'display': 'grid', 'gridTemplateColumns': 'repeat(5, minmax(0, 1fr))', 'gap': '10px', 'marginBottom': '8px'}),
+            ], className='multifile-top-controls'),
+            html.Div([
+                html.Div([
+                    dcc.Graph(
+                        id={'type': 'formula-2d-plot', 'panel': panel_id},
+                        config={'displayModeBar': True, 'displaylogo': False, 'toImageButtonOptions': {'format': 'png', 'filename': f'{panel_id}_formula_surface', 'scale': 2}},
+                        style={'height': '760px', 'width': '1000px'}
+                    ),
+                    html.Div([
+                        dcc.Graph(
+                            id={'type': 'formula-2d-x-slice', 'panel': panel_id},
+                            config={'displayModeBar': False},
+                            style={'height': '280px', 'width': '1000px'}
+                        ),
+                        dcc.Graph(
+                            id={'type': 'formula-2d-y-slice', 'panel': panel_id},
+                            config={'displayModeBar': False},
+                            style={'height': '280px', 'width': '1000px'}
+                        ),
+                    ], style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '12px', 'margin': '12px 10px 0 10px', 'width': '1000px', 'maxWidth': '1000px'}),
+                    html.Div(id={'type': 'formula-2d-analysis', 'panel': panel_id}, className='hist-summary', style={'margin': '12px 10px 10px 10px', 'width': '1000px', 'maxWidth': '1000px'}),
+                    dcc.Download(id={'type': 'formula-download', 'panel': panel_id}),
+                    dcc.Download(id={'type': 'formula-image-download', 'panel': panel_id}),
+                ], className='multifile-graph-column', style={'display': 'flex', 'flexDirection': 'column', 'alignSelf': 'stretch'}),
+                html.Div([
+                    html.Div([
+                        html.Div("Surface Controls", style=SIDEBAR_TITLE_STYLE),
+                        dcc.RadioItems(
+                            id={'type': 'formula-2d-display-mode', 'panel': panel_id},
+                            options=[{'label': 'Surface', 'value': 'surface'}, {'label': 'Contour', 'value': 'contour'}],
+                            value=display_mode,
+                            labelStyle={'display': 'block', 'fontSize': '14px', 'marginBottom': '8px'}
+                        ),
+                        html.Label("Contour Levels", className='multifile-mini-label', style={**FIELD_LABEL_STYLE, 'marginTop': '12px'}),
+                        dcc.Input(
+                            id={'type': 'formula-2d-contour-levels', 'panel': panel_id},
+                            type='number',
+                            value=state.get('contour_levels_2d', 12),
+                            debounce=True,
+                            style=INPUT_STYLE
+                        ),
+                        html.Label("Contour Style", className='multifile-mini-label', style={**FIELD_LABEL_STYLE, 'marginTop': '12px'}),
+                        dcc.RadioItems(
+                            id={'type': 'formula-2d-contour-style', 'panel': panel_id},
+                            options=[{'label': 'Filled', 'value': 'filled'}, {'label': 'Lines Only', 'value': 'lines'}],
+                            value=state.get('contour_style_2d', 'filled'),
+                            labelStyle={'display': 'block', 'fontSize': '14px', 'marginBottom': '8px'}
+                        ),
+                        dcc.Checklist(
+                            id={'type': 'formula-2d-auto-z-range', 'panel': panel_id},
+                            options=[{'label': 'Auto Z Range', 'value': 'auto'}],
+                            value=['auto'] if state.get('auto_z_range_2d', True) else [],
+                            style={'marginTop': '12px'},
+                            labelStyle={'fontSize': '14px'}
+                        ),
+                        html.Div([
+                            dcc.Input(
+                                id={'type': 'formula-2d-z-min', 'panel': panel_id},
+                                type='number',
+                                value=state.get('z_min_2d'),
+                                debounce=True,
+                                placeholder='z min',
+                                style=INPUT_STYLE
+                            ),
+                            dcc.Input(
+                                id={'type': 'formula-2d-z-max', 'panel': panel_id},
+                                type='number',
+                                value=state.get('z_max_2d'),
+                                debounce=True,
+                                placeholder='z max',
+                                style=INPUT_STYLE
+                            ),
+                        ], style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '10px', 'marginTop': '10px'}),
+                    ], className='multifile-setting-section', style=SIDEBAR_CARD_STYLE),
+                    html.Div([
+                        html.Div("Probe", style=SIDEBAR_TITLE_STYLE),
+                        html.Div("Click on the 2D plot to place a persistent probe and update the x/y slices.", style={'fontSize': '13px', 'color': '#6b7280', 'marginBottom': '10px'}),
+                        html.Div([
+                            dcc.Input(
+                                id={'type': 'formula-2d-probe-x', 'panel': panel_id},
+                                type='number',
+                                value=state.get('probe_x_2d', 0.0),
+                                debounce=True,
+                                placeholder='probe x',
+                                style=INPUT_STYLE
+                            ),
+                            dcc.Input(
+                                id={'type': 'formula-2d-probe-y', 'panel': panel_id},
+                                type='number',
+                                value=state.get('probe_y_2d', 0.0),
+                                debounce=True,
+                                placeholder='probe y',
+                                style=INPUT_STYLE
+                            ),
+                        ], style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '10px'}),
+                    ], className='multifile-setting-section', style=SIDEBAR_CARD_STYLE),
+                    html.Div([
+                        html.Div("Parameters", style=SIDEBAR_TITLE_STYLE),
+                        _build_parameter_controls(panel_id, detected_params, id_prefix='formula-2d-param'),
+                    ], className='multifile-setting-section', style=SIDEBAR_CARD_STYLE),
+                    html.Div(
+                        id={'type': 'formula-2d-analysis-details', 'panel': panel_id},
+                        children=html.Div(),
+                        className='multifile-setting-section',
+                        style=SIDEBAR_CARD_STYLE,
+                    ),
+                ], className='multifile-settings-sidebar', style={'display': 'flex', 'flexDirection': 'column', 'gap': '0px', 'paddingLeft': '10px', 'alignSelf': 'stretch', 'height': 'auto'}),
+            ], className='multifile-main-content', style={'display': 'flex', 'alignItems': 'stretch'}),
+        ], className='dataset-body')
+    ], className='dataset-block multifile-panel', id=f'formula-{panel_id}')
+
+
 def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.Div]:
     """Build an interactive Plotly figure and a detailed analysis summary."""
+    if panel_state.get('panel_type') == '2d':
+        return build_formula_figure_2d(panel_state)
+
     formulas = panel_state.get('formulas') or []
     params = panel_state.get('params') or {}
     panel_id = panel_state.get('_panel_id')
@@ -1623,5 +1856,334 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
             }]
         )
         return fig, html.Div(message), html.Div()
+
+
+def build_formula_figure_2d(panel_state: Dict) -> tuple[go.Figure, html.Div, html.Div]:
+    """Build the main 2D figure and summary panels."""
+    fig = go.Figure()
+
+    try:
+        data = _compute_formula_panel_2d_data(panel_state)
+
+        if data['display_mode'] == 'contour':
+            contour_kwargs = {
+                'x': data['x_values'],
+                'y': data['y_values'],
+                'z': data['z_grid'],
+                'colorscale': data['colorscale'],
+                'colorbar': {'title': data['z_axis_title'], 'len': 0.8},
+                'connectgaps': False,
+                'hovertemplate': "x=%{x:.4g}<br>y=%{y:.4g}<br>z=%{z:.4g}<extra></extra>",
+                'zmin': data['z_min'],
+                'zmax': data['z_max'],
+                'ncontours': data['contour_levels'],
+            }
+            contour_kwargs['contours'] = {
+                'showlabels': data['contour_style'] == 'lines',
+                'coloring': 'heatmap' if data['contour_style'] == 'filled' else 'lines',
+            }
+            fig.add_trace(
+                go.Contour(**contour_kwargs)
+            )
+            fig.add_trace(go.Scatter(
+                x=[data['probe_x']],
+                y=[data['probe_y']],
+                mode='markers',
+                marker={'size': 12, 'color': '#111827', 'symbol': 'x'},
+                name='Probe',
+                hovertemplate=(
+                    f"Probe<br>x={data['probe_x']:.4g}<br>"
+                    f"y={data['probe_y']:.4g}<br>"
+                    f"z={data['probe_z']:.4g}<extra></extra>"
+                ),
+            ))
+        else:
+            fig.add_trace(
+                go.Surface(
+                    x=data['x_grid'],
+                    y=data['y_grid'],
+                    z=data['z_grid'],
+                    colorscale=data['colorscale'],
+                    showscale=True,
+                    connectgaps=False,
+                    cmin=data['z_min'],
+                    cmax=data['z_max'],
+                    colorbar={'title': data['z_axis_title'], 'len': 0.8},
+                    hovertemplate="x=%{x:.4g}<br>y=%{y:.4g}<br>z=%{z:.4g}<extra></extra>",
+                )
+            )
+            fig.add_trace(go.Scatter3d(
+                x=[data['probe_x']],
+                y=[data['probe_y']],
+                z=[data['probe_z']],
+                mode='markers',
+                marker={'size': 5, 'color': '#111827', 'symbol': 'x'},
+                name='Probe',
+                hovertemplate=(
+                    f"Probe<br>x={data['probe_x']:.4g}<br>"
+                    f"y={data['probe_y']:.4g}<br>"
+                    f"z={data['probe_z']:.4g}<extra></extra>"
+                ),
+            ))
+
+        fig.update_layout(
+            template='plotly_white',
+            margin=dict(l=40, r=40, t=70, b=40),
+            font=dict(size=16, family='Arial'),
+            paper_bgcolor='white',
+            plot_bgcolor='white',
+            title=f"{data['label']} ({data['display_mode']})",
+        )
+        if data['display_mode'] == 'surface':
+            fig.update_layout(scene={
+                'xaxis_title': data['x_axis_title'],
+                'yaxis_title': data['y_axis_title'],
+                'zaxis_title': data['z_axis_title'],
+            })
+        else:
+            fig.update_xaxes(title=data['x_axis_title'])
+            fig.update_yaxes(title=data['y_axis_title'])
+
+        summary_rows = [
+            ('Formula', data['label']),
+            ('Preset', data['preset'].replace('_', ' ').title()),
+            ('Domain', f"x:[{data['x_min']:.4g}, {data['x_max']:.4g}] y:[{data['y_min']:.4g}, {data['y_max']:.4g}]"),
+            ('Sampling', f"{data['x_points']} x {data['y_points']}"),
+            ('Display', f"{data['display_mode'].title()} | {data['colorscale']}"),
+            ('Valid domain', f"{data['valid_fraction']:.1f}% finite"),
+            ('Probe', f"({data['probe_x']:.4g}, {data['probe_y']:.4g}) -> {data['probe_z']:.6g}" if np.isfinite(data['probe_z']) else f"({data['probe_x']:.4g}, {data['probe_y']:.4g}) -> invalid"),
+            ('Z range', 'Auto' if data['auto_z'] else f"{data['z_min']:.4g} to {data['z_max']:.4g}" if data['z_min'] is not None and data['z_max'] is not None else 'Manual'),
+            ('Contour', f"{data['contour_levels']} levels, {data['contour_style']}"),
+        ]
+        if data['finite_values'].size:
+            summary_rows.extend([
+                ('z min / max', f"{data['finite_values'].min():.6g} / {data['finite_values'].max():.6g}"),
+                ('z mean', f"{data['finite_values'].mean():.6g}"),
+            ])
+        else:
+            summary_rows.append(('z stats', 'No finite values'))
+        if data['param_values']:
+            summary_rows.append(('Parameters', ", ".join(f"{name}={value:.4g}" for name, value in sorted(data['param_values'].items()))))
+
+        summary = html.Div(_build_key_value_grid("2D Summary", summary_rows, columns=3))
+        slice_rows = [
+            ('x-slice', f"y={data['probe_y']:.4g}, finite={100.0 * np.count_nonzero(np.isfinite(data['x_slice_values'])) / max(len(data['x_slice_values']), 1):.1f}%"),
+            ('y-slice', f"x={data['probe_x']:.4g}, finite={100.0 * np.count_nonzero(np.isfinite(data['y_slice_values'])) / max(len(data['y_slice_values']), 1):.1f}%"),
+            ('Invalid cells', f"{data['invalid_cells']} / {data['z_grid'].size}"),
+        ]
+        details = html.Div([
+            _build_key_value_grid("Slices", slice_rows, columns=3),
+            _build_table("Invalid Regions", ["Direction", "interval"], (
+                [["x columns", _format_interval_values(data['invalid_x'])]] if data['invalid_x'] else []
+            ) + (
+                [["y rows", _format_interval_values(data['invalid_y'])]] if data['invalid_y'] else []
+            )),
+        ], style={'display': 'flex', 'flexDirection': 'column', 'gap': '8px'})
+        return fig, summary, details
+
+    except Exception as exc:
+        message = str(exc) or "Unable to render 2D formula"
+        fig = go.Figure()
+        fig.update_layout(
+            template='plotly_white',
+            annotations=[{
+                'text': message,
+                'xref': 'paper',
+                'yref': 'paper',
+                'x': 0.5,
+                'y': 0.5,
+                'showarrow': False,
+                'font': {'size': 16, 'color': '#b00020'}
+            }]
+        )
+        return fig, html.Div(message), html.Div()
+
+
+def _empty_2d_slice_figure(message: str) -> go.Figure:
+    fig = go.Figure()
+    fig.update_layout(
+        template='plotly_white',
+        margin=dict(l=50, r=20, t=50, b=45),
+        annotations=[{
+            'text': message,
+            'xref': 'paper',
+            'yref': 'paper',
+            'x': 0.5,
+            'y': 0.5,
+            'showarrow': False,
+            'font': {'size': 14, 'color': '#6b7280'},
+        }],
+    )
+    return fig
+
+
+def _build_formula_2d_slice_figure(
+    axis_title: str,
+    coord_values: np.ndarray,
+    z_values: np.ndarray,
+    probe_value: float,
+    title: str,
+    color: str,
+) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=coord_values,
+        y=z_values,
+        mode='lines',
+        line={'color': color, 'width': 3},
+        connectgaps=False,
+        hovertemplate=f"{axis_title}=%{{x:.4g}}<br>z=%{{y:.4g}}<extra></extra>",
+        name=title,
+    ))
+    finite_mask = np.isfinite(z_values)
+    if np.count_nonzero(finite_mask):
+        probe_index = int(np.abs(coord_values - probe_value).argmin())
+        probe_z = z_values[probe_index]
+        if np.isfinite(probe_z):
+            fig.add_trace(go.Scatter(
+                x=[coord_values[probe_index]],
+                y=[probe_z],
+                mode='markers',
+                marker={'size': 10, 'color': '#111827', 'symbol': 'x'},
+                hovertemplate=f"{axis_title}=%{{x:.4g}}<br>z=%{{y:.4g}}<extra></extra>",
+                name='Probe',
+            ))
+
+    invalid_intervals = _find_invalid_intervals(coord_values, z_values)
+    for start, end in invalid_intervals:
+        fig.add_vrect(x0=start, x1=end, fillcolor='rgba(239, 68, 68, 0.12)', line_width=0)
+
+    fig.update_layout(
+        template='plotly_white',
+        title=title,
+        margin=dict(l=55, r=20, t=55, b=45),
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+        font=dict(size=13, family='Arial'),
+        showlegend=False,
+    )
+    fig.update_xaxes(title=axis_title, showgrid=True, gridcolor='rgba(148, 163, 184, 0.25)')
+    fig.update_yaxes(title='z', showgrid=True, gridcolor='rgba(148, 163, 184, 0.25)')
+    return fig
+
+
+def _compute_formula_panel_2d_data(panel_state: Dict) -> dict:
+    expression = (panel_state.get('expression_2d') or '').strip()
+    if not expression:
+        raise FormulaValidationError("Please enter a 2D formula")
+
+    x_min = float(panel_state.get('x_min', -5.0))
+    x_max = float(panel_state.get('x_max', 5.0))
+    y_min = float(panel_state.get('y_min', -5.0))
+    y_max = float(panel_state.get('y_max', 5.0))
+    x_points = int(panel_state.get('x_points_2d', 80))
+    y_points = int(panel_state.get('y_points_2d', 80))
+    if x_min >= x_max or y_min >= y_max:
+        raise FormulaValidationError("2D ranges require min < max for both x and y")
+    if x_points < 20 or y_points < 20:
+        raise FormulaValidationError("2D sampling must be at least 20 points in both x and y")
+
+    x_values = np.linspace(x_min, x_max, x_points)
+    y_values = np.linspace(y_min, y_max, y_points)
+    x_grid, y_grid = np.meshgrid(x_values, y_values)
+    param_values = {
+        name: float((settings or {}).get('value', 1.0))
+        for name, settings in (panel_state.get('params') or {}).items()
+    }
+
+    z_grid = evaluate_formula_2d(expression, x_grid, y_grid, param_values)
+    finite_mask = np.isfinite(z_grid)
+    finite_values = z_grid[finite_mask]
+    valid_fraction = 100.0 * np.count_nonzero(finite_mask) / z_grid.size if z_grid.size else 0.0
+
+    invalid_x = _find_invalid_intervals(x_values, np.any(~np.isfinite(z_grid), axis=0).astype(float))
+    invalid_y = _find_invalid_intervals(y_values, np.any(~np.isfinite(z_grid), axis=1).astype(float))
+    invalid_cells = int(z_grid.size - np.count_nonzero(finite_mask))
+
+    probe_x = min(max(float(panel_state.get('probe_x_2d', 0.0)), x_min), x_max)
+    probe_y = min(max(float(panel_state.get('probe_y_2d', 0.0)), y_min), y_max)
+    x_index = int(np.abs(x_values - probe_x).argmin())
+    y_index = int(np.abs(y_values - probe_y).argmin())
+    probe_x = float(x_values[x_index])
+    probe_y = float(y_values[y_index])
+    probe_z = float(z_grid[y_index, x_index])
+
+    auto_z = panel_state.get('auto_z_range_2d', True)
+    z_min = panel_state.get('z_min_2d')
+    z_max = panel_state.get('z_max_2d')
+    if finite_values.size and auto_z:
+        z_min = float(finite_values.min())
+        z_max = float(finite_values.max())
+    else:
+        z_min = None if z_min in (None, '') else float(z_min)
+        z_max = None if z_max in (None, '') else float(z_max)
+        if z_min is not None and z_max is not None and z_min > z_max:
+            z_min, z_max = z_max, z_min
+
+    return {
+        'expression': expression,
+        'label': (panel_state.get('label_2d') or expression or 'f(x,y)').strip(),
+        'preset': panel_state.get('preset_2d', 'periodic_surface'),
+        'x_values': x_values,
+        'y_values': y_values,
+        'x_grid': x_grid,
+        'y_grid': y_grid,
+        'z_grid': z_grid,
+        'finite_values': finite_values,
+        'valid_fraction': valid_fraction,
+        'invalid_x': invalid_x,
+        'invalid_y': invalid_y,
+        'invalid_cells': invalid_cells,
+        'probe_x': probe_x,
+        'probe_y': probe_y,
+        'probe_z': probe_z,
+        'x_index': x_index,
+        'y_index': y_index,
+        'x_slice_values': z_grid[y_index, :],
+        'y_slice_values': z_grid[:, x_index],
+        'param_values': param_values,
+        'z_min': z_min,
+        'z_max': z_max,
+        'contour_levels': max(3, int(panel_state.get('contour_levels_2d', 12))),
+        'contour_style': panel_state.get('contour_style_2d', 'filled'),
+        'display_mode': panel_state.get('display_mode_2d', 'surface'),
+        'colorscale': panel_state.get('surface_colorscale', 'Viridis'),
+        'x_min': x_min,
+        'x_max': x_max,
+        'y_min': y_min,
+        'y_max': y_max,
+        'x_points': x_points,
+        'y_points': y_points,
+        'x_axis_title': panel_state.get('x_axis_title', 'x'),
+        'y_axis_title': panel_state.get('y_axis_title', 'y'),
+        'z_axis_title': panel_state.get('z_axis_title', 'f(x,y)'),
+        'auto_z': auto_z,
+    }
+
+
+def build_formula_2d_slice_figures(panel_state: Dict) -> tuple[go.Figure, go.Figure]:
+    try:
+        data = _compute_formula_panel_2d_data(panel_state)
+    except Exception as exc:
+        message = str(exc) or "Unable to render slices"
+        return _empty_2d_slice_figure(message), _empty_2d_slice_figure(message)
+
+    x_slice = _build_formula_2d_slice_figure(
+        data['x_axis_title'],
+        data['x_values'],
+        data['x_slice_values'],
+        data['probe_x'],
+        f"x-slice at {data['y_axis_title']}={data['probe_y']:.4g}",
+        '#2563eb',
+    )
+    y_slice = _build_formula_2d_slice_figure(
+        data['y_axis_title'],
+        data['y_values'],
+        data['y_slice_values'],
+        data['probe_y'],
+        f"y-slice at {data['x_axis_title']}={data['probe_x']:.4g}",
+        '#dc2626',
+    )
+    return x_slice, y_slice
 
 

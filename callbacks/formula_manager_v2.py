@@ -15,8 +15,8 @@ from dash.exceptions import PreventUpdate
 from dash.dcc import send_bytes, send_data_frame
 
 from .base import BaseCallbackManager
-from utils.formula_parser import extract_formula_variables
-from utils.formula_parser import evaluate_formula
+from utils.formula_parser_v2 import extract_formula_variables
+from utils.formula_parser_v2 import evaluate_formula
 
 
 def _new_formula_row_id() -> str:
@@ -95,10 +95,68 @@ PRESET_PANEL_DEFAULTS = {
     },
 }
 
+PRESET_2D_DEFAULTS = {
+    'periodic_surface': {
+        'expression_2d': 'sin(x)*cos(y)',
+        'label_2d': 'sin(x)*cos(y)',
+        'x_min': -5.0, 'x_max': 5.0, 'y_min': -5.0, 'y_max': 5.0,
+        'x_points_2d': 80, 'y_points_2d': 80,
+        'x_axis_title': 'x', 'y_axis_title': 'y', 'z_axis_title': 'f(x,y)',
+        'surface_colorscale': 'Viridis',
+    },
+    'gaussian_hill': {
+        'expression_2d': 'a*exp(-((x-x0)**2 + (y-y0)**2)/(2*sigma**2))',
+        'label_2d': 'Gaussian hill',
+        'x_min': -6.0, 'x_max': 6.0, 'y_min': -6.0, 'y_max': 6.0,
+        'x_points_2d': 100, 'y_points_2d': 100,
+        'x_axis_title': 'x', 'y_axis_title': 'y', 'z_axis_title': 'height',
+        'surface_colorscale': 'Plasma',
+        'params': {
+            'a': {'value': 1.0, 'min': 0.0, 'max': 5.0, 'step': 0.1},
+            'x0': {'value': 0.0, 'min': -5.0, 'max': 5.0, 'step': 0.1},
+            'y0': {'value': 0.0, 'min': -5.0, 'max': 5.0, 'step': 0.1},
+            'sigma': {'value': 1.5, 'min': 0.1, 'max': 5.0, 'step': 0.1},
+        },
+    },
+    'saddle': {
+        'expression_2d': 'x**2 - y**2',
+        'label_2d': 'Saddle surface',
+        'x_min': -4.0, 'x_max': 4.0, 'y_min': -4.0, 'y_max': 4.0,
+        'x_points_2d': 90, 'y_points_2d': 90,
+        'x_axis_title': 'x', 'y_axis_title': 'y', 'z_axis_title': 'z',
+        'surface_colorscale': 'RdBu',
+    },
+    'paraboloid': {
+        'expression_2d': 'a*(x**2 + y**2) + c',
+        'label_2d': 'Paraboloid',
+        'x_min': -4.0, 'x_max': 4.0, 'y_min': -4.0, 'y_max': 4.0,
+        'x_points_2d': 90, 'y_points_2d': 90,
+        'x_axis_title': 'x', 'y_axis_title': 'y', 'z_axis_title': 'z',
+        'surface_colorscale': 'Cividis',
+        'params': {
+            'a': {'value': 1.0, 'min': -2.0, 'max': 2.0, 'step': 0.1},
+            'c': {'value': 0.0, 'min': -5.0, 'max': 5.0, 'step': 0.1},
+        },
+    },
+    'radial_decay': {
+        'expression_2d': 'a*exp(-sqrt(x**2 + y**2)/tau)',
+        'label_2d': 'Radial decay',
+        'x_min': -8.0, 'x_max': 8.0, 'y_min': -8.0, 'y_max': 8.0,
+        'x_points_2d': 100, 'y_points_2d': 100,
+        'x_axis_title': 'x', 'y_axis_title': 'y', 'z_axis_title': 'z',
+        'surface_colorscale': 'Turbo',
+        'params': {
+            'a': {'value': 1.0, 'min': 0.0, 'max': 5.0, 'step': 0.1},
+            'tau': {'value': 2.5, 'min': 0.1, 'max': 10.0, 'step': 0.1},
+        },
+    },
+}
+
 
 def _default_panel_state(panel_number: int) -> dict:
     """Return a default panel state."""
     return {
+        'panel_type': '1d',
         'panel_number': panel_number,
         'x_min': -10.0,
         'x_max': 10.0,
@@ -128,6 +186,36 @@ def _default_panel_state(panel_number: int) -> dict:
         'pending_interval_start': None,
         'params': {},
         'formulas': [_default_formula_row()],
+    }
+
+
+def _default_panel_state_2d(panel_number: int) -> dict:
+    """Return a default 2D panel state."""
+    return {
+        'panel_type': '2d',
+        'panel_number': panel_number,
+        'preset_2d': 'periodic_surface',
+        'expression_2d': 'sin(x)*cos(y)',
+        'label_2d': 'sin(x)*cos(y)',
+        'x_min': -5.0,
+        'x_max': 5.0,
+        'y_min': -5.0,
+        'y_max': 5.0,
+        'x_points_2d': 80,
+        'y_points_2d': 80,
+        'x_axis_title': 'x',
+        'y_axis_title': 'y',
+        'z_axis_title': 'f(x,y)',
+        'surface_colorscale': 'Viridis',
+        'display_mode_2d': 'surface',
+        'contour_levels_2d': 12,
+        'contour_style_2d': 'filled',
+        'auto_z_range_2d': True,
+        'z_min_2d': None,
+        'z_max_2d': None,
+        'probe_x_2d': 0.0,
+        'probe_y_2d': 0.0,
+        'params': {},
     }
 
 
@@ -163,16 +251,22 @@ def _safe_int(value, fallback: int) -> int:
 
 def _sync_panel_params(panel_state: dict) -> None:
     """Ensure parameter state matches currently used variables."""
-    formulas = panel_state.get('formulas') or []
     existing = panel_state.get('params') or {}
     discovered = {}
-
-    for formula in formulas:
-        for param_name in extract_formula_variables(formula.get('expression', '')):
+    if panel_state.get('panel_type', '1d') == '2d':
+        for param_name in extract_formula_variables(panel_state.get('expression_2d', ''), coordinate_names=('x', 'y')):
             discovered[param_name] = {
                 **_default_param_state(),
                 **(existing.get(param_name, {}) or {}),
             }
+    else:
+        formulas = panel_state.get('formulas') or []
+        for formula in formulas:
+            for param_name in extract_formula_variables(formula.get('expression', '')):
+                discovered[param_name] = {
+                    **_default_param_state(),
+                    **(existing.get(param_name, {}) or {}),
+                }
 
     panel_state['params'] = discovered
 
@@ -198,6 +292,26 @@ def _apply_preset_defaults(panel_state: dict, expression: str) -> None:
         panel_state[key] = value
 
 
+def _apply_2d_preset_defaults(panel_state: dict, preset_id: str) -> None:
+    """Apply defaults for a 2D preset."""
+    preset = PRESET_2D_DEFAULTS.get(preset_id)
+    if not preset:
+        return
+
+    panel_state.update({k: v for k, v in preset.items() if k != 'params'})
+    panel_state['preset_2d'] = preset_id
+    _sync_panel_params(panel_state)
+    if preset.get('params'):
+        params = panel_state.get('params') or {}
+        for param_name, config in preset['params'].items():
+            params[param_name] = {
+                **_default_param_state(),
+                **params.get(param_name, {}),
+                **config,
+            }
+        panel_state['params'] = params
+
+
 class FormulaCallbackManager(BaseCallbackManager):
     """Manages callbacks for formula plotting panels."""
 
@@ -208,33 +322,42 @@ class FormulaCallbackManager(BaseCallbackManager):
         self._register_remove_formula_row()
         self._register_formula_steppers()
         self._register_sync_formula_panels()
+        self._register_sync_formula_panels_2d()
         self._register_sync_parameter_controls()
+        self._register_sync_parameter_controls_2d()
         self._register_graph_click_selection()
         self._register_analysis_jump()
         self._register_reset_formula_params()
         self._register_export_formula_csv()
         self._register_export_formula_png()
         self._register_update_formula_graph()
+        self._register_update_formula_graph_2d()
+        self._register_update_formula_slices_2d()
         self._register_close_formula_panel()
 
     def _register_add_formula_panel(self):
         @self.app.callback(
             Output('formula-panels', 'data'),
             Output('formula-panels-container', 'children'),
-            Input('formula-add-panel-btn', 'n_clicks'),
+            Input('formula-add-panel-1d-btn', 'n_clicks'),
+            Input('formula-add-panel-2d-btn', 'n_clicks'),
             State('formula-panels', 'data'),
             prevent_initial_call=True
         )
-        def add_formula_panel(n_clicks, panels_state):
+        def add_formula_panel(n_clicks_1d, n_clicks_2d, panels_state):
             from ui.formula_graphs import build_formula_panel
 
-            if ctx.triggered_id != 'formula-add-panel-btn':
+            if ctx.triggered_id not in {'formula-add-panel-1d-btn', 'formula-add-panel-2d-btn'}:
                 raise PreventUpdate
 
             panels_state = copy.deepcopy(panels_state or {})
             panel_id = f'formula_{int(time.time() * 1000)}'
-            panels_state[panel_id] = _default_panel_state(len(panels_state) + 1)
-            _apply_preset_defaults(panels_state[panel_id], panels_state[panel_id].get('example_formula', 'sin(x)'))
+            if ctx.triggered_id == 'formula-add-panel-2d-btn':
+                panels_state[panel_id] = _default_panel_state_2d(len(panels_state) + 1)
+                _apply_2d_preset_defaults(panels_state[panel_id], panels_state[panel_id].get('preset_2d', 'periodic_surface'))
+            else:
+                panels_state[panel_id] = _default_panel_state(len(panels_state) + 1)
+                _apply_preset_defaults(panels_state[panel_id], panels_state[panel_id].get('example_formula', 'sin(x)'))
 
             panels = [
                 build_formula_panel(pid, panels_state[pid])
@@ -266,6 +389,8 @@ class FormulaCallbackManager(BaseCallbackManager):
             panel_id = ctx.triggered_id['panel']
             panel_state = panels_state.get(panel_id)
             if not panel_state:
+                raise PreventUpdate
+            if panel_state.get('panel_type', '1d') != '1d':
                 raise PreventUpdate
 
             selected_example = panel_state.get('example_formula', 'sin(x)')
@@ -316,6 +441,8 @@ class FormulaCallbackManager(BaseCallbackManager):
                     continue
 
                 panel_state = panels_state[panel_id]
+                if panel_state.get('panel_type', '1d') != '1d':
+                    continue
                 if panel_state.get('example_formula') == value:
                     continue
                 panel_state['example_formula'] = value
@@ -361,6 +488,8 @@ class FormulaCallbackManager(BaseCallbackManager):
             row_id = ctx.triggered_id['row']
             panel_state = panels_state.get(panel_id)
             if not panel_state:
+                raise PreventUpdate
+            if panel_state.get('panel_type', '1d') != '1d':
                 raise PreventUpdate
 
             formulas = [
@@ -723,6 +852,243 @@ class FormulaCallbackManager(BaseCallbackManager):
 
         self._track_callback(sync_parameter_controls)
 
+    def _register_sync_formula_panels_2d(self):
+        @self.app.callback(
+            Output('formula-panels', 'data', allow_duplicate=True),
+            Output('formula-panels-container', 'children', allow_duplicate=True),
+            Input({'type': 'formula-2d-expression', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-label', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-preset', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-x-min', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-x-max', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-y-min', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-y-max', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-x-points', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-y-points', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-x-title', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-y-title', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-z-title', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-display-mode', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-contour-levels', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-contour-style', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-auto-z-range', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-z-min', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-z-max', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-probe-x', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-probe-y', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-colorscale', 'panel': ALL}, 'value'),
+            Input({'type': 'formula-2d-param-slider', 'panel': ALL, 'param': ALL}, 'value'),
+            Input({'type': 'formula-2d-param-value', 'panel': ALL, 'param': ALL}, 'value'),
+            Input({'type': 'formula-2d-param-min', 'panel': ALL, 'param': ALL}, 'value'),
+            Input({'type': 'formula-2d-param-max', 'panel': ALL, 'param': ALL}, 'value'),
+            Input({'type': 'formula-2d-param-step', 'panel': ALL, 'param': ALL}, 'value'),
+            State({'type': 'formula-2d-expression', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-label', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-preset', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-x-min', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-x-max', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-y-min', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-y-max', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-x-points', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-y-points', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-x-title', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-y-title', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-z-title', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-display-mode', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-contour-levels', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-contour-style', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-auto-z-range', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-z-min', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-z-max', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-probe-x', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-probe-y', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-colorscale', 'panel': ALL}, 'id'),
+            State({'type': 'formula-2d-param-slider', 'panel': ALL, 'param': ALL}, 'id'),
+            State({'type': 'formula-2d-param-value', 'panel': ALL, 'param': ALL}, 'id'),
+            State({'type': 'formula-2d-param-min', 'panel': ALL, 'param': ALL}, 'id'),
+            State({'type': 'formula-2d-param-max', 'panel': ALL, 'param': ALL}, 'id'),
+            State({'type': 'formula-2d-param-step', 'panel': ALL, 'param': ALL}, 'id'),
+            State('formula-panels', 'data'),
+            prevent_initial_call=True
+        )
+        def sync_formula_panels_2d(
+            expressions, labels, presets, x_mins, x_maxs, y_mins, y_maxs, x_points, y_points,
+            x_titles, y_titles, z_titles, display_modes, contour_levels, contour_styles, auto_z_ranges, z_mins, z_maxs, probe_xs, probe_ys, colorscales,
+            param_slider_values, param_input_values, param_min_values, param_max_values, param_step_values,
+            expression_ids, label_ids, preset_ids, x_min_ids, x_max_ids, y_min_ids, y_max_ids, x_points_ids, y_points_ids,
+            x_title_ids, y_title_ids, z_title_ids, display_ids, contour_level_ids, contour_style_ids, auto_z_range_ids, z_min_ids, z_max_ids, probe_x_ids, probe_y_ids, colorscale_ids,
+            param_slider_ids, param_input_ids, param_min_ids, param_max_ids, param_step_ids,
+            panels_state
+        ):
+            from ui.formula_graphs import build_formula_panel
+
+            if not panels_state:
+                raise PreventUpdate
+
+            panels_state = copy.deepcopy(panels_state)
+            triggered = ctx.triggered_id if isinstance(ctx.triggered_id, dict) else None
+            triggered_type = triggered.get('type') if triggered else None
+
+            if triggered_type == 'formula-2d-preset':
+                for component_id, value in zip(preset_ids, presets):
+                    panel_id = component_id['panel']
+                    panel_state = panels_state.get(panel_id)
+                    if panel_state and panel_state.get('panel_type') == '2d' and value:
+                        _apply_2d_preset_defaults(panel_state, value)
+
+            for ids, values, key in (
+                (expression_ids, expressions, 'expression_2d'),
+                (label_ids, labels, 'label_2d'),
+                (x_title_ids, x_titles, 'x_axis_title'),
+                (y_title_ids, y_titles, 'y_axis_title'),
+                (z_title_ids, z_titles, 'z_axis_title'),
+                (colorscale_ids, colorscales, 'surface_colorscale'),
+            ):
+                for component_id, value in zip(ids, values):
+                    panel_id = component_id['panel']
+                    panel_state = panels_state.get(panel_id)
+                    if panel_state and panel_state.get('panel_type') == '2d' and value is not None:
+                        panel_state[key] = value
+
+            for ids, values, key, fallback in (
+                (x_min_ids, x_mins, 'x_min', -5.0),
+                (x_max_ids, x_maxs, 'x_max', 5.0),
+                (y_min_ids, y_mins, 'y_min', -5.0),
+                (y_max_ids, y_maxs, 'y_max', 5.0),
+            ):
+                for component_id, value in zip(ids, values):
+                    panel_id = component_id['panel']
+                    panel_state = panels_state.get(panel_id)
+                    if panel_state and panel_state.get('panel_type') == '2d' and value is not None:
+                        panel_state[key] = _safe_float(value, panel_state.get(key, fallback))
+
+            for ids, values, key in (
+                (x_points_ids, x_points, 'x_points_2d'),
+                (y_points_ids, y_points, 'y_points_2d'),
+            ):
+                for component_id, value in zip(ids, values):
+                    panel_id = component_id['panel']
+                    panel_state = panels_state.get(panel_id)
+                    if panel_state and panel_state.get('panel_type') == '2d' and value is not None:
+                        panel_state[key] = max(20, min(200, _safe_int(value, panel_state.get(key, 80))))
+
+            for component_id, value in zip(display_ids, display_modes):
+                panel_id = component_id['panel']
+                panel_state = panels_state.get(panel_id)
+                if panel_state and panel_state.get('panel_type') == '2d' and value is not None:
+                    panel_state['display_mode_2d'] = value
+
+            for ids, values, key, fallback in (
+                (contour_level_ids, contour_levels, 'contour_levels_2d', 12),
+                (probe_x_ids, probe_xs, 'probe_x_2d', 0.0),
+                (probe_y_ids, probe_ys, 'probe_y_2d', 0.0),
+                (z_min_ids, z_mins, 'z_min_2d', 0.0),
+                (z_max_ids, z_maxs, 'z_max_2d', 1.0),
+            ):
+                for component_id, value in zip(ids, values):
+                    panel_id = component_id['panel']
+                    panel_state = panels_state.get(panel_id)
+                    if panel_state and panel_state.get('panel_type') == '2d' and value is not None:
+                        if key == 'contour_levels_2d':
+                            panel_state[key] = max(3, min(50, _safe_int(value, panel_state.get(key, fallback))))
+                        else:
+                            panel_state[key] = _safe_float(value, panel_state.get(key, fallback))
+
+            for component_id, value in zip(contour_style_ids, contour_styles):
+                panel_id = component_id['panel']
+                panel_state = panels_state.get(panel_id)
+                if panel_state and panel_state.get('panel_type') == '2d' and value is not None:
+                    panel_state['contour_style_2d'] = value
+
+            for component_id, value in zip(auto_z_range_ids, auto_z_ranges):
+                panel_id = component_id['panel']
+                panel_state = panels_state.get(panel_id)
+                if panel_state and panel_state.get('panel_type') == '2d':
+                    panel_state['auto_z_range_2d'] = 'auto' in (value or [])
+
+            for panel_state in panels_state.values():
+                if panel_state.get('panel_type') == '2d':
+                    _sync_panel_params(panel_state)
+
+            param_updates = []
+            if triggered_type == 'formula-2d-param-slider':
+                param_updates.append((param_slider_ids, param_slider_values, 'value'))
+            elif triggered_type == 'formula-2d-param-value':
+                param_updates.append((param_input_ids, param_input_values, 'value'))
+            else:
+                param_updates.extend([
+                    (param_min_ids, param_min_values, 'min'),
+                    (param_max_ids, param_max_values, 'max'),
+                    (param_step_ids, param_step_values, 'step'),
+                ])
+
+            for ids, values, key in param_updates:
+                for component_id, value in zip(ids, values):
+                    panel_id = component_id['panel']
+                    param_name = component_id['param']
+                    panel_state = panels_state.get(panel_id)
+                    if not panel_state or panel_state.get('panel_type') != '2d':
+                        continue
+                    params = panel_state.setdefault('params', {})
+                    current = {**_default_param_state(), **(params.get(param_name, {}) or {})}
+                    if key == 'value':
+                        current['value'] = _safe_float(value, current['value'])
+                    elif key == 'min':
+                        current['min'] = _safe_float(value, current['min'])
+                    elif key == 'max':
+                        current['max'] = _safe_float(value, current['max'])
+                    elif key == 'step':
+                        current['step'] = max(1e-6, abs(_safe_float(value, current['step'])))
+                    params[param_name] = current
+
+            panels = [
+                build_formula_panel(pid, panels_state[pid])
+                for pid in sorted(panels_state.keys())
+            ]
+            return panels_state, panels
+
+        self._track_callback(sync_formula_panels_2d)
+
+    def _register_sync_parameter_controls_2d(self):
+        @self.app.callback(
+            Output({'type': 'formula-2d-param-slider', 'panel': MATCH, 'param': MATCH}, 'value'),
+            Output({'type': 'formula-2d-param-slider', 'panel': MATCH, 'param': MATCH}, 'min'),
+            Output({'type': 'formula-2d-param-slider', 'panel': MATCH, 'param': MATCH}, 'max'),
+            Output({'type': 'formula-2d-param-slider', 'panel': MATCH, 'param': MATCH}, 'step'),
+            Output({'type': 'formula-2d-param-value', 'panel': MATCH, 'param': MATCH}, 'value'),
+            Output({'type': 'formula-2d-param-min', 'panel': MATCH, 'param': MATCH}, 'value'),
+            Output({'type': 'formula-2d-param-max', 'panel': MATCH, 'param': MATCH}, 'value'),
+            Output({'type': 'formula-2d-param-step', 'panel': MATCH, 'param': MATCH}, 'value'),
+            Input('formula-panels', 'data'),
+            State({'type': 'formula-2d-param-slider', 'panel': MATCH, 'param': MATCH}, 'id'),
+            prevent_initial_call=False
+        )
+        def sync_parameter_controls_2d(panels_state, component_id):
+            if not component_id:
+                raise PreventUpdate
+
+            panel_state = (panels_state or {}).get(component_id['panel'], {})
+            if panel_state.get('panel_type') != '2d':
+                raise PreventUpdate
+            settings = {
+                **_default_param_state(),
+                **((panel_state.get('params') or {}).get(component_id['param'], {}) or {}),
+            }
+
+            current_min = float(settings['min'])
+            current_max = float(settings['max'])
+            current_step = abs(float(settings['step'])) or 0.1
+            current_value = float(settings['value'])
+            if current_min >= current_max:
+                current_max = current_min + max(current_step, 0.1)
+            current_value = min(max(current_value, current_min), current_max)
+            return (
+                current_value, current_min, current_max, current_step,
+                current_value, current_min, current_max, current_step,
+            )
+
+        self._track_callback(sync_parameter_controls_2d)
+
     def _register_graph_click_selection(self):
         @self.app.callback(
             Output('formula-panels', 'data', allow_duplicate=True),
@@ -779,6 +1145,53 @@ class FormulaCallbackManager(BaseCallbackManager):
             return updated, panels
 
         self._track_callback(update_from_graph_click)
+
+        @self.app.callback(
+            Output('formula-panels', 'data', allow_duplicate=True),
+            Output('formula-panels-container', 'children', allow_duplicate=True),
+            Input({'type': 'formula-2d-plot', 'panel': ALL}, 'clickData'),
+            State({'type': 'formula-2d-plot', 'panel': ALL}, 'id'),
+            State('formula-panels', 'data'),
+            prevent_initial_call=True
+        )
+        def update_from_graph_click_2d(click_data_list, plot_ids, panels_state):
+            from ui.formula_graphs import build_formula_panel
+
+            if not ctx.triggered_id or not panels_state:
+                raise PreventUpdate
+
+            panel_id = ctx.triggered_id['panel']
+            panel_state = copy.deepcopy((panels_state or {}).get(panel_id))
+            if not panel_state or panel_state.get('panel_type') != '2d':
+                raise PreventUpdate
+
+            click_data = None
+            for component_id, value in zip(plot_ids, click_data_list):
+                if component_id.get('panel') == panel_id:
+                    click_data = value
+                    break
+
+            if not click_data or not click_data.get('points'):
+                raise PreventUpdate
+
+            point = click_data['points'][0]
+            x_value = point.get('x')
+            y_value = point.get('y')
+            if x_value is None or y_value is None:
+                raise PreventUpdate
+
+            panel_state['probe_x_2d'] = float(x_value)
+            panel_state['probe_y_2d'] = float(y_value)
+
+            updated = copy.deepcopy(panels_state)
+            updated[panel_id] = panel_state
+            panels = [
+                build_formula_panel(pid, updated[pid])
+                for pid in sorted(updated.keys())
+            ]
+            return updated, panels
+
+        self._track_callback(update_from_graph_click_2d)
 
     def _register_analysis_jump(self):
         @self.app.callback(
@@ -837,7 +1250,17 @@ class FormulaCallbackManager(BaseCallbackManager):
             for param_name in (panel_state.get('params') or {}).keys():
                 params[param_name] = _default_param_state()
             panel_state['params'] = params
-            _apply_preset_defaults(panel_state, panel_state.get('example_formula', 'sin(x)'))
+            if panel_state.get('panel_type', '1d') == '2d':
+                _sync_panel_params(panel_state)
+                preset = PRESET_2D_DEFAULTS.get(panel_state.get('preset_2d', 'periodic_surface'), {})
+                for param_name, config in (preset.get('params') or {}).items():
+                    panel_state['params'][param_name] = {
+                        **_default_param_state(),
+                        **(panel_state['params'].get(param_name, {}) or {}),
+                        **config,
+                    }
+            else:
+                _apply_preset_defaults(panel_state, panel_state.get('example_formula', 'sin(x)'))
             return panels_state
 
         self._track_callback(reset_formula_params)
@@ -855,29 +1278,40 @@ class FormulaCallbackManager(BaseCallbackManager):
                 raise PreventUpdate
 
             panel_state = (panels_state or {}).get(button_id['panel'], {})
-            formulas = panel_state.get('formulas') or []
-            if not formulas:
-                raise PreventUpdate
-
-            x_min = float(panel_state.get('x_min', -10.0))
-            x_max = float(panel_state.get('x_max', 10.0))
-            points = int(panel_state.get('points', 400))
-            x_values = pd.Series(np.linspace(x_min, x_max, points), name='x')
             param_values = {
                 name: float((settings or {}).get('value', 1.0))
                 for name, settings in (panel_state.get('params') or {}).items()
             }
 
-            data = {'x': x_values}
-            for formula in formulas:
-                expression = (formula.get('expression') or '').strip()
-                if not expression:
-                    continue
-                label = (formula.get('label') or expression).strip()
-                data[label] = evaluate_formula(expression, x_values.to_numpy(), param_values)
+            if panel_state.get('panel_type', '1d') == '2d':
+                from utils.formula_parser_v2 import evaluate_formula_2d
 
-            df = pd.DataFrame(data)
-            filename = f"{button_id['panel']}_formula_samples.csv"
+                expression = (panel_state.get('expression_2d') or '').strip()
+                if not expression:
+                    raise PreventUpdate
+                x_values = np.linspace(float(panel_state.get('x_min', -5.0)), float(panel_state.get('x_max', 5.0)), int(panel_state.get('x_points_2d', 80)))
+                y_values = np.linspace(float(panel_state.get('y_min', -5.0)), float(panel_state.get('y_max', 5.0)), int(panel_state.get('y_points_2d', 80)))
+                x_grid, y_grid = np.meshgrid(x_values, y_values)
+                z_grid = evaluate_formula_2d(expression, x_grid, y_grid, param_values)
+                df = pd.DataFrame({'x': x_grid.ravel(), 'y': y_grid.ravel(), 'z': z_grid.ravel()})
+                filename = f"{button_id['panel']}_formula_surface_samples.csv"
+            else:
+                formulas = panel_state.get('formulas') or []
+                if not formulas:
+                    raise PreventUpdate
+                x_min = float(panel_state.get('x_min', -10.0))
+                x_max = float(panel_state.get('x_max', 10.0))
+                points = int(panel_state.get('points', 400))
+                x_values = pd.Series(np.linspace(x_min, x_max, points), name='x')
+                data = {'x': x_values}
+                for formula in formulas:
+                    expression = (formula.get('expression') or '').strip()
+                    if not expression:
+                        continue
+                    label = (formula.get('label') or expression).strip()
+                    data[label] = evaluate_formula(expression, x_values.to_numpy(), param_values)
+                df = pd.DataFrame(data)
+                filename = f"{button_id['panel']}_formula_samples.csv"
             return send_data_frame(df.to_csv, filename, index=False)
 
         self._track_callback(export_formula_csv)
@@ -928,6 +1362,48 @@ class FormulaCallbackManager(BaseCallbackManager):
             return figure, summary, details
 
         self._track_callback(update_formula_graph)
+
+    def _register_update_formula_graph_2d(self):
+        @self.app.callback(
+            Output({'type': 'formula-2d-plot', 'panel': MATCH}, 'figure'),
+            Output({'type': 'formula-2d-analysis', 'panel': MATCH}, 'children'),
+            Output({'type': 'formula-2d-analysis-details', 'panel': MATCH}, 'children'),
+            Input('formula-panels', 'data'),
+            State({'type': 'formula-2d-plot', 'panel': MATCH}, 'id'),
+            prevent_initial_call=False
+        )
+        def update_formula_graph_2d(panels_state, plot_id):
+            from ui.formula_graphs import build_formula_figure
+
+            if not plot_id:
+                raise PreventUpdate
+
+            panel_state = copy.deepcopy((panels_state or {}).get(plot_id['panel'], {}))
+            panel_state['_panel_id'] = plot_id['panel']
+            figure, summary, details = build_formula_figure(panel_state)
+            return figure, summary, details
+
+        self._track_callback(update_formula_graph_2d)
+
+    def _register_update_formula_slices_2d(self):
+        @self.app.callback(
+            Output({'type': 'formula-2d-x-slice', 'panel': MATCH}, 'figure'),
+            Output({'type': 'formula-2d-y-slice', 'panel': MATCH}, 'figure'),
+            Input('formula-panels', 'data'),
+            State({'type': 'formula-2d-x-slice', 'panel': MATCH}, 'id'),
+            prevent_initial_call=False
+        )
+        def update_formula_slices_2d(panels_state, graph_id):
+            from ui.formula_graphs import build_formula_2d_slice_figures
+
+            if not graph_id:
+                raise PreventUpdate
+
+            panel_state = copy.deepcopy((panels_state or {}).get(graph_id['panel'], {}))
+            panel_state['_panel_id'] = graph_id['panel']
+            return build_formula_2d_slice_figures(panel_state)
+
+        self._track_callback(update_formula_slices_2d)
 
     def _register_close_formula_panel(self):
         @self.app.callback(
