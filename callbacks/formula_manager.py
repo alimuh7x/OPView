@@ -42,7 +42,6 @@ def _default_panel_state(panel_number: int) -> dict:
         'x_min': -10.0,
         'x_max': 10.0,
         'points': 400,
-        'plot_title': 'Formula Plot',
         'x_axis_title': 'x',
         'y_axis_title': 'f(x)',
         'show_grid': True,
@@ -364,7 +363,6 @@ class FormulaCallbackManager(BaseCallbackManager):
             Input({'type': 'formula-x-min', 'panel': ALL}, 'value'),
             Input({'type': 'formula-x-max', 'panel': ALL}, 'value'),
             Input({'type': 'formula-points', 'panel': ALL}, 'value'),
-            Input({'type': 'formula-plot-title', 'panel': ALL}, 'value'),
             Input({'type': 'formula-x-title', 'panel': ALL}, 'value'),
             Input({'type': 'formula-y-title', 'panel': ALL}, 'value'),
             Input({'type': 'formula-display-options', 'panel': ALL}, 'value'),
@@ -387,7 +385,6 @@ class FormulaCallbackManager(BaseCallbackManager):
             State({'type': 'formula-x-min', 'panel': ALL}, 'id'),
             State({'type': 'formula-x-max', 'panel': ALL}, 'id'),
             State({'type': 'formula-points', 'panel': ALL}, 'id'),
-            State({'type': 'formula-plot-title', 'panel': ALL}, 'id'),
             State({'type': 'formula-x-title', 'panel': ALL}, 'id'),
             State({'type': 'formula-y-title', 'panel': ALL}, 'id'),
             State({'type': 'formula-display-options', 'panel': ALL}, 'id'),
@@ -407,11 +404,11 @@ class FormulaCallbackManager(BaseCallbackManager):
         )
         def sync_formula_panels(
             formula_expressions, formula_labels, formula_colors, formula_dashes, formula_widths,
-            x_mins, x_maxs, points_values, plot_titles, x_titles, y_titles, display_options,
+            x_mins, x_maxs, points_values, x_titles, y_titles, display_options,
             analysis_formula_values, analysis_x0_values, interval_min_values, interval_max_values, threshold_values, click_mode_values,
             param_slider_values, param_input_values, param_min_values, param_max_values, param_step_values,
             expression_ids, label_ids, color_ids, dash_ids, width_ids,
-            x_min_ids, x_max_ids, points_ids, plot_title_ids, x_title_ids, y_title_ids, display_ids,
+            x_min_ids, x_max_ids, points_ids, x_title_ids, y_title_ids, display_ids,
             analysis_formula_ids, analysis_x0_ids, interval_min_ids, interval_max_ids, threshold_ids, click_mode_ids,
             param_slider_ids, param_input_ids, param_min_ids, param_max_ids, param_step_ids,
             panels_state
@@ -484,9 +481,7 @@ class FormulaCallbackManager(BaseCallbackManager):
                 if panel_id in panels_state and value is not None:
                     current = _safe_int(panels_state[panel_id].get('points', 400), 400)
                     panels_state[panel_id]['points'] = max(10, min(5000, _safe_int(value, current)))
-
             for ids, values, key in (
-                (plot_title_ids, plot_titles, 'plot_title'),
                 (x_title_ids, x_titles, 'x_axis_title'),
                 (y_title_ids, y_titles, 'y_axis_title'),
             ):
@@ -797,6 +792,7 @@ class FormulaCallbackManager(BaseCallbackManager):
         @self.app.callback(
             Output({'type': 'formula-plot', 'panel': MATCH}, 'figure'),
             Output({'type': 'formula-analysis', 'panel': MATCH}, 'children'),
+            Output({'type': 'formula-analysis-details', 'panel': MATCH}, 'children'),
             Input('formula-panels', 'data'),
             State({'type': 'formula-plot', 'panel': MATCH}, 'id'),
             prevent_initial_call=False
@@ -809,8 +805,8 @@ class FormulaCallbackManager(BaseCallbackManager):
 
             panel_state = copy.deepcopy((panels_state or {}).get(plot_id['panel'], {}))
             panel_state['_panel_id'] = plot_id['panel']
-            figure, summary = build_formula_figure(panel_state)
-            return figure, summary
+            figure, summary, details = build_formula_figure(panel_state)
+            return figure, summary, details
 
         self._track_callback(update_formula_graph)
 
@@ -844,3 +840,4 @@ class FormulaCallbackManager(BaseCallbackManager):
             return panels_state, panels
 
         self._track_callback(close_formula_panel)
+

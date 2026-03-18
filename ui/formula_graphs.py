@@ -543,35 +543,23 @@ def _build_table(
     title: str,
     columns: list[str],
     rows: list[list[str]],
-    panel_id: str | None = None,
-    jump_x_values: list[float] | None = None,
 ) -> html.Div:
     if not rows:
         return html.Div()
     return html.Div([
-        html.Div(title, style={'fontWeight': '700', 'fontSize': '17px', 'marginBottom': '8px'}),
+        html.Div(title, style={'fontWeight': '700', 'fontSize': '16px', 'marginBottom': '6px'}),
         html.Table([
             html.Thead(html.Tr(
-                ([html.Th("", style={'textAlign': 'left', 'padding': '8px 10px', 'fontSize': '14px'})] if panel_id and jump_x_values else [])
-                + [html.Th(column, style={'textAlign': 'left', 'padding': '8px 10px', 'fontSize': '14px'}) for column in columns]
+                [html.Th(column, style={'textAlign': 'left', 'padding': '6px 8px', 'fontSize': '13px'}) for column in columns]
             )),
             html.Tbody([
                 html.Tr([
-                    html.Td(
-                        html.Button(
-                            "Go",
-                            id={'type': 'formula-analysis-jump', 'panel': panel_id, 'x': f"{jump_x_values[index]:.12g}"},
-                            n_clicks=0,
-                            style={'fontSize': '13px', 'padding': '4px 10px', 'cursor': 'pointer'}
-                        ) if panel_id and jump_x_values else "",
-                        style={'padding': '8px 10px', 'borderTop': '1px solid #eceff3'}
-                    ),
-                    *[html.Td(cell, style={'padding': '8px 10px', 'borderTop': '1px solid #eceff3', 'fontSize': '14px'}) for cell in row]
+                    *[html.Td(cell, style={'padding': '6px 8px', 'borderTop': '1px solid #eceff3', 'fontSize': '13px', 'lineHeight': '1.35'}) for cell in row]
                 ])
-                for index, row in enumerate(rows)
+                for row in rows
             ])
-        ], style={'width': '100%', 'borderCollapse': 'collapse', 'fontSize': '14px'})
-    ], style={'marginTop': '14px'})
+        ], style={'width': '100%', 'borderCollapse': 'collapse', 'fontSize': '13px'})
+    ], style={'marginTop': '12px'})
 
 
 def _build_key_value_table(title: str, rows: list[tuple[str, str]]) -> html.Div:
@@ -611,6 +599,48 @@ def _build_key_value_table(title: str, rows: list[tuple[str, str]]) -> html.Div:
     ], style={'padding': '12px 14px', 'background': '#f7f9fc', 'border': '1px solid #e6ebf2'})
 
 
+def _build_key_value_grid(title: str, rows: list[tuple[str, str]], columns: int = 4) -> html.Div:
+    return html.Div([
+        html.Div(title, style={'fontWeight': '700', 'fontSize': '18px', 'marginBottom': '12px'}),
+        html.Div([
+            html.Div([
+                html.Div(
+                    key,
+                    style={
+                        'fontSize': '13px',
+                        'fontWeight': '700',
+                        'textTransform': 'uppercase',
+                        'letterSpacing': '0.04em',
+                        'color': '#6b7c93',
+                        'marginBottom': '8px',
+                    }
+                ),
+                html.Div(
+                    value,
+                    style={
+                        'fontSize': '15px',
+                        'lineHeight': '1.45',
+                        'fontWeight': '600',
+                        'color': '#102a43',
+                        'wordBreak': 'break-word',
+                    }
+                ),
+            ], style={
+                'padding': '14px 16px',
+                'background': '#ffffff',
+                'border': '1px solid #e4eaf2',
+                'borderRadius': '12px',
+                'minHeight': '92px',
+            })
+            for key, value in rows
+        ], style={
+            'display': 'grid',
+            'gridTemplateColumns': f'repeat({columns}, minmax(0, 1fr))',
+            'gap': '12px',
+        })
+    ], style={'padding': '12px 14px', 'background': '#f7f9fc', 'border': '1px solid #e6ebf2'})
+
+
 def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.Div:
     """Build a formula plotting panel that matches existing graph panels."""
     state = {
@@ -618,7 +648,6 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
         "x_min": -10.0,
         "x_max": 10.0,
         "points": 400,
-        "plot_title": "Formula Plot",
         "x_axis_title": "x",
         "y_axis_title": "f(x)",
         "show_grid": True,
@@ -751,6 +780,26 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                             style={**INPUT_STYLE, 'padding': '5px 8px', 'minHeight': '34px'}
                         ),
                     ], style=GRID_FIELD_STYLE),
+                    html.Div([
+                        html.Label("X-Axis Title", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
+                        dcc.Input(
+                            id={'type': 'formula-x-title', 'panel': panel_id},
+                            type='text',
+                            value=state['x_axis_title'],
+                            debounce=True,
+                            style={**INPUT_STYLE, 'padding': '5px 8px', 'minHeight': '34px'}
+                        ),
+                    ], style=GRID_FIELD_STYLE),
+                    html.Div([
+                        html.Label("Y-Axis Title", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
+                        dcc.Input(
+                            id={'type': 'formula-y-title', 'panel': panel_id},
+                            type='text',
+                            value=state['y_axis_title'],
+                            debounce=True,
+                            style={**INPUT_STYLE, 'padding': '5px 8px', 'minHeight': '34px'}
+                        ),
+                    ], style=GRID_FIELD_STYLE),
                     html.Button(
                         "+ Add Formula",
                         id={'type': 'formula-add-row-btn', 'panel': panel_id},
@@ -774,7 +823,7 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                     ),
                 ], style={
                     'display': 'grid',
-                    'gridTemplateColumns': 'minmax(220px, 1.1fr) minmax(320px, 2fr) minmax(200px, 1.1fr) auto auto auto',
+                    'gridTemplateColumns': 'minmax(190px, 1fr) minmax(260px, 1.7fr) minmax(180px, 1fr) minmax(150px, 0.9fr) minmax(150px, 0.9fr) auto auto auto',
                     'gap': '10px',
                     'marginBottom': '8px',
                     'alignItems': 'end',
@@ -894,45 +943,10 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                         config={'displayModeBar': True, 'displaylogo': False},
                         style={'height': '700px', 'width': '1000px'}
                     ),
-                    html.Div(
-                        id={'type': 'formula-analysis', 'panel': panel_id},
-                        children="No analysis available yet.",
-                        className='hist-summary',
-                        style={'margin': '12px 10px 10px 10px'}
-                    ),
-                    dcc.Download(id={'type': 'formula-download', 'panel': panel_id})
-                ], className='multifile-graph-column'),
-                html.Div([
                     html.Div([
                         html.Div("Figure", style=SIDEBAR_TITLE_STYLE),
                         html.Div([
-                            html.Label("Plot Title", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
-                            dcc.Input(
-                                id={'type': 'formula-plot-title', 'panel': panel_id},
-                                type='text',
-                                value=state['plot_title'],
-                                debounce=True,
-                                style={**INPUT_STYLE, 'marginBottom': '12px'}
-                            ),
-                            html.Label("X-Axis Title", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
-                            dcc.Input(
-                                id={'type': 'formula-x-title', 'panel': panel_id},
-                                type='text',
-                                value=state['x_axis_title'],
-                                debounce=True,
-                                style={**INPUT_STYLE, 'marginBottom': '12px'}
-                            ),
-                            html.Label("Y-Axis Title", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
-                            dcc.Input(
-                                id={'type': 'formula-y-title', 'panel': panel_id},
-                                type='text',
-                                value=state['y_axis_title'],
-                                debounce=True,
-                                style={**INPUT_STYLE, 'marginBottom': '14px'}
-                            ),
-                            html.Label("Display Options", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
                             html.Div([
-                                html.Div("General, overlays, markers, and regions", style={'fontSize': '12px', 'fontWeight': '700', 'textTransform': 'uppercase', 'color': '#6b7c93', 'marginBottom': '8px'}),
                                 dcc.Checklist(
                                     id={'type': 'formula-display-options', 'panel': panel_id},
                                     options=[
@@ -951,11 +965,27 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                                         {'label': 'Concavity Regions', 'value': 'concavity_regions'},
                                     ],
                                     value=display_options,
-                                    style={'columnCount': 2, 'columnGap': '24px'},
+                                    style={'columnCount': 5, 'columnGap': '24px'},
                                     labelStyle={'display': 'block', 'fontSize': '14px', 'marginBottom': '8px', 'breakInside': 'avoid'}
                                 ),
                             ], style={'padding': '12px', 'border': '1px solid #e4eaf2', 'borderRadius': '12px', 'background': '#ffffff'}),
                         ], className='multifile-setting-group')
+                    ], className='multifile-setting-section', style={**SIDEBAR_CARD_STYLE, 'margin': '12px 10px 0 10px', 'width': '1000px', 'maxWidth': '1000px'}),
+                    html.Div(
+                        id={'type': 'formula-analysis', 'panel': panel_id},
+                        children="No analysis available yet.",
+                        className='hist-summary',
+                        style={'margin': '12px 10px 10px 10px', 'width': '1000px', 'maxWidth': '1000px'}
+                    ),
+                    dcc.Download(id={'type': 'formula-download', 'panel': panel_id})
+                ], className='multifile-graph-column', style={'display': 'flex', 'flexDirection': 'column', 'alignSelf': 'stretch'}),
+                html.Div([
+                    html.Div([
+                        html.Div("Parameters", style=SIDEBAR_TITLE_STYLE),
+                        html.Div(
+                            _build_parameter_controls(panel_id, detected_params),
+                            className='multifile-setting-group'
+                        )
                     ], className='multifile-setting-section', style=SIDEBAR_CARD_STYLE),
                     html.Div([
                         html.Div("Analysis Tools", style=SIDEBAR_TITLE_STYLE),
@@ -968,14 +998,29 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                                 clearable=False if formula_options else True,
                                 style={'fontSize': '14px', 'marginBottom': '14px'}
                             ),
-                            html.Label("X0 (tangent / normal)", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
-                            dcc.Input(
-                                id={'type': 'formula-analysis-x0', 'panel': panel_id},
-                                type='number',
-                                value=state.get('analysis_x0', 0.0),
-                                debounce=True,
-                                style={**INPUT_STYLE, 'marginBottom': '14px'}
-                            ),
+                            html.Div([
+                                html.Div([
+                                    html.Label("X0 (tangent / normal)", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
+                                    dcc.Input(
+                                        id={'type': 'formula-analysis-x0', 'panel': panel_id},
+                                        type='number',
+                                        value=state.get('analysis_x0', 0.0),
+                                        debounce=True,
+                                        style={**INPUT_STYLE, 'marginBottom': '0'}
+                                    ),
+                                ], style={'display': 'flex', 'flexDirection': 'column', 'gap': '6px'}),
+                                html.Div([
+                                    html.Label("Threshold", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
+                                    dcc.Input(
+                                        id={'type': 'formula-threshold', 'panel': panel_id},
+                                        type='number',
+                                        value=state.get('threshold_value'),
+                                        debounce=True,
+                                        placeholder='Leave blank to disable',
+                                        style={**INPUT_STYLE, 'marginBottom': '0'}
+                                    ),
+                                ], style={'display': 'flex', 'flexDirection': 'column', 'gap': '6px'}),
+                            ], style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '14px', 'alignItems': 'start', 'marginBottom': '14px'}),
                             html.Label("Integral Interval", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
                             html.Div([
                                 dcc.Input(
@@ -993,15 +1038,6 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                                     style=INPUT_STYLE
                                 ),
                             ], style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '10px', 'marginBottom': '14px'}),
-                            html.Label("Threshold", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
-                            dcc.Input(
-                                id={'type': 'formula-threshold', 'panel': panel_id},
-                                type='number',
-                                value=state.get('threshold_value'),
-                                debounce=True,
-                                placeholder='Leave blank to disable',
-                                style={**INPUT_STYLE, 'marginBottom': '14px'}
-                            ),
                             html.Label("Click Action", className='multifile-mini-label', style=FIELD_LABEL_STYLE),
                             dcc.RadioItems(
                                 id={'type': 'formula-click-mode', 'panel': panel_id},
@@ -1022,25 +1058,23 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                             ),
                         ], className='multifile-setting-group')
                     ], className='multifile-setting-section', style=SIDEBAR_CARD_STYLE),
-                    html.Div([
-                        html.Div("Parameters", style=SIDEBAR_TITLE_STYLE),
-                        html.Div(
-                            _build_parameter_controls(panel_id, detected_params),
-                            className='multifile-setting-group'
-                        )
-                    ], className='multifile-setting-section', style=SIDEBAR_CARD_STYLE)
-                ], className='multifile-settings-sidebar', style={'display': 'flex', 'flexDirection': 'column', 'gap': '0px', 'paddingLeft': '10px'}),
-            ], className='multifile-main-content'),
+                    html.Div(
+                        id={'type': 'formula-analysis-details', 'panel': panel_id},
+                        children=html.Div(),
+                        className='multifile-setting-section',
+                        style=SIDEBAR_CARD_STYLE,
+                    ),
+                ], className='multifile-settings-sidebar', style={'display': 'flex', 'flexDirection': 'column', 'gap': '0px', 'paddingLeft': '10px', 'alignSelf': 'stretch', 'height': 'auto'}),
+            ], className='multifile-main-content', style={'display': 'flex', 'alignItems': 'stretch'}),
         ], className='dataset-body')
     ], className='dataset-block multifile-panel', id=f'formula-{panel_id}')
 
 
-def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div]:
+def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.Div]:
     """Build an interactive Plotly figure and a detailed analysis summary."""
     formulas = panel_state.get('formulas') or []
     params = panel_state.get('params') or {}
     panel_id = panel_state.get('_panel_id')
-    plot_title = panel_state.get('plot_title', 'Formula Plot')
     x_axis_title = panel_state.get('x_axis_title', 'x')
     y_axis_title = panel_state.get('y_axis_title', 'f(x)')
 
@@ -1143,7 +1177,6 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div]:
             error_message = "Please add at least one valid formula"
             if error_rows:
                 fig.update_layout(
-                    title=plot_title or "Formula Plot",
                     template='plotly_white',
                     xaxis_title=x_axis_title or "x",
                     yaxis_title=y_axis_title or "f(x)",
@@ -1157,10 +1190,13 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div]:
                         'font': {'size': 16, 'color': '#b00020'}
                     }]
                 )
-                return fig, html.Div([
-                    html.Div("No valid formulas to plot. See row errors below."),
-                    _build_table("Formula Errors", ["Formula", "Error"], error_rows),
-                ])
+                return (
+                    fig,
+                    html.Div("No valid formulas to plot. See row errors in the sidebar."),
+                    html.Div([
+                        _build_table("Formula Errors", ["Formula", "Error"], error_rows),
+                    ])
+                )
             raise FormulaValidationError(error_message)
 
         show_derivative = panel_state.get('show_derivative', False)
@@ -1368,11 +1404,6 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div]:
                     hoverinfo='skip',
                 ))
 
-        if param_values:
-            summary_blocks.insert(0, html.Div(
-                "Parameters: " + ", ".join(f"{name}={value:.4g}" for name, value in sorted(param_values.items()))
-            ))
-
         if selected_spline is not None:
             selected_derivative = selected_spline.derivative()(x_values)
             selected_second = selected_spline.derivative(2)(x_values)
@@ -1383,7 +1414,7 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div]:
         monotonic_intervals = _intervals_from_sign(x_values, selected_derivative, 'increasing', 'decreasing')
         concavity_intervals = _intervals_from_sign(x_values, selected_second, 'concave_up', 'concave_down')
 
-        focus_section = _build_key_value_table("Focus", [
+        summary_rows = [
             ("Formula", selected_series['label']),
             ("Point", f"x0 = {analysis_x0:.6g}, y = {y0:.6g}"),
             ("Slope / Curvature", f"{slope:.6g} / {second_at_x0:.6g}"),
@@ -1398,22 +1429,14 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div]:
                     f"{len(selected_series['roots'])} root(s), {len(selected_series['extrema'])} turning point(s), threshold disabled"
                 )
             ),
-        ])
-
-        interval_section = _build_key_value_table("Behavior", [
             (
                 "Exact integral",
                 f"{exact_integral:.6g}" if exact_integral is not None else "Not available for the current interval"
             ),
-            ("Increasing", _format_interval_values(monotonic_intervals['increasing'])),
-            ("Decreasing", _format_interval_values(monotonic_intervals['decreasing'])),
-            ("Concave up", _format_interval_values(concavity_intervals['concave_up'])),
-            ("Concave down", _format_interval_values(concavity_intervals['concave_down'])),
-        ])
+        ]
 
-        stats_rows = []
         if param_values:
-            stats_rows.append(("Parameters", ", ".join(f"{name}={value:.4g}" for name, value in sorted(param_values.items()))))
+            summary_rows.append(("Parameters", ", ".join(f"{name}={value:.4g}" for name, value in sorted(param_values.items()))))
         for stat_line in summary_blocks:
             if hasattr(stat_line, 'children'):
                 text_value = stat_line.children
@@ -1421,13 +1444,12 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div]:
                 text_value = str(stat_line)
             if ": " in str(text_value):
                 key, value = str(text_value).split(": ", 1)
-                stats_rows.append((key, value))
+                summary_rows.append((key, value))
             else:
-                stats_rows.append(("Info", str(text_value)))
-        stats_section = _build_key_value_table("Visible Range Stats", stats_rows)
+                summary_rows.append(("Info", str(text_value)))
+        summary_section = _build_key_value_grid("Summary", summary_rows, columns=4)
 
         fig.update_layout(
-            title=plot_title or "Formula Plot",
             template='plotly_white',
             hovermode='x unified',
             margin=dict(l=80, r=40, t=50, b=70),
@@ -1492,22 +1514,22 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div]:
                 annotation_position='top left',
             )
 
-        summary = html.Div(
-            [focus_section, interval_section, stats_section] + [
+        summary = html.Div(summary_section)
+        details = html.Div(
+            [
                 _build_table("Formula Errors", ["Formula", "Error"], error_rows),
-                _build_table("Roots", ["Formula", "x", "y"], root_rows, panel_id=panel_id, jump_x_values=root_jump_x),
-                _build_table("Extrema", ["Formula", "Type", "x", "y"], extrema_rows, panel_id=panel_id, jump_x_values=extrema_jump_x),
-                _build_table("Intersections", ["Pair", "x", "y"], intersection_rows, panel_id=panel_id, jump_x_values=intersection_jump_x),
-                _build_table("Threshold Crossings", ["Formula", "x", "y"], threshold_rows, panel_id=panel_id, jump_x_values=threshold_jump_x) if threshold_enabled else html.Div(),
+                _build_table("Roots", ["Formula", "x", "y"], root_rows),
+                _build_table("Extrema", ["Formula", "Type", "x", "y"], extrema_rows),
+                _build_table("Intersections", ["Pair", "x", "y"], intersection_rows),
+                _build_table("Threshold Crossings", ["Formula", "x", "y"], threshold_rows) if threshold_enabled else html.Div(),
             ],
             style={'display': 'flex', 'flexDirection': 'column', 'gap': '4px'}
         )
-        return fig, summary
+        return fig, summary, details
 
     except Exception as exc:
         message = str(exc) or "Unable to render formula"
         fig.update_layout(
-            title=plot_title or "Formula Plot",
             template='plotly_white',
             xaxis_title=x_axis_title or "x",
             yaxis_title=y_axis_title or "f(x)",
@@ -1521,5 +1543,6 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div]:
                 'font': {'size': 16, 'color': '#b00020'}
             }]
         )
-        return fig, html.Div(message)
+        return fig, html.Div(message), html.Div()
+
 
