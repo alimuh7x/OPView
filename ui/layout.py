@@ -258,12 +258,20 @@ def build_app_layout(
                         html.Div(
                             id='graphs-content',
                             children=[
-                                html.Button(
-                                    "+ Add Graph Panel",
-                                    id='graphs-add-multifile-btn',
-                                    className='graphs-add-panel-btn',
-                                    n_clicks=0
-                                ),
+                                html.Div([
+                                    html.Button(
+                                        "+ Add or Select Text File",
+                                        id='graphs-add-file-panel-btn',
+                                        className='graphs-add-panel-btn',
+                                        n_clicks=0
+                                    ),
+                                    html.Button(
+                                        "+ Add Data",
+                                        id='graphs-add-data-panel-btn',
+                                        className='graphs-add-panel-btn',
+                                        n_clicks=0
+                                    ),
+                                ], style={'display': 'flex', 'gap': '10px', 'flexWrap': 'wrap'}),
                                 html.Div(id='graphs-multifile-container', className='multifile-panels-container'),
                             ],
                             style={'display': 'none'}

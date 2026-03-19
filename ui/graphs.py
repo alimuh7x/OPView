@@ -356,7 +356,14 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
             'legend_title': '',  # Custom legend title
             'show_grid': True,  # Show/hide grid lines
             'show_legend': True,  # Show/hide legend
-            'x_axis_column': None  # Which column to use as x-axis (column name)
+            'x_axis_column': None,  # Which column to use as x-axis (column name)
+            'source_mode': 'file',
+            'pasted_data': '',  # Excel/CSV style pasted text
+            'extend_two_point_lines': False,
+            'show_intersections': False,
+            'show_roots_intercepts': False,
+            'line_range_min': 0.0,
+            'line_range_max': 1.0,
         }
 
     # Set default x_axis_column to first column of first file if not set
@@ -441,13 +448,31 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
         # Fallback to parsing ID
         panel_num = panel_id.split('_')[-1] if '_' in panel_id else '0'
 
+    source_mode = panel_state.get('source_mode', 'file')
+
     # Panel layout - Two column design: Graph (left) | Controls (right)
     # Panel layout - Hybrid Design (Top Data, Right Settings)
     return html.Div([
         # Header with close button
         html.Div([
             html.Div([
-                html.H3(f"Graph Panel {panel_num}", className='dataset-title')
+                html.Div([
+                    html.H3(f"Graph Panel {panel_num}", className='dataset-title', style={'marginBottom': '4px'}),
+                    html.Div(
+                        "Text File Mode" if source_mode == 'file' else "Data Mode",
+                        style={
+                            'display': 'inline-block',
+                            'padding': '4px 10px',
+                            'borderRadius': '999px',
+                            'fontSize': '12px',
+                            'fontWeight': '700',
+                            'letterSpacing': '0.04em',
+                            'textTransform': 'uppercase',
+                            'background': '#e0f2fe' if source_mode == 'file' else '#dcfce7',
+                            'color': '#0f172a',
+                        }
+                    ),
+                ]),
             ], style={'flex': '1'}),
             html.Button(
                 '×',
@@ -469,30 +494,73 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
         html.Div([
             # Files Selection
             html.Div([
-                html.Label("Data Sources:", className='multifile-label'),
+                html.Label("Text Files:", className='multifile-label'),
                 file_selector,
-            ], style={'marginBottom': '12px'}),
+                html.Div(
+                    "Use this panel when you want to add or compare columns from TextData files.",
+                    style={'fontSize': '12px', 'color': '#64748b', 'marginTop': '6px'}
+                ),
+            ], style={
+                'marginBottom': '0',
+                'display': 'block' if source_mode == 'file' else 'none'
+            }),
+
+            html.Div([
+                html.Label("Add Data:", className='multifile-label'),
+                dcc.Textarea(
+                    id={'type': 'multifile-pasted-data', 'panel': panel_id},
+                    value=panel_state.get('pasted_data', ''),
+                    placeholder=(
+                        "Paste Excel / CSV data here.\n\n"
+                        "One dataset with shared x:\n"
+                        "x<TAB>Line A<TAB>Line B\n0<TAB>1<TAB>2\n1<TAB>3<TAB>5\n\n"
+                        "Different x/y for each dataset: separate blocks with blank lines\n"
+                        "0<TAB>1\n1<TAB>3\n\n"
+                        "0.2<TAB>5\n0.8<TAB>9"
+                    ),
+                    style={
+                        'width': '100%',
+                        'minHeight': '130px',
+                        'padding': '10px 12px',
+                        'fontSize': '13px',
+                        'fontFamily': 'monospace',
+                        'border': '1px solid #dbe3ef',
+                        'borderRadius': '10px',
+                        'resize': 'vertical',
+                        'marginBottom': '6px',
+                    },
+                ),
+                html.Div(
+                    "Blank lines create separate datasets. This lets you plot multiple lines even when each dataset has a different x column.",
+                    style={'fontSize': '12px', 'color': '#64748b'}
+                ),
+            ], style={
+                'marginBottom': '0',
+                'display': 'block' if source_mode == 'data' else 'none'
+            }),
 
             # Columns Selection (Grid)
             html.Div([
                 html.Div(file_sections, className='multifile-columns-grid'),
-            ], style={'display': 'block' if file_sections else 'none', 'marginBottom': '4px'}),
+            ], style={'display': 'block' if file_sections and source_mode == 'file' else 'none', 'marginBottom': '0'}),
         ], className='multifile-top-controls'),
 
         # MAIN CONTENT AREA (Split View)
         html.Div([
             # LEFT: GRAPH
             html.Div([
-                html.Img(
-                    src='/assets/OP_Logo.png',
-                    className='multifile-logo',
-                    alt='OP logo'
-                ),
-                dcc.Graph(
-                    id={'type': 'multifile-plot', 'panel': panel_id},
-                    config={'displayModeBar': True, 'displaylogo': False},
-                    style={'height': '700px', 'width': '1000px'}
-                )
+                html.Div([
+                    html.Img(
+                        src='/assets/OP_Logo.png',
+                        className='multifile-logo',
+                        alt='OP logo'
+                    ),
+                    dcc.Graph(
+                        id={'type': 'multifile-plot', 'panel': panel_id},
+                        config={'displayModeBar': True, 'displaylogo': False},
+                        style={'height': '700px', 'width': '100%'}
+                    ),
+                ], className='multifile-plot-shell'),
             ], className='multifile-graph-area'),
 
             # RIGHT: SETTINGS SIDEBAR
@@ -503,13 +571,25 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
                 html.Div([
                      html.Label("X-Axis", className='multifile-sublabel', style={'fontSize': '15px'}),
                      html.Div([
-                        html.Label("Column:", className='multifile-mini-label', style={'fontSize': '14px'}),
-                        dcc.Dropdown(
-                            id={'type': 'multifile-x-axis-column', 'panel': panel_id},
-                            options=_build_x_axis_column_options(panel_state.get('files', [])),
-                            value=panel_state.get('x_axis_column'),
-                            clearable=False,
-                            style={'fontSize': '14px', 'marginBottom': '8px'}
+                        html.Div([
+                            html.Label("Column:", className='multifile-mini-label', style={'fontSize': '14px'}),
+                            dcc.Dropdown(
+                                id={'type': 'multifile-x-axis-column', 'panel': panel_id},
+                                options=_build_x_axis_column_options(panel_state.get('files', [])),
+                                value=panel_state.get('x_axis_column'),
+                                clearable=False,
+                                style={'fontSize': '14px', 'marginBottom': '8px'}
+                            ),
+                        ], style={'display': 'block' if source_mode == 'file' else 'none'}),
+                        html.Div(
+                            "Each pasted dataset carries its own x-values, so no shared x-column is needed in data mode.",
+                            style={
+                                'display': 'block' if source_mode == 'data' else 'none',
+                                'fontSize': '12px',
+                                'color': '#64748b',
+                                'marginBottom': '8px',
+                                'lineHeight': '1.45',
+                            }
                         ),
                         html.Label("Title:", className='multifile-mini-label', style={'fontSize': '14px'}),
                         dcc.Input(
@@ -519,6 +599,56 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
                             placeholder='X-axis title...',
                             style={'width': '100%', 'padding': '5px', 'fontSize': '14px', 'marginBottom': '8px'}
                         ),
+                     ], className='multifile-setting-group')
+                ], className='multifile-setting-section'),
+
+                html.Div([
+                     html.Label("Line Construction", className='multifile-sublabel', style={'fontSize': '15px'}),
+                     html.Div([
+                        dcc.Checklist(
+                            id={'type': 'multifile-extend-two-point-lines', 'panel': panel_id},
+                            options=[{'label': 'Extend lines', 'value': 'extend'}],
+                            value=['extend'] if panel_state.get('extend_two_point_lines', False) else [],
+                            style={'marginBottom': '10px'},
+                            labelStyle={'fontSize': '13px'}
+                        ),
+                        dcc.Checklist(
+                            id={'type': 'multifile-show-intersections', 'panel': panel_id},
+                            options=[{'label': 'Show intersections', 'value': 'show'}],
+                            value=['show'] if panel_state.get('show_intersections', False) else [],
+                            style={'marginBottom': '10px'},
+                            labelStyle={'fontSize': '13px'}
+                        ),
+                        dcc.Checklist(
+                            id={'type': 'multifile-show-roots-intercepts', 'panel': panel_id},
+                            options=[{'label': 'Show roots', 'value': 'show'}],
+                            value=['show'] if panel_state.get('show_roots_intercepts', False) else [],
+                            style={'marginBottom': '10px'},
+                            labelStyle={'fontSize': '13px'}
+                        ),
+                        html.Div("When enabled, any dataset with exactly two points is extended across the x-range below.", style={'fontSize': '12px', 'color': '#64748b', 'marginBottom': '8px', 'lineHeight': '1.45'}),
+                        html.Div([
+                            html.Div([
+                                html.Label("X Min", className='multifile-mini-label', style={'fontSize': '14px'}),
+                                dcc.Input(
+                                    id={'type': 'multifile-line-range-min', 'panel': panel_id},
+                                    type='number',
+                                    value=panel_state.get('line_range_min', 0.0),
+                                    debounce=True,
+                                    style={'width': '100%', 'padding': '5px', 'fontSize': '14px'}
+                                ),
+                            ], style={'flex': '1'}),
+                            html.Div([
+                                html.Label("X Max", className='multifile-mini-label', style={'fontSize': '14px'}),
+                                dcc.Input(
+                                    id={'type': 'multifile-line-range-max', 'panel': panel_id},
+                                    type='number',
+                                    value=panel_state.get('line_range_max', 1.0),
+                                    debounce=True,
+                                    style={'width': '100%', 'padding': '5px', 'fontSize': '14px'}
+                                ),
+                            ], style={'flex': '1'}),
+                        ], style={'display': 'flex', 'gap': '10px'}),
                      ], className='multifile-setting-group')
                 ], className='multifile-setting-section'),
 
@@ -629,6 +759,10 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
 
             ], className='multifile-settings-sidebar'),
         ], className='multifile-main-content'),
+        html.Div(
+            id={'type': 'multifile-analysis', 'panel': panel_id},
+            className='multifile-analysis-section'
+        ),
 
     ], className='dataset-block multifile-panel', id=f'multifile-{panel_id}')
 
@@ -644,7 +778,13 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
                           show_legend: bool = True,
                           x_axis_column: str = 'auto',
                           yaxis1_units: str = 'Raw',
-                          yaxis2_units: str = 'Raw') -> go.Figure:
+                          yaxis2_units: str = 'Raw',
+                          pasted_data: str = '',
+                          extend_two_point_lines: bool = False,
+                          show_intersections: bool = False,
+                          show_roots_intercepts: bool = False,
+                          line_range_min: float | None = None,
+                          line_range_max: float | None = None) -> tuple[go.Figure, html.Div, tuple[float | None, float | None]]:
     """Build Plotly figure combining multiple files with per-yaxis unit settings.
 
     Args:
@@ -662,18 +802,18 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
         yaxis2_units: Unit conversion for Y-Axis 2 ('Raw', 'MPa', 'GPa', '%')
 
     Returns:
-        Plotly figure with all traces and configured axes
+        Plotly figure with all traces and configured axes, and an analysis summary component
     """
     from data.sources import GenericTextDataSource
 
-    if not files_and_columns:
+    if not files_and_columns and not (pasted_data or '').strip():
         # Return empty figure
         return go.Figure().update_layout(
             title="Select files and columns to display the graph",
             xaxis_title=x_axis_title,
             yaxis_title=y_axis_title,
             template='plotly_white'
-        )
+        ), html.Div("Select files/columns or paste Excel data to display the graph."), (line_range_min, line_range_max)
 
     fig = go.Figure()
 
@@ -701,8 +841,276 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
         yaxis_titles = {}
 
     color_idx = 0
-    file_idx = 0
     yaxis_configs = {}
+    analysis_cards = []
+    plotted_x_values = []
+    plotted_y_values = []
+
+    def _safe_float(value):
+        try:
+            return float(str(value).strip())
+        except (TypeError, ValueError):
+            return None
+
+    def _parse_delimited_line(line: str) -> list[str]:
+        stripped = line.strip()
+        if '\t' in stripped:
+            return [cell.strip() for cell in stripped.split('\t')]
+        if ',' in stripped:
+            return [cell.strip() for cell in stripped.split(',')]
+        if ';' in stripped:
+            return [cell.strip() for cell in stripped.split(';')]
+        return [cell for cell in stripped.split() if cell]
+
+    def _series_summary(title: str, x_values, y_values) -> html.Div:
+        x_arr = np.asarray(x_values, dtype=float)
+        y_arr = np.asarray(y_values, dtype=float)
+        finite_mask = np.isfinite(x_arr) & np.isfinite(y_arr)
+        x_arr = x_arr[finite_mask]
+        y_arr = y_arr[finite_mask]
+        if x_arr.size == 0:
+            return html.Div([
+                html.Div(title, style={'fontWeight': '700', 'fontSize': '14px', 'marginBottom': '4px'}),
+                html.Div("No valid numeric points", style={'fontSize': '13px', 'color': '#64748b'})
+            ], style={'padding': '12px', 'background': '#fff', 'border': '1px solid #e2e8f0', 'borderRadius': '10px'})
+
+        rows = [
+            html.Div(f"Points: {x_arr.size}", style={'fontSize': '13px'}),
+            html.Div(f"X range: {x_arr.min():.6g} to {x_arr.max():.6g}", style={'fontSize': '13px'}),
+            html.Div(f"Y range: {y_arr.min():.6g} to {y_arr.max():.6g}", style={'fontSize': '13px'}),
+        ]
+        if x_arr.size == 2:
+            dx = x_arr[1] - x_arr[0]
+            dy = y_arr[1] - y_arr[0]
+            if np.isclose(dx, 0.0):
+                rows.append(html.Div(f"Line: x = {x_arr[0]:.6g}", style={'fontSize': '13px', 'fontWeight': '600'}))
+                rows.append(html.Div("Slope: undefined (vertical line)", style={'fontSize': '13px', 'fontWeight': '600'}))
+                rows.append(html.Div(f"Root / x-intercept: x = {x_arr[0]:.6g}", style={'fontSize': '13px'}))
+            else:
+                slope = dy / dx
+                intercept = y_arr[0] - slope * x_arr[0]
+                rows.append(html.Div(f"Slope: {slope:.6g}", style={'fontSize': '13px', 'fontWeight': '600'}))
+                rows.append(html.Div(f"Equation: y = {slope:.6g}x + {intercept:.6g}", style={'fontSize': '13px', 'fontWeight': '600'}))
+                rows.append(html.Div(f"Y-intercept: {intercept:.6g}", style={'fontSize': '13px'}))
+                if np.isclose(slope, 0.0):
+                    root_text = "none" if not np.isclose(intercept, 0.0) else "all x"
+                else:
+                    root_text = f"{(-intercept / slope):.6g}"
+                rows.append(html.Div(f"Root / x-intercept: {root_text}", style={'fontSize': '13px'}))
+        elif x_arr.size > 2:
+            overall_dx = x_arr[-1] - x_arr[0]
+            if np.isclose(overall_dx, 0.0):
+                rows.append(html.Div("Overall slope: undefined", style={'fontSize': '13px', 'fontWeight': '600'}))
+            else:
+                overall_slope = (y_arr[-1] - y_arr[0]) / overall_dx
+                rows.append(html.Div(f"Overall slope (first-last): {overall_slope:.6g}", style={'fontSize': '13px', 'fontWeight': '600'}))
+            segment_slopes = []
+            for idx in range(len(x_arr) - 1):
+                dx = x_arr[idx + 1] - x_arr[idx]
+                dy = y_arr[idx + 1] - y_arr[idx]
+                slope_text = "undefined" if np.isclose(dx, 0.0) else f"{(dy / dx):.6g}"
+                segment_slopes.append(f"{idx + 1}-{idx + 2}: {slope_text}")
+            if segment_slopes:
+                rows.append(html.Div("Segment slopes: " + ", ".join(segment_slopes[:6]), style={'fontSize': '13px'}))
+
+        return html.Div([
+            html.Div(title, style={'fontWeight': '700', 'fontSize': '14px', 'marginBottom': '6px', 'color': '#102a43'}),
+            *rows,
+        ], style={'padding': '12px', 'background': '#fff', 'border': '1px solid #e2e8f0', 'borderRadius': '10px'})
+
+    def _resolve_line_range(default_x_values=None) -> tuple[float, float] | None:
+        values = np.asarray(default_x_values if default_x_values is not None else [], dtype=float)
+        finite_values = values[np.isfinite(values)]
+        left = float(line_range_min) if line_range_min not in (None, '') else (float(finite_values.min()) if finite_values.size else 0.0)
+        right = float(line_range_max) if line_range_max not in (None, '') else (float(finite_values.max()) if finite_values.size else 1.0)
+        if np.isclose(left, right):
+            return None
+        return (left, right) if left < right else (right, left)
+
+    def _two_point_line_geometry(x_values, y_values):
+        x_arr = np.asarray(x_values, dtype=float)
+        y_arr = np.asarray(y_values, dtype=float)
+        finite_mask = np.isfinite(x_arr) & np.isfinite(y_arr)
+        x_arr = x_arr[finite_mask]
+        y_arr = y_arr[finite_mask]
+        if x_arr.size != 2 or y_arr.size != 2:
+            return None
+        dx = x_arr[1] - x_arr[0]
+        dy = y_arr[1] - y_arr[0]
+        if np.isclose(dx, 0.0):
+            return {
+                'kind': 'vertical',
+                'x_const': float(x_arr[0]),
+                'points': (x_arr, y_arr),
+            }
+        slope = dy / dx
+        intercept = y_arr[0] - slope * x_arr[0]
+        return {
+            'kind': 'line',
+            'slope': float(slope),
+            'intercept': float(intercept),
+            'points': (x_arr, y_arr),
+        }
+
+    def _build_intersection_card(intersections: list[dict]) -> html.Div:
+        rows = [
+            html.Div(
+                f"{item['a']} x {item['b']}: ({item['x']:.6g}, {item['y']:.6g})",
+                style={'fontSize': '13px'}
+            )
+            for item in intersections
+        ]
+        return html.Div([
+            html.Div("Line Intersections", style={'fontWeight': '700', 'fontSize': '14px', 'marginBottom': '6px', 'color': '#102a43'}),
+            *rows,
+        ], style={'padding': '12px', 'background': '#fff', 'border': '1px solid #e2e8f0', 'borderRadius': '10px'})
+
+    def _build_line_pair_card(line_a: dict, line_b: dict) -> html.Div:
+        rows = []
+        if line_a['kind'] == 'line' and line_b['kind'] == 'line':
+            if np.isclose(line_a['slope'], line_b['slope']):
+                relation = 'parallel' if not np.isclose(line_a['intercept'], line_b['intercept']) else 'coincident'
+                rows.append(html.Div(f"Relation: {relation}", style={'fontSize': '13px'}))
+                if relation == 'parallel':
+                    distance = abs(line_b['intercept'] - line_a['intercept']) / np.sqrt(line_a['slope'] ** 2 + 1.0)
+                    rows.append(html.Div(f"Distance between lines: {distance:.6g}", style={'fontSize': '13px'}))
+            else:
+                angle = np.degrees(np.arctan(abs((line_b['slope'] - line_a['slope']) / (1 + line_a['slope'] * line_b['slope']))))
+                rows.append(html.Div(f"Angle between lines: {angle:.6g} deg", style={'fontSize': '13px'}))
+                rows.append(html.Div("Relation: perpendicular", style={'fontSize': '13px'}) if np.isclose(line_a['slope'] * line_b['slope'], -1.0) else html.Div("Relation: intersecting", style={'fontSize': '13px'}))
+        elif line_a['kind'] == 'vertical' and line_b['kind'] == 'vertical':
+            relation = 'coincident' if np.isclose(line_a['x_const'], line_b['x_const']) else 'parallel'
+            rows.append(html.Div(f"Relation: {relation}", style={'fontSize': '13px'}))
+            if relation == 'parallel':
+                rows.append(html.Div(f"Distance between lines: {abs(line_b['x_const'] - line_a['x_const']):.6g}", style={'fontSize': '13px'}))
+        else:
+            non_vertical = line_a if line_a['kind'] == 'line' else line_b
+            rows.append(html.Div("Relation: intersecting", style={'fontSize': '13px'}))
+            angle = 90.0 - np.degrees(np.arctan(non_vertical['slope']))
+            rows.append(html.Div(f"Angle between lines: {abs(angle):.6g} deg", style={'fontSize': '13px'}))
+
+        return html.Div([
+            html.Div("Line Pair Analysis", style={'fontWeight': '700', 'fontSize': '14px', 'marginBottom': '6px', 'color': '#102a43'}),
+            html.Div(f"Line A: {line_a['name']}", style={'fontSize': '13px'}),
+            html.Div(f"Line B: {line_b['name']}", style={'fontSize': '13px'}),
+            *rows,
+        ], style={'padding': '12px', 'background': '#fff', 'border': '1px solid #e2e8f0', 'borderRadius': '10px'})
+
+    def _build_root_markers(line_items: list[dict], visible_range: tuple[float, float] | None = None) -> list[dict]:
+        markers = []
+        for item in line_items:
+            name = item['name']
+            if item['kind'] == 'vertical':
+                x_pos = float(item['x_const'])
+                if visible_range and not (visible_range[0] <= x_pos <= visible_range[1]):
+                    continue
+                markers.append({
+                    'label': 'Root',
+                    'series': name,
+                    'x': x_pos,
+                    'y': 0.0,
+                    'value_text': f"x = {x_pos:.6g}",
+                })
+                continue
+
+            slope = item['slope']
+            intercept = item['intercept']
+            if np.isclose(slope, 0.0):
+                if not np.isclose(intercept, 0.0):
+                    continue
+                x_pos = 0.0
+                value_text = "all x"
+            else:
+                x_pos = float(-intercept / slope)
+                value_text = f"x = {x_pos:.6g}"
+
+            if visible_range and not (visible_range[0] <= x_pos <= visible_range[1]):
+                continue
+            markers.append({
+                'label': 'Root',
+                'series': name,
+                'x': x_pos,
+                'y': 0.0,
+                'value_text': value_text,
+            })
+        return markers
+
+    def _expand_range_for_root(current_range: tuple[float, float] | None, geometry: dict) -> tuple[float, float] | None:
+        if current_range is None:
+            return None
+        left, right = current_range
+        if geometry['kind'] == 'vertical':
+            root_x = geometry['x_const']
+        else:
+            slope = geometry['slope']
+            intercept = geometry['intercept']
+            if np.isclose(slope, 0.0):
+                return current_range
+            root_x = -intercept / slope
+        return (min(left, root_x), max(right, root_x))
+
+    def _build_pasted_series(pasted_text: str) -> tuple[list[dict], list[str]]:
+        if not (pasted_text or '').strip():
+            return [], []
+        blocks = []
+        current = []
+        for raw_line in pasted_text.replace('\r', '').split('\n'):
+            if raw_line.strip():
+                current.append(raw_line)
+            elif current:
+                blocks.append(current)
+                current = []
+        if current:
+            blocks.append(current)
+
+        series = []
+        errors = []
+        dataset_counter = 1
+        for block in blocks:
+            rows = [_parse_delimited_line(line) for line in block if line.strip()]
+            rows = [row for row in rows if row]
+            if len(rows) < 2:
+                continue
+            width = max(len(row) for row in rows)
+            rows = [row + [''] * (width - len(row)) for row in rows]
+            first_numeric = [_safe_float(cell) for cell in rows[0]]
+            has_header = any(value is None for value in first_numeric)
+            header = rows[0] if has_header else None
+            data_rows = rows[1:] if has_header else rows
+
+            numeric_rows = []
+            for row in data_rows:
+                numeric_row = [_safe_float(cell) for cell in row]
+                if numeric_row[0] is None:
+                    continue
+                numeric_rows.append(numeric_row)
+
+            if len(numeric_rows) < 2 or width < 2:
+                errors.append(f"Dataset {dataset_counter}: could not find at least two numeric rows with x/y values.")
+                dataset_counter += 1
+                continue
+
+            x_values = [row[0] for row in numeric_rows]
+            for col_idx in range(1, width):
+                y_values = [row[col_idx] for row in numeric_rows]
+                finite_pairs = [
+                    (x_val, y_val)
+                    for x_val, y_val in zip(x_values, y_values)
+                    if x_val is not None and y_val is not None
+                ]
+                if len(finite_pairs) < 2:
+                    continue
+                x_series = np.array([pair[0] for pair in finite_pairs], dtype=float)
+                y_series = np.array([pair[1] for pair in finite_pairs], dtype=float)
+                if header and col_idx < len(header) and header[col_idx]:
+                    name = header[col_idx]
+                elif width == 2:
+                    name = f"Pasted Line {dataset_counter}"
+                else:
+                    name = f"Pasted Line {dataset_counter}.{col_idx}"
+                series.append({'name': name, 'x': x_series, 'y': y_series})
+            dataset_counter += 1
+        return series, errors
 
     # STEP 1: Load x-axis data ONCE from the FIRST file
     # All traces will use this same x-axis data
@@ -736,12 +1144,17 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
         except Exception as e:
             print(f"Error loading x-axis from {first_file_path}: {e}")
 
-    if x_data is None or len(x_data) == 0:
-        print("Error: No x-axis data available")
-        return go.Figure()
+    can_plot_file_data = x_data is not None and len(x_data) > 0
+    if files_and_columns and not can_plot_file_data:
+        print("Warning: No valid shared x-axis data available for file-based traces")
+    line_range = _resolve_line_range(x_data if can_plot_file_data else None)
+    effective_line_range = line_range
+    line_geometries = []
 
     # STEP 2: For each file, plot its y-columns against the SHARED x-axis
     for file_path, columns in files_and_columns.items():
+        if not can_plot_file_data:
+            break
         # Load data source
         try:
             ds = GenericTextDataSource(Path(file_path))
@@ -795,16 +1208,52 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
                         print(f"Warning: No data points for {file_name} - {col}. Skipping.")
                         continue
 
+                    trace_x = np.asarray(x_data, dtype=float)
+                    trace_y = np.asarray(y_data, dtype=float)
+                    geometry = _two_point_line_geometry(trace_x, trace_y)
+                    mode = 'lines'
+                    if extend_two_point_lines and geometry and line_range:
+                        trace_range = effective_line_range or line_range
+                        if show_roots_intercepts:
+                            trace_range = _expand_range_for_root(trace_range, geometry)
+                            effective_line_range = trace_range
+                        if geometry['kind'] == 'line':
+                            trace_x = np.linspace(trace_range[0], trace_range[1], 200, dtype=float)
+                            trace_y = geometry['slope'] * trace_x + geometry['intercept']
+                            line_geometries.append({'name': trace_name, **geometry})
+                        else:
+                            y_min = float(np.nanmin(y_data))
+                            y_max = float(np.nanmax(y_data))
+                            pad = max(abs(y_max - y_min) * 0.2, 1.0)
+                            trace_x = np.array([geometry['x_const'], geometry['x_const']], dtype=float)
+                            trace_y = np.array([y_min - pad, y_max + pad], dtype=float)
+                            line_geometries.append({'name': trace_name, **geometry})
+                    elif geometry:
+                        line_geometries.append({'name': trace_name, **geometry})
+
                     fig.add_trace(go.Scatter(
-                        x=x_data,
-                        y=y_data,
-                        mode='lines',  # Lines only, no markers
+                        x=trace_x,
+                        y=trace_y,
+                        mode=mode,
                         name=trace_name,
                         line=dict(width=3.0, color=color),  # Thicker lines
-                        yaxis=yaxis_plotly  # Assign to column's selected y-axis
+                        yaxis=yaxis_plotly,  # Assign to column's selected y-axis
+                        customdata=np.array([[file_name, col, idx + 1] for idx in range(len(trace_x))], dtype=object),
+                        hovertemplate=(
+                            "Series=%{fullData.name}<br>"
+                            f"File=%{{customdata[0]}}<br>"
+                            f"Column=%{{customdata[1]}}<br>"
+                            f"{x_axis_title}=%{{x:.6g}}<br>"
+                            f"{y_axis_title}=%{{y:.6g}}<br>"
+                            "Point=%{customdata[2]}<extra></extra>"
+                        ),
                     ))
+                    plotted_x_values.extend(np.asarray(trace_x, dtype=float).tolist())
+                    if yaxis_plotly == 'y':
+                        plotted_y_values.extend(np.asarray(trace_y, dtype=float).tolist())
 
                     color_idx += 1
+                    analysis_cards.append(_series_summary(trace_name, x_data, y_data))
 
                 except Exception as e:
                     print(f"Error adding trace for {file_name} - {col}: {e}")
@@ -934,6 +1383,154 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
             showline=True  # Show border line
         )
 
+    pasted_series, pasted_errors = _build_pasted_series(pasted_data)
+    for series in pasted_series:
+        color = colors[color_idx % len(colors)]
+        trace_x = np.asarray(series['x'], dtype=float)
+        trace_y = np.asarray(series['y'], dtype=float)
+        geometry = _two_point_line_geometry(trace_x, trace_y)
+        mode = 'lines+markers'
+        if extend_two_point_lines and geometry and line_range:
+            trace_range = effective_line_range or line_range
+            if show_roots_intercepts:
+                trace_range = _expand_range_for_root(trace_range, geometry)
+                effective_line_range = trace_range
+            if geometry['kind'] == 'line':
+                trace_x = np.linspace(trace_range[0], trace_range[1], 200, dtype=float)
+                trace_y = geometry['slope'] * trace_x + geometry['intercept']
+                mode = 'lines'
+                line_geometries.append({'name': series['name'], **geometry})
+            else:
+                y_min = float(np.nanmin(series['y']))
+                y_max = float(np.nanmax(series['y']))
+                pad = max(abs(y_max - y_min) * 0.2, 1.0)
+                trace_x = np.array([geometry['x_const'], geometry['x_const']], dtype=float)
+                trace_y = np.array([y_min - pad, y_max + pad], dtype=float)
+                mode = 'lines'
+                line_geometries.append({'name': series['name'], **geometry})
+        elif geometry:
+            line_geometries.append({'name': series['name'], **geometry})
+
+        fig.add_trace(go.Scatter(
+            x=trace_x,
+            y=trace_y,
+            mode=mode,
+            name=series['name'],
+            line=dict(width=3.0, color=color),
+            marker=dict(size=8, color=color),
+            yaxis='y',
+            customdata=np.array([[idx + 1] for idx in range(len(trace_x))], dtype=object),
+            hovertemplate=(
+                "Series=%{fullData.name}<br>"
+                f"{x_axis_title}=%{{x:.6g}}<br>"
+                f"{y_axis_title}=%{{y:.6g}}<br>"
+                "Point=%{customdata[0]}<extra></extra>"
+            ),
+        ))
+        plotted_x_values.extend(np.asarray(trace_x, dtype=float).tolist())
+        plotted_y_values.extend(np.asarray(trace_y, dtype=float).tolist())
+        analysis_cards.append(_series_summary(series['name'], series['x'], series['y']))
+        color_idx += 1
+
+    finite_x = np.asarray(plotted_x_values, dtype=float)
+    finite_x = finite_x[np.isfinite(finite_x)]
+    finite_y = np.asarray(plotted_y_values, dtype=float)
+    finite_y = finite_y[np.isfinite(finite_y)]
+    if extend_two_point_lines and (effective_line_range or line_range):
+        active_range = effective_line_range or line_range
+        layout_config['xaxis']['range'] = [active_range[0], active_range[1]]
+    elif finite_x.size:
+        x_min_vis = float(finite_x.min())
+        x_max_vis = float(finite_x.max())
+        x_pad = max((x_max_vis - x_min_vis) * 0.06, 1e-6) if not np.isclose(x_min_vis, x_max_vis) else max(abs(x_min_vis) * 0.08, 1.0)
+        layout_config['xaxis']['range'] = [x_min_vis - x_pad, x_max_vis + x_pad]
+    if finite_y.size:
+        y_min_vis = float(finite_y.min())
+        y_max_vis = float(finite_y.max())
+        y_pad = max((y_max_vis - y_min_vis) * 0.08, 1e-6) if not np.isclose(y_min_vis, y_max_vis) else max(abs(y_min_vis) * 0.08, 1.0)
+        layout_config['yaxis']['range'] = [y_min_vis - y_pad, y_max_vis + y_pad]
+
+    intersections = []
+    for idx, line_a in enumerate(line_geometries):
+        for line_b in line_geometries[idx + 1:]:
+            if line_a['kind'] == 'vertical' and line_b['kind'] == 'vertical':
+                continue
+            if line_a['kind'] == 'vertical':
+                x_pos = line_a['x_const']
+                if line_b['kind'] == 'line':
+                    y_pos = line_b['slope'] * x_pos + line_b['intercept']
+                else:
+                    continue
+            elif line_b['kind'] == 'vertical':
+                x_pos = line_b['x_const']
+                y_pos = line_a['slope'] * x_pos + line_a['intercept']
+            else:
+                if np.isclose(line_a['slope'], line_b['slope']):
+                    continue
+                x_pos = (line_b['intercept'] - line_a['intercept']) / (line_a['slope'] - line_b['slope'])
+                y_pos = line_a['slope'] * x_pos + line_a['intercept']
+
+            if line_range and not (line_range[0] <= x_pos <= line_range[1]):
+                continue
+            intersections.append({'a': line_a['name'], 'b': line_b['name'], 'x': float(x_pos), 'y': float(y_pos)})
+
+    if show_intersections and intersections:
+        fig.add_trace(go.Scatter(
+            x=[item['x'] for item in intersections],
+            y=[item['y'] for item in intersections],
+            mode='markers',
+            name='Intersections',
+            marker=dict(size=11, color='#b91c1c', symbol='diamond'),
+            customdata=np.array([[item['a'], item['b']] for item in intersections], dtype=object),
+            hovertemplate=(
+                "Intersection<br>"
+                "Line A=%{customdata[0]}<br>"
+                "Line B=%{customdata[1]}<br>"
+                f"{x_axis_title}=%{{x:.6g}}<br>"
+                f"{y_axis_title}=%{{y:.6g}}<extra></extra>"
+            ),
+        ))
+        analysis_cards.insert(0, _build_intersection_card(intersections))
+
+    root_markers = _build_root_markers(
+        line_geometries,
+        (effective_line_range or line_range) if extend_two_point_lines and (effective_line_range or line_range) else layout_config.get('xaxis', {}).get('range')
+    )
+    if show_roots_intercepts and root_markers:
+        fig.add_trace(go.Scatter(
+            x=[item['x'] for item in root_markers],
+            y=[item['y'] for item in root_markers],
+            mode='markers',
+            name='Roots',
+            marker=dict(size=11, color='#0b5d52', symbol='circle', line=dict(color='#063b34', width=1.5)),
+            customdata=np.array([[item['series'], item['label'], item['value_text']] for item in root_markers], dtype=object),
+            hovertemplate=(
+                "%{customdata[1]}<br>"
+                "Series=%{customdata[0]}<br>"
+                f"{x_axis_title}=%{{x:.6g}}<br>"
+                f"{y_axis_title}=%{{y:.6g}}<br>"
+                "Value=%{customdata[2]}<extra></extra>"
+            ),
+        ))
+
+    if len(line_geometries) >= 2:
+        analysis_cards.insert(1 if (show_intersections and intersections) else 0, _build_line_pair_card(line_geometries[0], line_geometries[1]))
+
     fig.update_layout(**layout_config)
 
-    return fig
+    if pasted_errors:
+        analysis_cards.insert(0, html.Div([
+            html.Div("Paste Parsing", style={'fontWeight': '700', 'fontSize': '14px', 'marginBottom': '6px', 'color': '#9f1239'}),
+            *[html.Div(error, style={'fontSize': '13px'}) for error in pasted_errors]
+        ], style={'padding': '12px', 'background': '#fff1f2', 'border': '1px solid #fecdd3', 'borderRadius': '10px'}))
+
+    if not analysis_cards:
+        analysis = html.Div("No plotted series yet.", style={'fontSize': '14px', 'color': '#64748b'})
+    else:
+        analysis = html.Div([
+            html.Div("Series Analysis", style={'fontWeight': '700', 'fontSize': '18px', 'marginBottom': '10px', 'color': '#102a43'}),
+            html.Div(analysis_cards, style={'display': 'grid', 'gridTemplateColumns': 'repeat(auto-fit, minmax(240px, 1fr))', 'gap': '10px'})
+        ], style={'padding': '12px 14px', 'background': '#f8fafc', 'border': '1px solid #e2e8f0', 'borderRadius': '12px'})
+
+    resolved_range = effective_line_range or line_range
+    return fig, analysis, (resolved_range[0], resolved_range[1]) if resolved_range else (line_range_min, line_range_max)

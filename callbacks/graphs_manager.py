@@ -45,24 +45,22 @@ class GraphsCallbackManager(BaseCallbackManager):
         @self.app.callback(
             Output('graphs-multifile-panels', 'data'),
             Output('graphs-multifile-container', 'children'),
-            Input('graphs-add-multifile-btn', 'n_clicks'),
+            Input('graphs-add-file-panel-btn', 'n_clicks'),
+            Input('graphs-add-data-panel-btn', 'n_clicks'),
             State('graphs-multifile-panels', 'data'),
             State('loaded-textdata-folders', 'data'),
             prevent_initial_call=True
         )
-        def add_multifile_panel(n_clicks, panels_state, loaded_projects):
+        def add_multifile_panel(n_clicks_file, n_clicks_data, panels_state, loaded_projects):
             """Add a new multi-file panel."""
             from ui import get_textdata_files, build_multifile_panel
             import time
 
-            # Only proceed if button was actually clicked
-            if ctx.triggered_id != 'graphs-add-multifile-btn':
+            if ctx.triggered_id not in {'graphs-add-file-panel-btn', 'graphs-add-data-panel-btn'}:
                 raise PreventUpdate
 
             # Get available files
             available_files = get_textdata_files(loaded_projects)
-            if not available_files:
-                raise PreventUpdate
 
             # Initialize panels state if None
             if panels_state is None:
@@ -73,6 +71,7 @@ class GraphsCallbackManager(BaseCallbackManager):
 
             # Calculate sequential panel number for display
             panel_number = len(panels_state) + 1
+            source_mode = 'data' if ctx.triggered_id == 'graphs-add-data-panel-btn' else 'file'
 
             # Add ONLY the new panel to state
             panels_state[panel_id] = {
@@ -89,7 +88,14 @@ class GraphsCallbackManager(BaseCallbackManager):
                 'legend_title': '',
                 'show_grid': True,
                 'show_legend': True,
-                'x_axis_column': None  # Will be set to first column name when files are selected
+                'x_axis_column': None,  # Will be set to first column name when files are selected
+                'pasted_data': '',
+                'source_mode': source_mode,
+                'extend_two_point_lines': False,
+                'show_intersections': False,
+                'show_roots_intercepts': False,
+                'line_range_min': 0.0,
+                'line_range_max': 1.0,
             }
 
             # Build all panels (both existing and new)
@@ -108,10 +114,17 @@ class GraphsCallbackManager(BaseCallbackManager):
             Output('graphs-multifile-panels', 'data', allow_duplicate=True),
             Output('graphs-multifile-container', 'children', allow_duplicate=True),
             Input({'type': 'multifile-file-selector', 'panel': ALL}, 'value'),
+            Input({'type': 'multifile-pasted-data', 'panel': ALL}, 'value'),
             Input({'type': 'multifile-column-selector', 'panel': ALL, 'file': ALL}, 'value'),
             Input({'type': 'multifile-column-yaxis', 'panel': ALL, 'file': ALL, 'column': ALL}, 'value'),
             Input({'type': 'multifile-column-legend', 'panel': ALL, 'file': ALL, 'column': ALL}, 'value'),
+            Input({'type': 'multifile-extend-two-point-lines', 'panel': ALL}, 'value'),
+            Input({'type': 'multifile-show-intersections', 'panel': ALL}, 'value'),
+            Input({'type': 'multifile-show-roots-intercepts', 'panel': ALL}, 'value'),
+            Input({'type': 'multifile-line-range-min', 'panel': ALL}, 'value'),
+            Input({'type': 'multifile-line-range-max', 'panel': ALL}, 'value'),
             State({'type': 'multifile-file-selector', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-pasted-data', 'panel': ALL}, 'id'),
             State({'type': 'multifile-column-selector', 'panel': ALL, 'file': ALL}, 'id'),
             State({'type': 'multifile-column-yaxis', 'panel': ALL, 'file': ALL, 'column': ALL}, 'id'),
             State({'type': 'multifile-column-legend', 'panel': ALL, 'file': ALL, 'column': ALL}, 'id'),
@@ -119,6 +132,11 @@ class GraphsCallbackManager(BaseCallbackManager):
             State({'type': 'multifile-x-axis-column', 'panel': ALL}, 'id'),
             State({'type': 'multifile-x-axis-title', 'panel': ALL}, 'value'),
             State({'type': 'multifile-x-axis-title', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-extend-two-point-lines', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-show-intersections', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-show-roots-intercepts', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-line-range-min', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-line-range-max', 'panel': ALL}, 'id'),
             State({'type': 'multifile-y-axis-title', 'panel': ALL}, 'value'),
             State({'type': 'multifile-y-axis-title', 'panel': ALL}, 'id'),
             State({'type': 'multifile-yaxis2-title', 'panel': ALL}, 'value'),
@@ -130,10 +148,16 @@ class GraphsCallbackManager(BaseCallbackManager):
             State('loaded-textdata-folders', 'data'),
             prevent_initial_call=True
         )
-        def update_multifile_files(all_file_selections, all_column_selections, all_yaxis_values, all_legend_values,
-                                   all_file_ids, all_column_ids, all_yaxis_ids, all_legend_ids,
+        def update_multifile_files(all_file_selections, all_pasted_data, all_column_selections, all_yaxis_values, all_legend_values,
+                                   all_extend_values, all_show_intersections, all_show_roots, all_line_range_mins, all_line_range_maxs,
+                                   all_file_ids, all_pasted_ids, all_column_ids, all_yaxis_ids, all_legend_ids,
                                    all_x_axis_values, all_x_axis_ids,
                                    all_x_axis_titles, all_x_axis_title_ids,
+                                   all_extend_ids,
+                                   all_show_intersections_ids,
+                                   all_show_roots_ids,
+                                   all_line_range_min_ids,
+                                   all_line_range_max_ids,
                                    all_y_axis_titles, all_y_axis_title_ids,
                                    all_yaxis2_titles, all_yaxis2_title_ids,
                                    all_yaxis1_units, all_yaxis2_units, all_yaxis_units_ids,
@@ -171,6 +195,11 @@ class GraphsCallbackManager(BaseCallbackManager):
                             panels_state[panel_id]['columns_by_file'][file_path] = []
                         if file_path not in panels_state[panel_id]['column_settings']:
                             panels_state[panel_id]['column_settings'][file_path] = {}
+
+            for pasted_id, pasted_text in zip(all_pasted_ids, all_pasted_data):
+                panel_id = pasted_id['panel']
+                if panel_id in panels_state:
+                    panels_state[panel_id]['pasted_data'] = pasted_text or ''
 
             # Update column selections from checklists
             for column_id, selected_columns in zip(all_column_ids, all_column_selections):
@@ -212,6 +241,37 @@ class GraphsCallbackManager(BaseCallbackManager):
                 if panel_id in panels_state and x_title_val is not None:
                     panels_state[panel_id]['x_axis_title'] = x_title_val
 
+            for extend_val, extend_id in zip(all_extend_values, all_extend_ids):
+                panel_id = extend_id['panel']
+                if panel_id in panels_state:
+                    panels_state[panel_id]['extend_two_point_lines'] = 'extend' in (extend_val or [])
+
+            for show_val, show_id in zip(all_show_intersections, all_show_intersections_ids):
+                panel_id = show_id['panel']
+                if panel_id in panels_state:
+                    panels_state[panel_id]['show_intersections'] = 'show' in (show_val or [])
+
+            for show_val, show_id in zip(all_show_roots, all_show_roots_ids):
+                panel_id = show_id['panel']
+                if panel_id in panels_state:
+                    panels_state[panel_id]['show_roots_intercepts'] = 'show' in (show_val or [])
+
+            for range_val, range_id in zip(all_line_range_mins, all_line_range_min_ids):
+                panel_id = range_id['panel']
+                if panel_id in panels_state and range_val is not None:
+                    try:
+                        panels_state[panel_id]['line_range_min'] = float(range_val)
+                    except (TypeError, ValueError):
+                        pass
+
+            for range_val, range_id in zip(all_line_range_maxs, all_line_range_max_ids):
+                panel_id = range_id['panel']
+                if panel_id in panels_state and range_val is not None:
+                    try:
+                        panels_state[panel_id]['line_range_max'] = float(range_val)
+                    except (TypeError, ValueError):
+                        pass
+
             # Preserve Y-axis titles
             for y_title_val, y_title_id in zip(all_y_axis_titles, all_y_axis_title_ids):
                 panel_id = y_title_id['panel']
@@ -249,6 +309,9 @@ class GraphsCallbackManager(BaseCallbackManager):
         """Register callback to update multi-file graph."""
         @self.app.callback(
             Output({'type': 'multifile-plot', 'panel': MATCH}, 'figure'),
+            Output({'type': 'multifile-analysis', 'panel': MATCH}, 'children'),
+            Output({'type': 'multifile-line-range-min', 'panel': MATCH}, 'value'),
+            Output({'type': 'multifile-line-range-max', 'panel': MATCH}, 'value'),
             Input('graphs-multifile-panels', 'data'),
             Input({'type': 'multifile-x-axis-title', 'panel': MATCH}, 'value'),
             Input({'type': 'multifile-y-axis-title', 'panel': MATCH}, 'value'),
@@ -320,7 +383,7 @@ class GraphsCallbackManager(BaseCallbackManager):
             show_grid = 'grid' in display_opts
 
             # Build figure with y-axis units
-            return build_multifile_figure(
+            figure, analysis, resolved_range = build_multifile_figure(
                 files_and_columns,
                 column_settings,  # Pass column settings (yaxis assignment per column)
                 x_axis_title,
@@ -332,8 +395,16 @@ class GraphsCallbackManager(BaseCallbackManager):
                 show_legend,
                 x_axis_column,
                 yaxis1_units or 'Raw',
-                yaxis2_units or 'Raw'
+                yaxis2_units or 'Raw',
+                panel_state.get('pasted_data', ''),
+                panel_state.get('extend_two_point_lines', False),
+                panel_state.get('show_intersections', False),
+                panel_state.get('show_roots_intercepts', False),
+                panel_state.get('line_range_min'),
+                panel_state.get('line_range_max'),
             )
+            resolved_min, resolved_max = resolved_range
+            return figure, analysis, resolved_min, resolved_max
 
         self._track_callback(update_multifile_graph)
 

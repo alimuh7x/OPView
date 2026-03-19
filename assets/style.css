@@ -1924,8 +1924,8 @@ input:focus,
 /* Logo image positioned at bottom-left inside graph container */
 .multifile-logo {
     position: absolute;
-    bottom: 40px;            /* Distance from bottom */
-    left: 50px;              /* Distance from left */
+    bottom: 34px;
+    left: 36px;
     width: 45px;             /* Logo width */
     height: auto;            /* Maintain aspect ratio */
     z-index: 10;             /* Ensure logo appears above graph */
@@ -2137,51 +2137,54 @@ input:focus,
 /* Hybrid Layout for Graph Panels (Top Data + Right Settings) */
 
 .multifile-top-controls {
-    background: #f8f9fa;
-    border-bottom: 1px solid #e0e0e0;
-    padding: 16px 16px 8px 16px;
+    background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+    border-bottom: 1px solid #e2e8f0;
+    padding: 18px 20px 16px 20px;
     flex-shrink: 0;
+    display: grid;
+    gap: 14px;
 }
 
 .multifile-main-content {
-    display: flex;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(320px, 390px);
     align-items: stretch;
     min-height: 500px;
-    /* Base height */
     background: #ffffff;
 }
 
 .multifile-graph-area {
-    flex: 1;
-    position: relative;      /* For absolute positioning of logo */
     display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 0;            /* Allow flex to shrink below content size */
-    padding: 10px;
-    overflow: auto;          /* Add scroll if graph is larger than container */
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    min-width: 0;
+    padding: 18px 20px 20px 20px;
+    overflow: hidden;
+}
+
+.multifile-plot-shell {
+    position: relative;
+    width: 100%;
+    max-width: 960px;
+    margin: 0 auto;
 }
 
 .multifile-settings-sidebar {
-    width: 650px;
-    max-width: 650px;
-    min-width: 400px;
-    flex-shrink: 1;
-    flex-grow: 0;
-    border-left: 1px solid #e0e0e0;
-    background: #fafbfc;
-    padding: 16px;
+    width: 100%;
+    min-width: 0;
+    border-left: 1px solid #e2e8f0;
+    background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
+    padding: 18px;
     overflow-y: auto;
-    max-height: 800px;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    align-content: start;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-content: stretch;
 }
 
 .multifile-settings-header {
-    grid-column: 1 / -1;
     margin: 0 0 8px 0;
     font-size: 0.9rem;
     font-weight: 700;
@@ -2192,33 +2195,36 @@ input:focus,
 }
 
 .multifile-setting-section {
-    margin-top: 4px;
+    margin-top: 0;
     break-inside: avoid;
-    /* Prevent split if possible */
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 14px 14px 12px 14px;
+    box-shadow: 0 6px 22px rgba(15, 23, 42, 0.04);
+}
+
+.multifile-analysis-section {
+    padding: 0 20px 20px 20px;
 }
 
 /* Responsive adjustment for Hybrid Layout */
 @media (max-width: 1500px) {
     .multifile-main-content {
-        flex-direction: column;
+        grid-template-columns: 1fr;
         height: auto;
     }
 
     .multifile-graph-area {
-        min-height: 450px;
+        min-height: 420px;
     }
 
     .multifile-settings-sidebar {
         width: 100%;
         min-width: 0;
-        flex-basis: auto;
         border-left: none;
-        border-top: 1px solid #e0e0e0;
+        border-top: 1px solid #e2e8f0;
         max-height: none;
-    }
-
-    .multifile-settings-grid {
-        grid-template-columns: 1fr 1fr;
     }
 }
 
