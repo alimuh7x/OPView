@@ -6,7 +6,7 @@ Extracted Phase 17.
 """
 
 from pathlib import Path
-from dash import Output, Input, State, html, ALL, MATCH, ctx
+from dash import Output, Input, State, html, ALL, MATCH, ctx, no_update
 from dash.exceptions import PreventUpdate
 
 from .base import BaseCallbackManager
@@ -96,6 +96,8 @@ class GraphsCallbackManager(BaseCallbackManager):
                 'show_roots_intercepts': False,
                 'line_range_min': 0.0,
                 'line_range_max': 1.0,
+                'pasted_point_mode': 'line_only',
+                'pasted_marker_count': 25,
             }
 
             # Build all panels (both existing and new)
@@ -123,6 +125,10 @@ class GraphsCallbackManager(BaseCallbackManager):
             Input({'type': 'multifile-show-roots-intercepts', 'panel': ALL}, 'value'),
             Input({'type': 'multifile-line-range-min', 'panel': ALL}, 'value'),
             Input({'type': 'multifile-line-range-max', 'panel': ALL}, 'value'),
+            Input({'type': 'multifile-pasted-point-mode', 'panel': ALL}, 'value'),
+            Input({'type': 'multifile-pasted-marker-count', 'panel': ALL}, 'value'),
+            Input({'type': 'multifile-legend-position', 'panel': ALL}, 'value'),
+            Input({'type': 'multifile-display-options', 'panel': ALL}, 'value'),
             State({'type': 'multifile-file-selector', 'panel': ALL}, 'id'),
             State({'type': 'multifile-pasted-data', 'panel': ALL}, 'id'),
             State({'type': 'multifile-column-selector', 'panel': ALL, 'file': ALL}, 'id'),
@@ -137,6 +143,10 @@ class GraphsCallbackManager(BaseCallbackManager):
             State({'type': 'multifile-show-roots-intercepts', 'panel': ALL}, 'id'),
             State({'type': 'multifile-line-range-min', 'panel': ALL}, 'id'),
             State({'type': 'multifile-line-range-max', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-pasted-point-mode', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-pasted-marker-count', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-legend-position', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-display-options', 'panel': ALL}, 'id'),
             State({'type': 'multifile-y-axis-title', 'panel': ALL}, 'value'),
             State({'type': 'multifile-y-axis-title', 'panel': ALL}, 'id'),
             State({'type': 'multifile-yaxis2-title', 'panel': ALL}, 'value'),
@@ -150,6 +160,7 @@ class GraphsCallbackManager(BaseCallbackManager):
         )
         def update_multifile_files(all_file_selections, all_pasted_data, all_column_selections, all_yaxis_values, all_legend_values,
                                    all_extend_values, all_show_intersections, all_show_roots, all_line_range_mins, all_line_range_maxs,
+                                   all_pasted_point_modes, all_pasted_marker_counts, all_legend_positions, all_display_options,
                                    all_file_ids, all_pasted_ids, all_column_ids, all_yaxis_ids, all_legend_ids,
                                    all_x_axis_values, all_x_axis_ids,
                                    all_x_axis_titles, all_x_axis_title_ids,
@@ -158,6 +169,10 @@ class GraphsCallbackManager(BaseCallbackManager):
                                    all_show_roots_ids,
                                    all_line_range_min_ids,
                                    all_line_range_max_ids,
+                                   all_pasted_point_mode_ids,
+                                   all_pasted_marker_count_ids,
+                                   all_legend_position_ids,
+                                   all_display_option_ids,
                                    all_y_axis_titles, all_y_axis_title_ids,
                                    all_yaxis2_titles, all_yaxis2_title_ids,
                                    all_yaxis1_units, all_yaxis2_units, all_yaxis_units_ids,
@@ -167,6 +182,16 @@ class GraphsCallbackManager(BaseCallbackManager):
 
             if panels_state is None:
                 raise PreventUpdate
+
+            triggered = ctx.triggered_id
+            rebuild_trigger_types = {
+                'multifile-file-selector',
+                'multifile-column-selector',
+            }
+            preserve_children = not (
+                isinstance(triggered, dict) and
+                triggered.get('type') in rebuild_trigger_types
+            )
 
             # Update file selections
             for panel_id_dict, selected_files in zip(all_file_ids, all_file_selections):
@@ -272,6 +297,31 @@ class GraphsCallbackManager(BaseCallbackManager):
                     except (TypeError, ValueError):
                         pass
 
+            for mode_val, mode_id in zip(all_pasted_point_modes, all_pasted_point_mode_ids):
+                panel_id = mode_id['panel']
+                if panel_id in panels_state and mode_val is not None:
+                    panels_state[panel_id]['pasted_point_mode'] = mode_val
+
+            for count_val, count_id in zip(all_pasted_marker_counts, all_pasted_marker_count_ids):
+                panel_id = count_id['panel']
+                if panel_id in panels_state and count_val is not None:
+                    try:
+                        panels_state[panel_id]['pasted_marker_count'] = max(2, int(count_val))
+                    except (TypeError, ValueError):
+                        pass
+
+            for legend_pos, legend_id in zip(all_legend_positions, all_legend_position_ids):
+                panel_id = legend_id['panel']
+                if panel_id in panels_state and legend_pos is not None:
+                    panels_state[panel_id]['legend_position'] = legend_pos
+
+            for options, display_id in zip(all_display_options, all_display_option_ids):
+                panel_id = display_id['panel']
+                if panel_id in panels_state:
+                    opts = options or []
+                    panels_state[panel_id]['show_legend'] = 'legend' in opts
+                    panels_state[panel_id]['show_grid'] = 'grid' in opts
+
             # Preserve Y-axis titles
             for y_title_val, y_title_id in zip(all_y_axis_titles, all_y_axis_title_ids):
                 panel_id = y_title_id['panel']
@@ -293,6 +343,10 @@ class GraphsCallbackManager(BaseCallbackManager):
                         panels_state[panel_id]['yaxis1_units'] = yaxis1_val
                     if yaxis2_val is not None:
                         panels_state[panel_id]['yaxis2_units'] = yaxis2_val
+
+            # Rebuild all panels only when the control layout itself needs updating.
+            if preserve_children:
+                return panels_state, no_update
 
             # Rebuild all panels
             available_files = get_textdata_files(loaded_projects)
@@ -402,6 +456,8 @@ class GraphsCallbackManager(BaseCallbackManager):
                 panel_state.get('show_roots_intercepts', False),
                 panel_state.get('line_range_min'),
                 panel_state.get('line_range_max'),
+                panel_state.get('pasted_point_mode', 'line_only'),
+                panel_state.get('pasted_marker_count', 25),
             )
             resolved_min, resolved_max = resolved_range
             return figure, analysis, resolved_min, resolved_max

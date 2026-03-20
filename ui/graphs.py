@@ -364,6 +364,8 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
             'show_roots_intercepts': False,
             'line_range_min': 0.0,
             'line_range_max': 1.0,
+            'pasted_point_mode': 'line_only',
+            'pasted_marker_count': 25,
         }
 
     # Set default x_axis_column to first column of first file if not set
@@ -452,6 +454,8 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
 
     # Panel layout - Two column design: Graph (left) | Controls (right)
     # Panel layout - Hybrid Design (Top Data, Right Settings)
+    is_file_mode = source_mode == 'file'
+
     return html.Div([
         # Header with close button
         html.Div([
@@ -459,7 +463,7 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
                 html.Div([
                     html.H3(f"Graph Panel {panel_num}", className='dataset-title', style={'marginBottom': '4px'}),
                     html.Div(
-                        "Text File Mode" if source_mode == 'file' else "Data Mode",
+                        "Data Mode",
                         style={
                             'display': 'inline-block',
                             'padding': '4px 10px',
@@ -468,10 +472,10 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
                             'fontWeight': '700',
                             'letterSpacing': '0.04em',
                             'textTransform': 'uppercase',
-                            'background': '#e0f2fe' if source_mode == 'file' else '#dcfce7',
+                            'background': '#dcfce7',
                             'color': '#0f172a',
                         }
-                    ),
+                    ) if not is_file_mode else html.Div(),
                 ]),
             ], style={'flex': '1'}),
             html.Button(
@@ -494,14 +498,10 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
         html.Div([
             # Files Selection
             html.Div([
-                html.Label("Text Files:", className='multifile-label'),
+                html.Label("Data Sources:", className='multifile-label'),
                 file_selector,
-                html.Div(
-                    "Use this panel when you want to add or compare columns from TextData files.",
-                    style={'fontSize': '12px', 'color': '#64748b', 'marginTop': '6px'}
-                ),
             ], style={
-                'marginBottom': '0',
+                'marginBottom': '12px',
                 'display': 'block' if source_mode == 'file' else 'none'
             }),
 
@@ -535,15 +535,20 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
                     style={'fontSize': '12px', 'color': '#64748b'}
                 ),
             ], style={
-                'marginBottom': '0',
+                'marginBottom': '12px',
                 'display': 'block' if source_mode == 'data' else 'none'
             }),
 
             # Columns Selection (Grid)
             html.Div([
                 html.Div(file_sections, className='multifile-columns-grid'),
-            ], style={'display': 'block' if file_sections and source_mode == 'file' else 'none', 'marginBottom': '0'}),
-        ], className='multifile-top-controls'),
+            ], style={'display': 'block' if file_sections and source_mode == 'file' else 'none', 'marginBottom': '4px'}),
+        ], className='multifile-top-controls', style={
+            'background': '#f8f9fa',
+            'borderBottom': '1px solid #e0e0e0',
+            'padding': '16px 16px 8px 16px',
+            'flexShrink': '0',
+        } if is_file_mode else None),
 
         # MAIN CONTENT AREA (Split View)
         html.Div([
@@ -558,10 +563,24 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
                     dcc.Graph(
                         id={'type': 'multifile-plot', 'panel': panel_id},
                         config={'displayModeBar': True, 'displaylogo': False},
-                        style={'height': '700px', 'width': '100%'}
+                        style={'height': '700px', 'width': '1000px'}
                     ),
-                ], className='multifile-plot-shell'),
-            ], className='multifile-graph-area'),
+                ], className='multifile-plot-shell', style={
+                    'position': 'relative',
+                    'width': '1000px',
+                    'maxWidth': '1000px',
+                    'margin': '0',
+                }),
+            ], className='multifile-graph-area', style={
+                'flex': '1',
+                'position': 'relative',
+                'display': 'flex',
+                'alignItems': 'center',
+                'justifyContent': 'center',
+                'minWidth': '0',
+                'padding': '10px',
+                'overflow': 'auto',
+            }),
 
             # RIGHT: SETTINGS SIDEBAR
             html.Div([
@@ -650,7 +669,33 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
                             ], style={'flex': '1'}),
                         ], style={'display': 'flex', 'gap': '10px'}),
                      ], className='multifile-setting-group')
-                ], className='multifile-setting-section'),
+                ], className='multifile-setting-section', style={'display': 'block' if source_mode == 'data' else 'none'}),
+
+                html.Div([
+                     html.Label("Pasted Data Points", className='multifile-sublabel', style={'fontSize': '15px'}),
+                     html.Div([
+                        dcc.Dropdown(
+                            id={'type': 'multifile-pasted-point-mode', 'panel': panel_id},
+                            options=[
+                                {'label': 'Line Only', 'value': 'line_only'},
+                                {'label': 'All Points', 'value': 'all_points'},
+                                {'label': 'Sampled Points', 'value': 'sampled_points'},
+                            ],
+                            value=panel_state.get('pasted_point_mode', 'line_only'),
+                            clearable=False,
+                            style={'fontSize': '14px', 'marginBottom': '8px'}
+                        ),
+                        html.Label("Marker Count", className='multifile-mini-label', style={'fontSize': '14px'}),
+                        dcc.Input(
+                            id={'type': 'multifile-pasted-marker-count', 'panel': panel_id},
+                            type='number',
+                            value=panel_state.get('pasted_marker_count', 25),
+                            debounce=True,
+                            style={'width': '100%', 'padding': '5px', 'fontSize': '14px'}
+                        ),
+                        html.Div("Use Line Only for clean plots, or Sampled Points to show just a subset of markers.", style={'fontSize': '12px', 'color': '#64748b', 'marginTop': '8px', 'lineHeight': '1.45'}),
+                     ], className='multifile-setting-group')
+                ], className='multifile-setting-section', style={'display': 'block' if source_mode == 'data' else 'none'}),
 
                 # Display Options
                 html.Div([
@@ -756,12 +801,33 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
                          style={'marginBottom': '12px'}
                      ),
                 ], className='multifile-setting-section'),
-
-            ], className='multifile-settings-sidebar'),
-        ], className='multifile-main-content'),
+            ], className='multifile-settings-sidebar', style={
+                'width': '650px',
+                'maxWidth': '650px',
+                'minWidth': '400px',
+                'flexShrink': '1',
+                'flexGrow': '0',
+                'borderLeft': '1px solid #e0e0e0',
+                'background': '#fafbfc',
+                'padding': '16px',
+                'overflowY': 'auto',
+                'maxHeight': '800px',
+                'display': 'grid',
+                'gridTemplateColumns': '1fr 1fr',
+                'gap': '16px',
+                'alignContent': 'start',
+            }),
+        ], className='multifile-main-content', style={
+            'display': 'flex',
+            'flexDirection': 'row',
+            'alignItems': 'stretch',
+            'minHeight': '500px',
+            'background': '#ffffff',
+        }),
         html.Div(
             id={'type': 'multifile-analysis', 'panel': panel_id},
-            className='multifile-analysis-section'
+            className='multifile-analysis-section',
+            style={'display': 'none'} if is_file_mode else None,
         ),
 
     ], className='dataset-block multifile-panel', id=f'multifile-{panel_id}')
@@ -784,7 +850,9 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
                           show_intersections: bool = False,
                           show_roots_intercepts: bool = False,
                           line_range_min: float | None = None,
-                          line_range_max: float | None = None) -> tuple[go.Figure, html.Div, tuple[float | None, float | None]]:
+                          line_range_max: float | None = None,
+                          pasted_point_mode: str = 'line_only',
+                          pasted_marker_count: int = 25) -> tuple[go.Figure, html.Div, tuple[float | None, float | None]]:
     """Build Plotly figure combining multiple files with per-yaxis unit settings.
 
     Args:
@@ -1048,6 +1116,13 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
                 return current_range
             root_x = -intercept / slope
         return (min(left, root_x), max(right, root_x))
+
+    def _sample_marker_indices(length: int, count: int) -> np.ndarray:
+        if length <= 0:
+            return np.array([], dtype=int)
+        if count >= length:
+            return np.arange(length, dtype=int)
+        return np.unique(np.linspace(0, length - 1, count, dtype=int))
 
     def _build_pasted_series(pasted_text: str) -> tuple[list[dict], list[str]]:
         if not (pasted_text or '').strip():
@@ -1414,10 +1489,9 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
         fig.add_trace(go.Scatter(
             x=trace_x,
             y=trace_y,
-            mode=mode,
+            mode='lines' if mode != 'lines+markers' else 'lines',
             name=series['name'],
             line=dict(width=3.0, color=color),
-            marker=dict(size=8, color=color),
             yaxis='y',
             customdata=np.array([[idx + 1] for idx in range(len(trace_x))], dtype=object),
             hovertemplate=(
@@ -1427,6 +1501,30 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
                 "Point=%{customdata[0]}<extra></extra>"
             ),
         ))
+        if mode == 'lines+markers':
+            marker_indices = np.array([], dtype=int)
+            if pasted_point_mode == 'all_points':
+                marker_indices = np.arange(len(trace_x), dtype=int)
+            elif pasted_point_mode == 'sampled_points':
+                marker_indices = _sample_marker_indices(len(trace_x), max(2, int(pasted_marker_count)))
+
+            if marker_indices.size:
+                fig.add_trace(go.Scatter(
+                    x=trace_x[marker_indices],
+                    y=trace_y[marker_indices],
+                    mode='markers',
+                    name=f"{series['name']} points",
+                    marker=dict(size=7, color=color),
+                    yaxis='y',
+                    showlegend=False,
+                    customdata=np.array([[int(idx) + 1] for idx in marker_indices], dtype=object),
+                    hovertemplate=(
+                        "Point<br>"
+                        f"{x_axis_title}=%{{x:.6g}}<br>"
+                        f"{y_axis_title}=%{{y:.6g}}<br>"
+                        "Index=%{customdata[0]}<extra></extra>"
+                    ),
+                ))
         plotted_x_values.extend(np.asarray(trace_x, dtype=float).tolist())
         plotted_y_values.extend(np.asarray(trace_y, dtype=float).tolist())
         analysis_cards.append(_series_summary(series['name'], series['x'], series['y']))
