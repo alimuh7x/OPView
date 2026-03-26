@@ -7,6 +7,8 @@ Extracted from OPView.py Phase 11 - provides the main application layout.
 from dash import html, dcc
 import dash_mantine_components as dmc
 from config import TAB_CONFIGS
+from ui.calculation_notebook import build_calculation_notebook, default_notebook_state
+from ui.initializations_explorer import build_initializations_explorer
 
 
 def build_app_layout(
@@ -41,6 +43,7 @@ def build_app_layout(
     import time
     _layout_start = time.time()
     print(f"    [layout] Starting layout build...")
+    initial_notebook_state = default_notebook_state()
 
     result = dmc.MantineProvider(
         html.Div(
@@ -70,6 +73,7 @@ def build_app_layout(
                 dcc.Store(id='projects-store', data={'names': [], 'active': None, 'files_by_project': {}}, storage_type='session'),
                 dcc.Store(id='graphs-multifile-panels', data={}),  # Graph panels state (memory - resets on refresh)
                 dcc.Store(id='formula-panels', data={}),  # Formula panels state (memory - resets on refresh)
+                dcc.Store(id='notebook-state', data=initial_notebook_state),
                 dcc.Location(id='url', refresh=False),
                 html.Div([
                     html.Div([
@@ -128,6 +132,18 @@ def build_app_layout(
                             dcc.Tab(
                                 label='Formula Plot',
                                 value='formula-plot',
+                                className='vtk-tab',
+                                selected_className='vtk-tab--selected'
+                            ),
+                            dcc.Tab(
+                                label='Calculation Notebook',
+                                value='calculation-notebook',
+                                className='vtk-tab',
+                                selected_className='vtk-tab--selected'
+                            ),
+                            dcc.Tab(
+                                label='Initializations Explorer',
+                                value='initializations-explorer',
                                 className='vtk-tab',
                                 selected_className='vtk-tab--selected'
                             )
@@ -295,6 +311,16 @@ def build_app_layout(
                                 ], style={'display': 'flex', 'gap': '10px', 'flexWrap': 'wrap'}),
                                 html.Div(id='formula-panels-container', className='multifile-panels-container'),
                             ],
+                            style={'display': 'none'}
+                        ),
+                        html.Div(
+                            id='notebook-content',
+                            children=[build_calculation_notebook(initial_notebook_state)],
+                            style={'display': 'none'}
+                        ),
+                        html.Div(
+                            id='initializations-content',
+                            children=[build_initializations_explorer()],
                             style={'display': 'none'}
                         ),
                     ], className='main-panel')

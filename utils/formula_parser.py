@@ -1,5 +1,5 @@
 """
-Safe formula parsing utilities for interactive plotting.
+Safe formula parsing utilities for 1D and 2D formula plotting.
 """
 
 from __future__ import annotations
@@ -10,16 +10,45 @@ from typing import Dict, Iterable
 import numpy as np
 
 
+def _np_min(*args):
+    """Vectorized min that accepts multiple arguments."""
+    if not args:
+        raise ValueError("min requires at least one argument")
+    arrays = [np.asarray(arg) for arg in args]
+    result = arrays[0]
+    for arr in arrays[1:]:
+        result = np.minimum(result, arr)
+    return result
+
+
+def _np_max(*args):
+    """Vectorized max that accepts multiple arguments."""
+    if not args:
+        raise ValueError("max requires at least one argument")
+    arrays = [np.asarray(arg) for arg in args]
+    result = arrays[0]
+    for arr in arrays[1:]:
+        result = np.maximum(result, arr)
+    return result
+
+
 ALLOWED_FUNCTIONS = {
     "abs": np.abs,
+    "acos": np.arccos,
     "arccos": np.arccos,
+    "asin": np.arcsin,
     "arcsin": np.arcsin,
+    "atan": np.arctan,
     "arctan": np.arctan,
+    "atan2": np.arctan2,
     "cos": np.cos,
     "cosh": np.cosh,
     "exp": np.exp,
+    "hypot": np.hypot,
     "log": np.log,
     "log10": np.log10,
+    "max": _np_max,
+    "min": _np_min,
     "sin": np.sin,
     "sinh": np.sinh,
     "sqrt": np.sqrt,
@@ -63,9 +92,7 @@ class _FormulaValidator(ast.NodeVisitor):
 
     def generic_visit(self, node):
         if not isinstance(node, ALLOWED_NODES):
-            raise FormulaValidationError(
-                f"Unsupported syntax: {type(node).__name__}"
-            )
+            raise FormulaValidationError(f"Unsupported syntax: {type(node).__name__}")
         super().generic_visit(node)
 
     def visit_Name(self, node: ast.Name):
@@ -81,12 +108,8 @@ class _FormulaValidator(ast.NodeVisitor):
             raise FormulaValidationError("Keyword arguments are not supported")
 
 
-def extract_formula_variables(expression: str) -> list[str]:
-    """
-    Extract user-defined variable names from a formula.
-
-    Returns variable names excluding ``x``, built-in constants, and allowed functions.
-    """
+def extract_formula_variables(expression: str, coordinate_names: Iterable[str] = ("x",)) -> list[str]:
+    """Extract user-defined variable names from a formula."""
     if not expression or not str(expression).strip():
         return []
 
@@ -94,33 +117,22 @@ def extract_formula_variables(expression: str) -> list[str]:
         parsed = ast.parse(expression, mode="eval")
     except SyntaxError:
         return []
+
+    excluded = set(coordinate_names) | set(ALLOWED_FUNCTIONS.keys()) | set(ALLOWED_CONSTANTS.keys())
     names = set()
-
     for node in ast.walk(parsed):
-        if isinstance(node, ast.Name):
-            if node.id in {"x", *ALLOWED_FUNCTIONS.keys(), *ALLOWED_CONSTANTS.keys()}:
-                continue
+        if isinstance(node, ast.Name) and node.id not in excluded:
             names.add(node.id)
-
     return sorted(names)
 
 
 def evaluate_formula(expression: str, x_values, extra_context: Dict[str, float] | None = None):
-    """
-    Evaluate a formula safely against a NumPy x array.
-
-    Args:
-        expression: Formula such as ``sin(x)`` or ``x**2 + 1``
-        x_values: NumPy array of x values
-        extra_context: Optional extra scalar values available in the expression
-
-    Returns:
-        NumPy array of y values
-    """
+    """Evaluate a 1D formula safely against a NumPy x array."""
     if not expression or not str(expression).strip():
         raise FormulaValidationError("Please enter a formula")
 
-    context = {"x": np.asarray(x_values)}
+    x_array = np.asarray(x_values)
+    context = {"x": x_array}
     context.update(ALLOWED_FUNCTIONS)
     context.update(ALLOWED_CONSTANTS)
     if extra_context:
@@ -128,15 +140,39 @@ def evaluate_formula(expression: str, x_values, extra_context: Dict[str, float] 
 
     parsed = ast.parse(expression, mode="eval")
     _FormulaValidator(context.keys()).visit(parsed)
-
     compiled = compile(parsed, "<formula>", "eval")
-    result = eval(compiled, {"__builtins__": {}}, context)
-    result = np.asarray(result)
+    result = np.asarray(eval(compiled, {"__builtins__": {}}, context))
 
     if result.ndim == 0:
-        result = np.full_like(context["x"], float(result), dtype=float)
-
-    if result.shape != context["x"].shape:
+        result = np.full_like(x_array, float(result), dtype=float)
+    if result.shape != x_array.shape:
         raise FormulaValidationError("Formula must return one y value for each x")
+    return result
 
+
+def evaluate_formula_2d(expression: str, x_grid, y_grid, extra_context: Dict[str, float] | None = None):
+    """Evaluate a 2D formula safely against NumPy x/y grids."""
+    if not expression or not str(expression).strip():
+        raise FormulaValidationError("Please enter a formula")
+
+    x_array = np.asarray(x_grid)
+    y_array = np.asarray(y_grid)
+    if x_array.shape != y_array.shape:
+        raise FormulaValidationError("x and y grids must have the same shape")
+
+    context = {"x": x_array, "y": y_array}
+    context.update(ALLOWED_FUNCTIONS)
+    context.update(ALLOWED_CONSTANTS)
+    if extra_context:
+        context.update(extra_context)
+
+    parsed = ast.parse(expression, mode="eval")
+    _FormulaValidator(context.keys()).visit(parsed)
+    compiled = compile(parsed, "<formula2d>", "eval")
+    result = np.asarray(eval(compiled, {"__builtins__": {}}, context))
+
+    if result.ndim == 0:
+        result = np.full_like(x_array, float(result), dtype=float)
+    if result.shape != x_array.shape:
+        raise FormulaValidationError("Formula must return one z value for each (x, y)")
     return result

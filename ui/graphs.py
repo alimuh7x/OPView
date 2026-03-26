@@ -4,8 +4,10 @@ Graphs tab UI builder for TextData file plotting.
 Extracted Phase 17 - dedicated tab for text file visualization.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from dash import html, dcc
 import plotly.graph_objects as go
 import numpy as np

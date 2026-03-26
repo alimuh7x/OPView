@@ -8,7 +8,9 @@ from .tab_manager import TabCallbackManager
 from .project_manager import ProjectCallbackManager
 from .data_manager import DataCallbackManager
 from .graphs_manager import GraphsCallbackManager
-from .formula_manager_v2 import FormulaCallbackManager
+from .formula_manager import FormulaCallbackManager
+from .notebook_manager import NotebookCallbackManager
+from .initializations_explorer_manager import InitializationsExplorerCallbackManager
 
 
 class CallbackManager:
@@ -45,6 +47,8 @@ class CallbackManager:
         self.data_manager_callbacks = DataCallbackManager(app, context, data_manager)
         self.graphs_manager = GraphsCallbackManager(app, context)
         self.formula_manager = FormulaCallbackManager(app, context)
+        self.notebook_manager = NotebookCallbackManager(app, context)
+        self.initializations_explorer_manager = InitializationsExplorerCallbackManager(app, context)
 
     def register_all(self):
         """
@@ -74,6 +78,12 @@ class CallbackManager:
         self.formula_manager.register()
         print(f"  ✓ Formula callbacks: {self.formula_manager.count()}")
 
+        self.notebook_manager.register()
+        print(f"  ✓ Notebook callbacks: {self.notebook_manager.count()}")
+
+        self.initializations_explorer_manager.register()
+        print(f"  ✓ Initializations Explorer callbacks: {self.initializations_explorer_manager.count()}")
+
         # Note: Comparison callbacks are already registered by ComparisonManager
         if self.comparison_manager:
             print(f"  ✓ Comparison callbacks: registered via ComparisonManager")
@@ -83,7 +93,9 @@ class CallbackManager:
             self.project_manager.count() +
             self.data_manager_callbacks.count() +
             self.graphs_manager.count() +
-            self.formula_manager.count()
+            self.formula_manager.count() +
+            self.notebook_manager.count() +
+            self.initializations_explorer_manager.count()
         )
         print(f"[CallbackManager] Total callbacks registered: {total}")
 
@@ -100,11 +112,15 @@ class CallbackManager:
             'data': self.data_manager_callbacks.count(),
             'graphs': self.graphs_manager.count(),
             'formula': self.formula_manager.count(),
+            'notebook': self.notebook_manager.count(),
+            'initializations_explorer': self.initializations_explorer_manager.count(),
             'total': (
                 self.tab_manager.count() +
                 self.project_manager.count() +
                 self.data_manager_callbacks.count() +
                 self.graphs_manager.count() +
-                self.formula_manager.count()
+                self.formula_manager.count() +
+                self.notebook_manager.count() +
+                self.initializations_explorer_manager.count()
             )
         }

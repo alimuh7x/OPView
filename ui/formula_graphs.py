@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 from scipy.integrate import cumulative_trapezoid, trapezoid
 from scipy.interpolate import CubicSpline
 
-from utils.formula_parser_v2 import FormulaValidationError, evaluate_formula, evaluate_formula_2d, extract_formula_variables
+from utils.formula_parser import FormulaValidationError, evaluate_formula, evaluate_formula_2d, extract_formula_variables
 
 
 FORMULA_EXAMPLES = [

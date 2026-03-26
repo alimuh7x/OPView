@@ -281,6 +281,8 @@ class TabCallbackManager(BaseCallbackManager):
             Output('comparison-content', 'style'),
             Output('graphs-content', 'style'),
             Output('formula-content', 'style'),
+            Output('notebook-content', 'style'),
+            Output('initializations-content', 'style'),
             Input('active-tab', 'data'),
             Input('open-tabs', 'data'),
             Input('comparison-active-tab', 'data'),
@@ -318,6 +320,8 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},         # comparison-content style - HIDE comparison
                     {'display': 'block'},        # graphs-content style - SHOW graphs
                     {'display': 'none'},         # formula-content style - HIDE formula
+                    {'display': 'none'},         # notebook-content style - HIDE notebook
+                    {'display': 'none'},         # initializations-content style - HIDE explorer
                 )
 
             # === HANDLE FORMULA PLOT TAB ===
@@ -329,6 +333,34 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},         # comparison-content style - HIDE comparison
                     {'display': 'none'},         # graphs-content style - HIDE graphs
                     {'display': 'block'},        # formula-content style - SHOW formula
+                    {'display': 'none'},         # notebook-content style - HIDE notebook
+                    {'display': 'none'},         # initializations-content style - HIDE explorer
+                )
+
+            # === HANDLE CALCULATION NOTEBOOK TAB ===
+            if active_folder == 'calculation-notebook':
+                return (
+                    no_update,                   # tab-content children
+                    {'display': 'none'},         # tab-content style - HIDE VTK content
+                    no_update,                   # comparison-content children - don't update
+                    {'display': 'none'},         # comparison-content style - HIDE comparison
+                    {'display': 'none'},         # graphs-content style - HIDE graphs
+                    {'display': 'none'},         # formula-content style - HIDE formula
+                    {'display': 'block'},        # notebook-content style - SHOW notebook
+                    {'display': 'none'},         # initializations-content style - HIDE explorer
+                )
+
+            # === HANDLE INITIALIZATIONS EXPLORER TAB ===
+            if active_folder == 'initializations-explorer':
+                return (
+                    no_update,
+                    {'display': 'none'},
+                    no_update,
+                    {'display': 'none'},
+                    {'display': 'none'},
+                    {'display': 'none'},
+                    {'display': 'none'},
+                    {'display': 'block'},
                 )
 
             # === HANDLE COMPARISON TAB ===
@@ -342,6 +374,8 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'block'},        # comparison-content - SHOW
                         {'display': 'none'},         # graphs-content - HIDE
                         {'display': 'none'},         # formula-content - HIDE
+                        {'display': 'none'},         # notebook-content - HIDE
+                        {'display': 'none'},         # initializations-content - HIDE
                     )
 
                 # Multi View has its own panels; start empty until user adds one.
@@ -355,7 +389,8 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'block'},        # comparison-content - SHOW placeholder
                         {'display': 'none'},         # graphs-content - HIDE
                         {'display': 'none'},         # formula-content - HIDE
-                        {'display': 'none'},         # geometry-content - HIDE
+                        {'display': 'none'},         # notebook-content - HIDE
+                        {'display': 'none'},         # initializations-content - HIDE
                     )
 
                 # Check if we need to rebuild comparison panels
@@ -412,7 +447,8 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'block'},        # comparison-content - SHOW
                         {'display': 'none'},         # graphs-content - HIDE
                         {'display': 'none'},         # formula-content - HIDE
-                        {'display': 'none'},         # geometry-content - HIDE
+                        {'display': 'none'},         # notebook-content - HIDE
+                        {'display': 'none'},         # initializations-content - HIDE
                     )
                 else:
                     # Pure visibility change - let clientside handle it
@@ -430,6 +466,8 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},          # comparison-content - HIDE
                     {'display': 'none'},          # graphs-content - HIDE
                     {'display': 'none'},          # formula-content - HIDE
+                    {'display': 'none'},          # notebook-content - HIDE
+                    {'display': 'none'},          # initializations-content - HIDE
                 )
 
             # Build VTK tab content for all open panels and hide inactive ones.
@@ -461,6 +499,8 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'none'},         # comparison-content - HIDE
                         {'display': 'none'},         # graphs-content - HIDE
                         {'display': 'none'},         # formula-content - HIDE
+                        {'display': 'none'},         # notebook-content - HIDE
+                        {'display': 'none'},         # initializations-content - HIDE
                     )
                 else:
                     # Structure didn't change, just visibility - let clientside handle it
@@ -840,6 +880,12 @@ class TabCallbackManager(BaseCallbackManager):
                 return {'display': 'none'}, {'display': 'none'}, {'display': 'block'}
             if active_folder == 'formula-plot':
                 # On Formula Plot tab: hide sidebar selectors, panel controls live in the content area.
+                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
+            if active_folder == 'calculation-notebook':
+                # On Calculation Notebook tab: hide sidebar selectors, controls live in the content area.
+                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
+            if active_folder == 'initializations-explorer':
+                # On Initializations Explorer tab: hide sidebar selectors, controls live in the content area.
                 return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
             if active_folder == 'comparison':
                 # On Multi View: show comparison panel selector, hide Single View selector.

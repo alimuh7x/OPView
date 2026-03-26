@@ -92,6 +92,15 @@ from .formula_graphs import (
     build_formula_panel,
     build_formula_figure,
 )
+from .calculation_notebook import (
+    build_calculation_notebook,
+    default_notebook_state,
+)
+from .initializations_explorer import (
+    build_initializations_explorer,
+    build_quasi_random_figure,
+    default_quasi_random_settings,
+)
 
 # Callback factories
 from .callbacks import (
@@ -171,6 +180,11 @@ __all__ = [
     'build_multifile_figure',
     'build_formula_panel',
     'build_formula_figure',
+    'build_calculation_notebook',
+    'default_notebook_state',
+    'build_initializations_explorer',
+    'build_quasi_random_figure',
+    'default_quasi_random_settings',
     # Callback API
     'create_histogram_callback',
     'create_time_series_callback',
