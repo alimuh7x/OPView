@@ -295,7 +295,12 @@ def _render_payload(data: dict) -> tuple[go.Figure, html.Div, html.Div]:
                 zmin=0,
                 zmax=max(0, len(phase_ids) - 1),
                 colorscale=_discrete_colorscale(colors),
-                colorbar={"title": "Phase", "tickvals": list(range(len(phase_ids))), "ticktext": ticktext},
+                colorbar={
+                    "title": {"text": "Phase", "font": {"size": 18}},
+                    "tickvals": list(range(len(phase_ids))),
+                    "ticktext": ticktext,
+                    "tickfont": {"size": 16},
+                },
                 hovertemplate="x=%{x}, y=%{y}<br>phase=%{z}<extra></extra>",
             )
         )
@@ -419,8 +424,8 @@ def build_initializations_controls(method: str) -> html.Div:
                 style={"marginBottom": "18px"},
             ),
             html.Div("Domain", style=SECTION_TITLE_STYLE),
-            _slider_block("initializations-nx", "Nx", 8, 120, quasi["nx"]),
-            _slider_block("initializations-ny", "Ny", 8, 120, quasi["ny"]),
+            _slider_block("initializations-nx", "Nx", 8, 100, quasi["nx"]),
+            _slider_block("initializations-ny", "Ny", 8, 100, quasi["ny"]),
             html.Div(
                 [
                     html.Div("Origin / Spacing", style=SECTION_TITLE_STYLE),

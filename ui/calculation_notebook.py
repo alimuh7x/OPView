@@ -64,8 +64,12 @@ NOTEBOOK_HELP = [
         "items": ["eye(n)", "zeros(m,n)", "ones(m,n)", "shape(M)"],
     },
     {
-        "title": "Consts & Units",
-        "items": ["pi", "e", "nm", "um", "mm", "cm", "m", "Pa", "kPa", "MPa", "GPa", "s", "min", "h"],
+        "title": "Consts",
+        "items": ["pi", "e"],
+    },
+    {
+        "title": "Units",
+        "items": ["nm", "um", "mm", "cm", "m", "Pa", "kPa", "MPa", "GPa", "s", "min", "h"],
         "note": "Examples: 10*mm, 210*GPa, 5*min",
     },
     {
@@ -74,6 +78,8 @@ NOTEBOOK_HELP = [
         "note": "Inline comments are ignored during evaluation.",
     },
 ]
+
+GRID_HELP_TITLES = {"Trig", "Math", "Vectors", "Matrices", "Builders", "Consts", "Units"}
 
 NOTEBOOK_EXAMPLES = [
     "v = [1, 2, 3]",
@@ -234,12 +240,36 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                                                     "textTransform": "uppercase",
                                                     "letterSpacing": "0.04em",
                                                     "color": "#667085",
-                                                    "marginBottom": "4px",
+                                                    "marginBottom": "8px",
                                                 },
                                             ),
                                             html.Div(
-                                                [html.Div(item) for item in section["items"]],
+                                                [
+                                                    html.Div(
+                                                        item,
+                                                        style={
+                                                            "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+                                                            "fontSize": "12px",
+                                                            "color": "#102a43",
+                                                            "background": "rgba(255,255,255,0.96)",
+                                                            "border": "1px solid rgba(226,232,240,0.95)",
+                                                            "borderRadius": "999px",
+                                                            "padding": "7px 12px",
+                                                            "textAlign": "center",
+                                                            "boxShadow": "0 1px 2px rgba(15, 23, 42, 0.04)",
+                                                        },
+                                                    )
+                                                    for item in section["items"]
+                                                ]
+                                                if section["title"] in GRID_HELP_TITLES
+                                                else [html.Div(item) for item in section["items"]],
                                                 style={
+                                                    "display": "grid",
+                                                    "gridTemplateColumns": "repeat(3, minmax(0, 1fr))",
+                                                    "gap": "8px 8px",
+                                                }
+                                                if section["title"] in GRID_HELP_TITLES
+                                                else {
                                                     "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
                                                     "fontSize": "13px",
                                                     "lineHeight": "1.65",
@@ -258,7 +288,7 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                                                     "fontSize": "12px",
                                                     "color": "#667085",
                                                     "lineHeight": "1.45",
-                                                    "marginTop": "5px",
+                                                    "marginTop": "6px",
                                                     "display": "block" if section.get("note") else "none",
                                                 },
                                             ),
