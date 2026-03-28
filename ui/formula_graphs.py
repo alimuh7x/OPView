@@ -129,6 +129,7 @@ def _default_param_state() -> Dict:
         "min": -10.0,
         "max": 10.0,
         "step": 0.1,
+        "use_notebook": False,
     }
 
 
@@ -498,7 +499,12 @@ def _build_formula_rows(panel_id: str, formulas: List[Dict]) -> List[html.Div]:
     return rows
 
 
-def _build_parameter_controls(panel_id: str, params: Dict[str, Dict], id_prefix: str = 'formula-param') -> html.Div:
+def _build_parameter_controls(
+    panel_id: str,
+    params: Dict[str, Dict],
+    id_prefix: str = 'formula-param',
+    notebook_vars: Dict[str, float] | None = None,
+) -> html.Div:
     """Build slider + numeric controls for detected parameters."""
     if not params:
         return html.Div(
@@ -506,9 +512,11 @@ def _build_parameter_controls(panel_id: str, params: Dict[str, Dict], id_prefix:
             style={'fontSize': '13px', 'color': '#666'}
         )
 
+    notebook_vars = notebook_vars or {}
     controls = []
     for name in sorted(params.keys()):
         settings = {**_default_param_state(), **(params.get(name) or {})}
+        use_nb = bool(settings.get('use_notebook', False))
         try:
             settings['min'] = float(settings['min'])
             settings['max'] = float(settings['max'])
@@ -519,16 +527,61 @@ def _build_parameter_controls(panel_id: str, params: Dict[str, Dict], id_prefix:
         if settings['min'] >= settings['max']:
             settings['max'] = settings['min'] + max(settings['step'], 0.1)
         settings['value'] = min(max(settings['value'], settings['min']), settings['max'])
+
+        nb_active = use_nb and name in notebook_vars
+        nb_missing = use_nb and name not in notebook_vars
+        nb_display_value = notebook_vars.get(name, settings['value']) if use_nb else settings['value']
+
+        nb_btn_style = {
+            'padding': '2px 8px',
+            'fontSize': '11px',
+            'fontWeight': '700',
+            'border': '1px solid',
+            'borderRadius': '4px',
+            'cursor': 'pointer',
+            'background': '#0f5132' if nb_active else '#fff3cd' if nb_missing else '#f1f3f5',
+            'color': '#fff' if nb_active else '#856404' if nb_missing else '#495057',
+            'borderColor': '#0f5132' if nb_active else '#ffc107' if nb_missing else '#dee2e6',
+            'marginLeft': '8px',
+        }
+        nb_title = (
+            f"Using notebook variable '{name}' = {nb_display_value:.6g}" if nb_active
+            else f"Variable '{name}' not found in notebook" if nb_missing
+            else "Bind to Calculation Notebook variable"
+        )
+        nb_status = None
+        if nb_active:
+            nb_status = html.Span(
+                f"= {nb_display_value:.6g}",
+                style={'fontSize': '12px', 'color': '#0f5132', 'fontWeight': '600', 'marginLeft': '6px'},
+            )
+        elif nb_missing:
+            nb_status = html.Span(
+                f"'{name}' not in notebook",
+                style={'fontSize': '12px', 'color': '#856404', 'marginLeft': '6px'},
+            )
+
         controls.append(
             html.Div([
-                html.Label(name, className='multifile-mini-label', style={'fontSize': '15px', 'fontWeight': '700'}),
+                html.Div([
+                    html.Label(name, className='multifile-mini-label', style={'fontSize': '15px', 'fontWeight': '700'}),
+                    html.Button(
+                        "NB",
+                        id={'type': f'{id_prefix}-nb-toggle', 'panel': panel_id, 'param': name},
+                        n_clicks=0,
+                        style=nb_btn_style,
+                        title=nb_title,
+                    ),
+                    nb_status,
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '4px'}),
                 dcc.Slider(
                     id={'type': f'{id_prefix}-slider', 'panel': panel_id, 'param': name},
                     min=settings['min'],
                     max=settings['max'],
                     step=settings['step'],
-                    value=settings['value'],
+                    value=nb_display_value if use_nb else settings['value'],
                     tooltip={"placement": "bottom", "always_visible": False},
+                    disabled=use_nb,
                 ),
                 html.Div([
                     html.Div([
@@ -536,9 +589,11 @@ def _build_parameter_controls(panel_id: str, params: Dict[str, Dict], id_prefix:
                         dcc.Input(
                             id={'type': f'{id_prefix}-value', 'panel': panel_id, 'param': name},
                             type='number',
-                            value=settings['value'],
+                            value=nb_display_value if use_nb else settings['value'],
                             debounce=True,
-                            style={'width': '100%', 'padding': '5px', 'fontSize': '13px'}
+                            disabled=use_nb,
+                            style={'width': '100%', 'padding': '5px', 'fontSize': '13px',
+                                   'background': '#f8f9fa' if use_nb else ''}
                         ),
                     ], style={'flex': '1'}),
                     html.Div([
@@ -1049,7 +1104,8 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                     html.Div([
                         html.Div("Parameters", style=SIDEBAR_TITLE_STYLE),
                         html.Div(
-                            _build_parameter_controls(panel_id, detected_params),
+                            _build_parameter_controls(panel_id, detected_params,
+                                                      notebook_vars=state.get('_notebook_vars')),
                             className='multifile-setting-group'
                         )
                     ], className='multifile-setting-section', style=SIDEBAR_CARD_STYLE),
@@ -1348,7 +1404,8 @@ def build_formula_panel_2d(panel_id: str, panel_state: Dict | None = None) -> ht
                     ], className='multifile-setting-section', style=SIDEBAR_CARD_STYLE),
                     html.Div([
                         html.Div("Parameters", style=SIDEBAR_TITLE_STYLE),
-                        _build_parameter_controls(panel_id, detected_params, id_prefix='formula-2d-param'),
+                        _build_parameter_controls(panel_id, detected_params, id_prefix='formula-2d-param',
+                                                  notebook_vars=state.get('_notebook_vars')),
                     ], className='multifile-setting-section', style=SIDEBAR_CARD_STYLE),
                     html.Div(
                         id={'type': 'formula-2d-analysis-details', 'panel': panel_id},
@@ -1395,10 +1452,15 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
         threshold_value = _as_float(panel_state.get('threshold_value'), 0.0) if threshold_enabled else None
         analysis_x0 = _as_float(panel_state.get('analysis_x0', 0.0), 0.0)
         analysis_x0 = min(max(analysis_x0, x_min), x_max)
+        notebook_vars = panel_state.get('_notebook_vars') or {}
         param_values = {
-            name: float((settings or {}).get('value', 1.0))
+            name: float(notebook_vars.get(name, (settings or {}).get('value', 1.0)))
+            if (settings or {}).get('use_notebook') and name in notebook_vars
+            else float((settings or {}).get('value', 1.0))
             for name, settings in params.items()
         }
+        # Notebook variables are available as implicit fallback — explicit params take priority
+        full_param_values = {**notebook_vars, **param_values}
 
         series_results = []
         error_rows = []
@@ -1419,7 +1481,7 @@ def build_formula_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, html.D
                 continue
 
             try:
-                y_values = evaluate_formula(expression, x_values, param_values)
+                y_values = evaluate_formula(expression, x_values, full_param_values)
             except Exception as exc:
                 error_rows.append([label, str(exc) or "Unable to evaluate formula"])
                 continue
@@ -2086,12 +2148,16 @@ def _compute_formula_panel_2d_data(panel_state: Dict) -> dict:
     x_values = np.linspace(x_min, x_max, x_points)
     y_values = np.linspace(y_min, y_max, y_points)
     x_grid, y_grid = np.meshgrid(x_values, y_values)
+    notebook_vars = panel_state.get('_notebook_vars') or {}
     param_values = {
-        name: float((settings or {}).get('value', 1.0))
+        name: float(notebook_vars.get(name, (settings or {}).get('value', 1.0)))
+        if (settings or {}).get('use_notebook') and name in notebook_vars
+        else float((settings or {}).get('value', 1.0))
         for name, settings in (panel_state.get('params') or {}).items()
     }
+    full_param_values = {**notebook_vars, **param_values}
 
-    z_grid = evaluate_formula_2d(expression, x_grid, y_grid, param_values)
+    z_grid = evaluate_formula_2d(expression, x_grid, y_grid, full_param_values)
     finite_mask = np.isfinite(z_grid)
     finite_values = z_grid[finite_mask]
     valid_fraction = 100.0 * np.count_nonzero(finite_mask) / z_grid.size if z_grid.size else 0.0

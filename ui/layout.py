@@ -74,6 +74,8 @@ def build_app_layout(
                 dcc.Store(id='graphs-multifile-panels', data={}),  # Graph panels state (memory - resets on refresh)
                 dcc.Store(id='formula-panels', data={}),  # Formula panels state (memory - resets on refresh)
                 dcc.Store(id='notebook-state', data=initial_notebook_state),
+                # Exposes notebook variable names to JS autocomplete
+                dcc.Input(id='notebook-vars-for-js', type='hidden', value=''),
                 dcc.Location(id='url', refresh=False),
                 html.Div([
                     html.Div([
@@ -284,6 +286,12 @@ def build_app_layout(
                                     html.Button(
                                         "+ Add Data",
                                         id='graphs-add-data-panel-btn',
+                                        className='graphs-add-panel-btn',
+                                        n_clicks=0
+                                    ),
+                                    html.Button(
+                                        "+ Notebook Plot",
+                                        id='graphs-add-notebook-panel-btn',
                                         className='graphs-add-panel-btn',
                                         n_clicks=0
                                     ),

@@ -12,6 +12,86 @@ from dash.exceptions import PreventUpdate
 from .base import BaseCallbackManager
 
 
+def _run_fit(panel_state: dict, series_key: str | None, model: str,
+             custom_formula: str, x_min, x_max) -> dict:
+    """Load data for the selected series and run curve fitting."""
+    import numpy as np
+    from utils.fitting import fit_series, FitError
+
+    try:
+        if not series_key:
+            return {'error': 'No series selected'}
+
+        if series_key == '__pasted__':
+            x_data, y_data = _extract_pasted_series(panel_state.get('pasted_data', ''))
+        else:
+            if '::' not in series_key:
+                return {'error': 'Invalid series key'}
+            file_path, col_name = series_key.split('::', 1)
+            x_data, y_data = _extract_file_series(panel_state, file_path, col_name)
+
+        if x_data is None or y_data is None or len(x_data) < 3:
+            return {'error': 'Not enough data points to fit'}
+
+        return fit_series(
+            np.asarray(x_data), np.asarray(y_data),
+            model=model,
+            custom_formula=custom_formula,
+            x_min=float(x_min) if x_min is not None else None,
+            x_max=float(x_max) if x_max is not None else None,
+        )
+    except FitError as exc:
+        return {'error': str(exc)}
+    except Exception as exc:
+        return {'error': f'Unexpected error: {exc}'}
+
+
+def _extract_file_series(panel_state: dict, file_path: str, col_name: str):
+    """Return (x_array, y_array) for a column from a file."""
+    from data.sources import GenericTextDataSource
+
+    x_col = panel_state.get('x_axis_column') or 'col_0'
+    try:
+        ds = GenericTextDataSource(Path(file_path))
+        if not ds.load():
+            return None, None
+        df = ds._data
+        if col_name not in df.columns:
+            return None, None
+        if x_col not in df.columns:
+            x_col = df.columns[0]
+        return df[x_col].to_numpy(dtype=float), df[col_name].to_numpy(dtype=float)
+    except Exception:
+        return None, None
+
+
+def _extract_pasted_series(pasted_text: str):
+    """Return (x_array, y_array) for the first two columns of pasted data."""
+    import numpy as np
+
+    rows = []
+    for line in (pasted_text or '').replace('\r', '').split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.replace(',', ' ').replace('\t', ' ').split()
+        try:
+            rows.append([float(p) for p in parts])
+        except ValueError:
+            continue
+
+    rows = [r for r in rows if len(r) >= 2]
+    if not rows:
+        return None, None
+
+    try:
+        arr = np.array(rows, dtype=float)
+    except ValueError:
+        # Ragged rows: fall back to first two columns of each row
+        arr = np.array([[r[0], r[1]] for r in rows], dtype=float)
+    return arr[:, 0], arr[:, 1]
+
+
 class GraphsCallbackManager(BaseCallbackManager):
     """
     Manages graphs tab callbacks for text file plotting.
@@ -39,6 +119,8 @@ class GraphsCallbackManager(BaseCallbackManager):
         self._register_update_multifile_files()
         self._register_update_multifile_graph()
         self._register_close_multifile_panel()
+        self._register_fit_curve()
+        self._register_fit_model_toggle()
 
     def _register_add_multifile_panel(self):
         """Register callback to add a new multi-file panel."""
@@ -47,16 +129,18 @@ class GraphsCallbackManager(BaseCallbackManager):
             Output('graphs-multifile-container', 'children'),
             Input('graphs-add-file-panel-btn', 'n_clicks'),
             Input('graphs-add-data-panel-btn', 'n_clicks'),
+            Input('graphs-add-notebook-panel-btn', 'n_clicks'),
             State('graphs-multifile-panels', 'data'),
             State('loaded-textdata-folders', 'data'),
+            State('notebook-state', 'data'),
             prevent_initial_call=True
         )
-        def add_multifile_panel(n_clicks_file, n_clicks_data, panels_state, loaded_projects):
+        def add_multifile_panel(n_clicks_file, n_clicks_data, n_clicks_nb, panels_state, loaded_projects, notebook_state):
             """Add a new multi-file panel."""
             from ui import get_textdata_files, build_multifile_panel
             import time
 
-            if ctx.triggered_id not in {'graphs-add-file-panel-btn', 'graphs-add-data-panel-btn'}:
+            if ctx.triggered_id not in {'graphs-add-file-panel-btn', 'graphs-add-data-panel-btn', 'graphs-add-notebook-panel-btn'}:
                 raise PreventUpdate
 
             # Get available files
@@ -71,7 +155,16 @@ class GraphsCallbackManager(BaseCallbackManager):
 
             # Calculate sequential panel number for display
             panel_number = len(panels_state) + 1
-            source_mode = 'data' if ctx.triggered_id == 'graphs-add-data-panel-btn' else 'file'
+            if ctx.triggered_id == 'graphs-add-data-panel-btn':
+                source_mode = 'data'
+            elif ctx.triggered_id == 'graphs-add-notebook-panel-btn':
+                source_mode = 'notebook'
+            else:
+                source_mode = 'file'
+
+            nb_state = notebook_state or {}
+            nb_arrays = nb_state.get('array_variables', {})
+            nb_array_names = sorted(nb_arrays.keys())
 
             # Add ONLY the new panel to state
             panels_state[panel_id] = {
@@ -79,8 +172,8 @@ class GraphsCallbackManager(BaseCallbackManager):
                 'columns_by_file': {},
                 'separate_yaxes': False,
                 'panel_number': panel_number,  # Store display number
-                'x_axis_title': 'Time',
-                'y_axis_title': 'Value',
+                'x_axis_title': 'x',
+                'y_axis_title': 'y',
                 'yaxis_titles': {},  # Separate titles for each y-axis
                 'yaxis1_units': 'Raw',  # Units for Y-Axis 1
                 'yaxis2_units': 'Raw',  # Units for Y-Axis 2
@@ -88,7 +181,7 @@ class GraphsCallbackManager(BaseCallbackManager):
                 'legend_title': '',
                 'show_grid': True,
                 'show_legend': True,
-                'x_axis_column': None,  # Will be set to first column name when files are selected
+                'x_axis_column': None,
                 'pasted_data': '',
                 'source_mode': source_mode,
                 'extend_two_point_lines': False,
@@ -98,6 +191,11 @@ class GraphsCallbackManager(BaseCallbackManager):
                 'line_range_max': 1.0,
                 'pasted_point_mode': 'line_only',
                 'pasted_marker_count': 25,
+                # Notebook mode fields
+                'nb_x_var': nb_array_names[0] if nb_array_names else None,
+                'nb_y_vars': [nb_array_names[1]] if len(nb_array_names) > 1 else [],
+                '_nb_array_names': nb_array_names,
+                '_nb_arrays': nb_arrays,
             }
 
             # Build all panels (both existing and new)
@@ -458,6 +556,7 @@ class GraphsCallbackManager(BaseCallbackManager):
                 panel_state.get('line_range_max'),
                 panel_state.get('pasted_point_mode', 'line_only'),
                 panel_state.get('pasted_marker_count', 25),
+                panel_state.get('fit'),
             )
             resolved_min, resolved_max = resolved_range
             return figure, analysis, resolved_min, resolved_max
@@ -502,3 +601,88 @@ class GraphsCallbackManager(BaseCallbackManager):
             return panels_state, panels
 
         self._track_callback(close_multifile_panel)
+
+    def _register_fit_curve(self):
+        """Register callback to run curve fitting when the Fit button is clicked."""
+        import copy
+
+        @self.app.callback(
+            Output('graphs-multifile-panels', 'data', allow_duplicate=True),
+            Output({'type': 'multifile-fit-results', 'panel': ALL}, 'children'),
+            Input({'type': 'multifile-fit-btn', 'panel': ALL}, 'n_clicks'),
+            State({'type': 'multifile-fit-btn', 'panel': ALL}, 'id'),
+            State({'type': 'multifile-fit-series', 'panel': ALL}, 'value'),
+            State({'type': 'multifile-fit-model', 'panel': ALL}, 'value'),
+            State({'type': 'multifile-fit-formula', 'panel': ALL}, 'value'),
+            State({'type': 'multifile-fit-xmin', 'panel': ALL}, 'value'),
+            State({'type': 'multifile-fit-xmax', 'panel': ALL}, 'value'),
+            State({'type': 'multifile-fit-overlay', 'panel': ALL}, 'value'),
+            State('graphs-multifile-panels', 'data'),
+            prevent_initial_call=True,
+        )
+        def run_fit(
+            all_n_clicks, all_btn_ids,
+            all_series, all_models, all_formulas,
+            all_xmins, all_xmaxs, all_overlays,
+            panels_state,
+        ):
+            from dash import no_update
+            from ui.graphs import _build_fit_results
+
+            if not ctx.triggered_id or not panels_state:
+                raise PreventUpdate
+            if not all_n_clicks or all(nc is None or nc == 0 for nc in all_n_clicks):
+                raise PreventUpdate
+
+            triggered_panel = ctx.triggered_id['panel']
+            panels_state = copy.deepcopy(panels_state)
+            results_outputs = [no_update] * len(all_btn_ids)
+
+            for idx, btn_id in enumerate(all_btn_ids):
+                if btn_id['panel'] != triggered_panel:
+                    continue
+                if not all_n_clicks[idx]:
+                    continue
+
+                panel_state = panels_state.get(triggered_panel)
+                if panel_state is None:
+                    continue
+                series_key = all_series[idx] if idx < len(all_series) else None
+                model = (all_models[idx] if idx < len(all_models) else None) or 'linear'
+                custom_formula = (all_formulas[idx] if idx < len(all_formulas) else '') or ''
+                x_min = all_xmins[idx] if idx < len(all_xmins) else None
+                x_max = all_xmaxs[idx] if idx < len(all_xmaxs) else None
+                overlay = 'show' in (all_overlays[idx] or [])
+
+                fit_result = _run_fit(panel_state, series_key, model, custom_formula, x_min, x_max)
+
+                panel_state.setdefault('fit', {})
+                panel_state['fit'].update({
+                    'series': series_key,
+                    'model': model,
+                    'custom_formula': custom_formula,
+                    'x_min': x_min,
+                    'x_max': x_max,
+                    'overlay': overlay,
+                    'results': fit_result,
+                })
+                panels_state[triggered_panel] = panel_state
+                results_outputs[idx] = _build_fit_results(fit_result)
+
+            return panels_state, results_outputs
+
+        self._track_callback(run_fit)
+
+    def _register_fit_model_toggle(self):
+        """Show/hide custom formula input based on selected model."""
+        @self.app.callback(
+            Output({'type': 'multifile-fit-custom-row', 'panel': MATCH}, 'style'),
+            Input({'type': 'multifile-fit-model', 'panel': MATCH}, 'value'),
+            prevent_initial_call=True,
+        )
+        def toggle_custom_row(model):
+            if model == 'custom':
+                return {'marginBottom': '8px', 'display': 'block'}
+            return {'marginBottom': '8px', 'display': 'none'}
+
+        self._track_callback(toggle_custom_row)

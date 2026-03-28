@@ -226,6 +226,7 @@ def _default_param_state() -> dict:
         'min': -10.0,
         'max': 10.0,
         'step': 0.1,
+        'use_notebook': False,
     }
 
 
@@ -591,6 +592,8 @@ class FormulaCallbackManager(BaseCallbackManager):
             Input({'type': 'formula-param-min', 'panel': ALL, 'param': ALL}, 'value'),
             Input({'type': 'formula-param-max', 'panel': ALL, 'param': ALL}, 'value'),
             Input({'type': 'formula-param-step', 'panel': ALL, 'param': ALL}, 'value'),
+            Input({'type': 'formula-param-nb-toggle', 'panel': ALL, 'param': ALL}, 'n_clicks'),
+            Input('notebook-state', 'data'),
             State({'type': 'formula-row-expression', 'panel': ALL, 'row': ALL}, 'id'),
             State({'type': 'formula-row-label', 'panel': ALL, 'row': ALL}, 'id'),
             State({'type': 'formula-row-color', 'panel': ALL, 'row': ALL}, 'id'),
@@ -614,6 +617,7 @@ class FormulaCallbackManager(BaseCallbackManager):
             State({'type': 'formula-param-min', 'panel': ALL, 'param': ALL}, 'id'),
             State({'type': 'formula-param-max', 'panel': ALL, 'param': ALL}, 'id'),
             State({'type': 'formula-param-step', 'panel': ALL, 'param': ALL}, 'id'),
+            State({'type': 'formula-param-nb-toggle', 'panel': ALL, 'param': ALL}, 'id'),
             State('formula-panels', 'data'),
             prevent_initial_call=True
         )
@@ -622,10 +626,12 @@ class FormulaCallbackManager(BaseCallbackManager):
             x_mins, x_maxs, points_values, x_titles, y_titles, display_options,
             analysis_formula_values, analysis_x0_values, interval_min_values, interval_max_values, threshold_values, click_mode_values,
             param_slider_values, param_input_values, param_min_values, param_max_values, param_step_values,
+            param_nb_toggle_clicks, notebook_state,
             expression_ids, label_ids, color_ids, dash_ids, width_ids, visible_ids,
             x_min_ids, x_max_ids, points_ids, x_title_ids, y_title_ids, display_ids,
             analysis_formula_ids, analysis_x0_ids, interval_min_ids, interval_max_ids, threshold_ids, click_mode_ids,
             param_slider_ids, param_input_ids, param_min_ids, param_max_ids, param_step_ids,
+            param_nb_toggle_ids,
             panels_state
         ):
             from dash import no_update
@@ -779,15 +785,41 @@ class FormulaCallbackManager(BaseCallbackManager):
                     )
                     panel_state['params'][param_name][field] = _safe_float(value, current)
 
+            # Handle NB toggle: flip use_notebook for the clicked parameter
+            if triggered_type == 'formula-param-nb-toggle' and triggered:
+                panel_id = triggered['panel']
+                param_name = triggered['param']
+                panel_state = panels_state.get(panel_id)
+                if panel_state:
+                    panel_state.setdefault('params', {})
+                    panel_state['params'].setdefault(param_name, _default_param_state())
+                    current_use_nb = panel_state['params'][param_name].get('use_notebook', False)
+                    new_use_nb = not current_use_nb
+                    panel_state['params'][param_name]['use_notebook'] = new_use_nb
+                    # Pre-fill value from notebook when binding
+                    nb_vars = (notebook_state or {}).get('variables', {})
+                    if new_use_nb and param_name in nb_vars:
+                        try:
+                            panel_state['params'][param_name]['value'] = float(nb_vars[param_name])
+                        except (TypeError, ValueError):
+                            pass
+
+            # Inject notebook variables for display in panel UI
+            nb_vars = (notebook_state or {}).get('variables', {})
+            for pid in panels_state:
+                panels_state[pid]['_notebook_vars'] = nb_vars
+
             structure_trigger_types = {
                 'formula-row-expression',
                 'formula-row-label',
                 'formula-param-min',
                 'formula-param-max',
                 'formula-param-step',
+                'formula-param-nb-toggle',
+                'notebook-state',
             }
 
-            if triggered_type in structure_trigger_types:
+            if triggered_type in structure_trigger_types or (isinstance(ctx.triggered_id, str) and ctx.triggered_id == 'notebook-state'):
                 panels = [
                     build_formula_panel(pid, panels_state[pid])
                     for pid in sorted(panels_state.keys())
@@ -810,9 +842,10 @@ class FormulaCallbackManager(BaseCallbackManager):
             Output({'type': 'formula-param-step', 'panel': MATCH, 'param': MATCH}, 'value'),
             Input('formula-panels', 'data'),
             State({'type': 'formula-param-slider', 'panel': MATCH, 'param': MATCH}, 'id'),
+            State('notebook-state', 'data'),
             prevent_initial_call=False
         )
-        def sync_parameter_controls(panels_state, component_id):
+        def sync_parameter_controls(panels_state, component_id, notebook_state):
             if not component_id:
                 raise PreventUpdate
 
@@ -834,6 +867,20 @@ class FormulaCallbackManager(BaseCallbackManager):
                 current_max = defaults['max']
                 current_step = defaults['step']
                 current_value = defaults['value']
+
+            # Override value from notebook if use_notebook is set
+            if settings.get('use_notebook'):
+                nb_vars = (notebook_state or {}).get('variables', {})
+                param_name = component_id['param']
+                if param_name in nb_vars:
+                    try:
+                        nb_value = float(nb_vars[param_name])
+                        # Expand slider range to accommodate notebook value if needed
+                        current_min = min(current_min, nb_value)
+                        current_max = max(current_max, nb_value)
+                        current_value = nb_value
+                    except (TypeError, ValueError):
+                        pass
 
             if current_min >= current_max:
                 current_max = current_min + max(current_step, 0.1)
@@ -882,6 +929,7 @@ class FormulaCallbackManager(BaseCallbackManager):
             Input({'type': 'formula-2d-param-min', 'panel': ALL, 'param': ALL}, 'value'),
             Input({'type': 'formula-2d-param-max', 'panel': ALL, 'param': ALL}, 'value'),
             Input({'type': 'formula-2d-param-step', 'panel': ALL, 'param': ALL}, 'value'),
+            Input({'type': 'formula-2d-param-nb-toggle', 'panel': ALL, 'param': ALL}, 'n_clicks'),
             State({'type': 'formula-2d-expression', 'panel': ALL}, 'id'),
             State({'type': 'formula-2d-label', 'panel': ALL}, 'id'),
             State({'type': 'formula-2d-preset', 'panel': ALL}, 'id'),
@@ -908,17 +956,21 @@ class FormulaCallbackManager(BaseCallbackManager):
             State({'type': 'formula-2d-param-min', 'panel': ALL, 'param': ALL}, 'id'),
             State({'type': 'formula-2d-param-max', 'panel': ALL, 'param': ALL}, 'id'),
             State({'type': 'formula-2d-param-step', 'panel': ALL, 'param': ALL}, 'id'),
+            State({'type': 'formula-2d-param-nb-toggle', 'panel': ALL, 'param': ALL}, 'id'),
             State('formula-panels', 'data'),
+            State('notebook-state', 'data'),
             prevent_initial_call=True
         )
         def sync_formula_panels_2d(
             expressions, labels, presets, x_mins, x_maxs, y_mins, y_maxs, x_points, y_points,
             x_titles, y_titles, z_titles, display_modes, contour_levels, contour_styles, auto_z_ranges, z_mins, z_maxs, probe_xs, probe_ys, colorscales,
             param_slider_values, param_input_values, param_min_values, param_max_values, param_step_values,
+            nb_toggle_clicks,
             expression_ids, label_ids, preset_ids, x_min_ids, x_max_ids, y_min_ids, y_max_ids, x_points_ids, y_points_ids,
             x_title_ids, y_title_ids, z_title_ids, display_ids, contour_level_ids, contour_style_ids, auto_z_range_ids, z_min_ids, z_max_ids, probe_x_ids, probe_y_ids, colorscale_ids,
             param_slider_ids, param_input_ids, param_min_ids, param_max_ids, param_step_ids,
-            panels_state
+            nb_toggle_ids,
+            panels_state, notebook_state
         ):
             from ui.formula_graphs import build_formula_panel
 
@@ -1041,6 +1093,29 @@ class FormulaCallbackManager(BaseCallbackManager):
                         current['step'] = max(1e-6, abs(_safe_float(value, current['step'])))
                     params[param_name] = current
 
+            # Handle NB toggle for 2D panels
+            if triggered_type == 'formula-2d-param-nb-toggle' and triggered:
+                panel_id = triggered['panel']
+                param_name = triggered['param']
+                panel_state = panels_state.get(panel_id)
+                if panel_state and panel_state.get('panel_type') == '2d':
+                    panel_state.setdefault('params', {})
+                    panel_state['params'].setdefault(param_name, _default_param_state())
+                    current_use_nb = panel_state['params'][param_name].get('use_notebook', False)
+                    new_use_nb = not current_use_nb
+                    panel_state['params'][param_name]['use_notebook'] = new_use_nb
+                    nb_vars = (notebook_state or {}).get('variables', {})
+                    if new_use_nb and param_name in nb_vars:
+                        try:
+                            panel_state['params'][param_name]['value'] = float(nb_vars[param_name])
+                        except (TypeError, ValueError):
+                            pass
+
+            # Inject notebook variables for display in panel UI
+            nb_vars = (notebook_state or {}).get('variables', {})
+            for pid in panels_state:
+                panels_state[pid]['_notebook_vars'] = nb_vars
+
             panels = [
                 build_formula_panel(pid, panels_state[pid])
                 for pid in sorted(panels_state.keys())
@@ -1061,9 +1136,10 @@ class FormulaCallbackManager(BaseCallbackManager):
             Output({'type': 'formula-2d-param-step', 'panel': MATCH, 'param': MATCH}, 'value'),
             Input('formula-panels', 'data'),
             State({'type': 'formula-2d-param-slider', 'panel': MATCH, 'param': MATCH}, 'id'),
+            State('notebook-state', 'data'),
             prevent_initial_call=False
         )
-        def sync_parameter_controls_2d(panels_state, component_id):
+        def sync_parameter_controls_2d(panels_state, component_id, notebook_state):
             if not component_id:
                 raise PreventUpdate
 
@@ -1079,6 +1155,19 @@ class FormulaCallbackManager(BaseCallbackManager):
             current_max = float(settings['max'])
             current_step = abs(float(settings['step'])) or 0.1
             current_value = float(settings['value'])
+
+            if settings.get('use_notebook'):
+                nb_vars = (notebook_state or {}).get('variables', {})
+                param_name = component_id['param']
+                if param_name in nb_vars:
+                    try:
+                        nb_value = float(nb_vars[param_name])
+                        current_min = min(current_min, nb_value)
+                        current_max = max(current_max, nb_value)
+                        current_value = nb_value
+                    except (TypeError, ValueError):
+                        pass
+
             if current_min >= current_max:
                 current_max = current_min + max(current_step, 0.1)
             current_value = min(max(current_value, current_min), current_max)
@@ -1348,9 +1437,10 @@ class FormulaCallbackManager(BaseCallbackManager):
             Output({'type': 'formula-analysis-details', 'panel': MATCH}, 'children'),
             Input('formula-panels', 'data'),
             State({'type': 'formula-plot', 'panel': MATCH}, 'id'),
+            State('notebook-state', 'data'),
             prevent_initial_call=False
         )
-        def update_formula_graph(panels_state, plot_id):
+        def update_formula_graph(panels_state, plot_id, notebook_state):
             from ui.formula_graphs import build_formula_figure
 
             if not plot_id:
@@ -1358,6 +1448,7 @@ class FormulaCallbackManager(BaseCallbackManager):
 
             panel_state = copy.deepcopy((panels_state or {}).get(plot_id['panel'], {}))
             panel_state['_panel_id'] = plot_id['panel']
+            panel_state['_notebook_vars'] = (notebook_state or {}).get('variables', {})
             figure, summary, details = build_formula_figure(panel_state)
             return figure, summary, details
 
@@ -1370,9 +1461,10 @@ class FormulaCallbackManager(BaseCallbackManager):
             Output({'type': 'formula-2d-analysis-details', 'panel': MATCH}, 'children'),
             Input('formula-panels', 'data'),
             State({'type': 'formula-2d-plot', 'panel': MATCH}, 'id'),
+            State('notebook-state', 'data'),
             prevent_initial_call=False
         )
-        def update_formula_graph_2d(panels_state, plot_id):
+        def update_formula_graph_2d(panels_state, plot_id, notebook_state):
             from ui.formula_graphs import build_formula_figure
 
             if not plot_id:
@@ -1380,6 +1472,7 @@ class FormulaCallbackManager(BaseCallbackManager):
 
             panel_state = copy.deepcopy((panels_state or {}).get(plot_id['panel'], {}))
             panel_state['_panel_id'] = plot_id['panel']
+            panel_state['_notebook_vars'] = (notebook_state or {}).get('variables', {})
             figure, summary, details = build_formula_figure(panel_state)
             return figure, summary, details
 
@@ -1391,9 +1484,10 @@ class FormulaCallbackManager(BaseCallbackManager):
             Output({'type': 'formula-2d-y-slice', 'panel': MATCH}, 'figure'),
             Input('formula-panels', 'data'),
             State({'type': 'formula-2d-x-slice', 'panel': MATCH}, 'id'),
+            State('notebook-state', 'data'),
             prevent_initial_call=False
         )
-        def update_formula_slices_2d(panels_state, graph_id):
+        def update_formula_slices_2d(panels_state, graph_id, notebook_state):
             from ui.formula_graphs import build_formula_2d_slice_figures
 
             if not graph_id:
@@ -1401,6 +1495,7 @@ class FormulaCallbackManager(BaseCallbackManager):
 
             panel_state = copy.deepcopy((panels_state or {}).get(graph_id['panel'], {}))
             panel_state['_panel_id'] = graph_id['panel']
+            panel_state['_notebook_vars'] = (notebook_state or {}).get('variables', {})
             return build_formula_2d_slice_figures(panel_state)
 
         self._track_callback(update_formula_slices_2d)

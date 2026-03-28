@@ -454,6 +454,12 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
 
     source_mode = panel_state.get('source_mode', 'file')
 
+    # Notebook source mode: build variable selectors from stored array var names
+    nb_array_names = panel_state.get('_nb_array_names', [])
+    nb_array_options = [{'label': n, 'value': n} for n in nb_array_names]
+    nb_x_var = panel_state.get('nb_x_var') or (nb_array_names[0] if nb_array_names else None)
+    nb_y_vars = panel_state.get('nb_y_vars') or ([nb_array_names[1]] if len(nb_array_names) > 1 else [])
+
     # Panel layout - Two column design: Graph (left) | Controls (right)
     # Panel layout - Hybrid Design (Top Data, Right Settings)
     is_file_mode = source_mode == 'file'
@@ -505,6 +511,42 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
             ], style={
                 'marginBottom': '12px',
                 'display': 'block' if source_mode == 'file' else 'none'
+            }),
+
+            # Notebook arrays source UI
+            html.Div([
+                html.Div("Notebook Arrays", className='multifile-label', style={'marginBottom': '8px'}),
+                html.Div([
+                    html.Div([
+                        html.Label("X variable:", style={'fontSize': '12px', 'color': '#475467', 'marginBottom': '4px', 'display': 'block'}),
+                        dcc.Dropdown(
+                            id={'type': 'multifile-nb-x-var', 'panel': panel_id},
+                            options=nb_array_options,
+                            value=nb_x_var,
+                            placeholder="Select x array...",
+                            clearable=True,
+                            style={'fontSize': '13px'},
+                        ),
+                    ], style={'marginBottom': '10px'}),
+                    html.Div([
+                        html.Label("Y variable(s):", style={'fontSize': '12px', 'color': '#475467', 'marginBottom': '4px', 'display': 'block'}),
+                        dcc.Dropdown(
+                            id={'type': 'multifile-nb-y-vars', 'panel': panel_id},
+                            options=nb_array_options,
+                            value=nb_y_vars,
+                            multi=True,
+                            placeholder="Select y array(s)...",
+                            style={'fontSize': '13px'},
+                        ),
+                    ]),
+                    html.Div(
+                        "Define arrays in the Notebook tab (e.g. x = linspace(0, 10, 200)) and select them here.",
+                        style={'fontSize': '12px', 'color': '#64748b', 'marginTop': '8px'}
+                    ),
+                ]),
+            ], style={
+                'marginBottom': '12px',
+                'display': 'block' if source_mode == 'notebook' else 'none',
             }),
 
             html.Div([
@@ -803,6 +845,15 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
                          style={'marginBottom': '12px'}
                      ),
                 ], className='multifile-setting-section'),
+
+                # Curve Fitting
+                html.Div([
+                    html.Label("Curve Fitting", className='multifile-sublabel', style={'fontSize': '15px'}),
+                    html.Div([
+                        _build_fitting_section(panel_id, panel_state),
+                    ], className='multifile-setting-group'),
+                ], className='multifile-setting-section', style={'gridColumn': '1 / -1'}),
+
             ], className='multifile-settings-sidebar', style={
                 'width': '650px',
                 'maxWidth': '650px',
@@ -835,6 +886,226 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
     ], className='dataset-block multifile-panel', id=f'multifile-{panel_id}')
 
 
+def _build_fitting_section(panel_id: str, panel_state: dict) -> html.Div:
+    """Build the curve fitting UI section for a data panel."""
+    from utils.fitting import BUILTIN_MODELS
+
+    fit_state = panel_state.get('fit') or {}
+    model_options = [{'label': m['label'], 'value': k} for k, m in BUILTIN_MODELS.items()]
+    model_options.append({'label': 'Custom Formula', 'value': 'custom'})
+
+    selected_model = fit_state.get('model', 'linear')
+    show_custom = selected_model == 'custom'
+
+    # Build series options from currently selected columns
+    series_options = []
+    for file_path, cols in (panel_state.get('columns_by_file') or {}).items():
+        for col in (cols or []):
+            series_options.append({'label': f"{Path(file_path).name} / {col}", 'value': f"{file_path}::{col}"})
+    # Pasted data series
+    pasted_data = (panel_state.get('pasted_data') or '').strip()
+    if pasted_data:
+        series_options.append({'label': 'Pasted data (first Y column)', 'value': '__pasted__'})
+
+    fit_results = fit_state.get('results') or {}
+    results_children = _build_fit_results(fit_results) if fit_results else html.Div(
+        "Click Fit to run.", style={'fontSize': '12px', 'color': '#64748b'}
+    )
+
+    valid_series_values = {o['value'] for o in series_options}
+    current_series = fit_state.get('series')
+    if current_series not in valid_series_values:
+        current_series = series_options[0]['value'] if series_options else None
+
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.Label("Series", className='multifile-mini-label', style={'fontSize': '13px'}),
+                dcc.Dropdown(
+                    id={'type': 'multifile-fit-series', 'panel': panel_id},
+                    options=series_options,
+                    value=current_series,
+                    placeholder="Select series to fit...",
+                    clearable=False,
+                    style={'fontSize': '13px'},
+                ),
+            ], style={'flex': '1', 'minWidth': '160px'}),
+            html.Div([
+                html.Label("Model", className='multifile-mini-label', style={'fontSize': '13px'}),
+                dcc.Dropdown(
+                    id={'type': 'multifile-fit-model', 'panel': panel_id},
+                    options=model_options,
+                    value=selected_model,
+                    clearable=False,
+                    style={'fontSize': '13px'},
+                ),
+            ], style={'flex': '1', 'minWidth': '160px'}),
+        ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '8px', 'flexWrap': 'wrap'}),
+
+        html.Div([
+            html.Label("Custom Formula", className='multifile-mini-label', style={'fontSize': '13px'}),
+            dcc.Input(
+                id={'type': 'multifile-fit-formula', 'panel': panel_id},
+                type='text',
+                value=fit_state.get('custom_formula', ''),
+                placeholder='e.g.  a * exp(-b * x) + c',
+                debounce=False,
+                style={'width': '100%', 'padding': '5px', 'fontSize': '13px', 'fontFamily': 'monospace'},
+            ),
+            html.Div("Parameters (a, b, c…) are auto-detected and fitted.",
+                     style={'fontSize': '11px', 'color': '#94a3b8', 'marginTop': '3px'}),
+        ], style={'marginBottom': '8px', 'display': 'block' if show_custom else 'none'},
+           id={'type': 'multifile-fit-custom-row', 'panel': panel_id}),
+
+        html.Div([
+            html.Div([
+                html.Label("X Min", className='multifile-mini-label', style={'fontSize': '13px'}),
+                dcc.Input(
+                    id={'type': 'multifile-fit-xmin', 'panel': panel_id},
+                    type='number', value=fit_state.get('x_min'),
+                    placeholder='auto', debounce=True,
+                    style={'width': '100%', 'padding': '5px', 'fontSize': '13px'},
+                ),
+            ], style={'flex': '1'}),
+            html.Div([
+                html.Label("X Max", className='multifile-mini-label', style={'fontSize': '13px'}),
+                dcc.Input(
+                    id={'type': 'multifile-fit-xmax', 'panel': panel_id},
+                    type='number', value=fit_state.get('x_max'),
+                    placeholder='auto', debounce=True,
+                    style={'width': '100%', 'padding': '5px', 'fontSize': '13px'},
+                ),
+            ], style={'flex': '1'}),
+            html.Div([
+                html.Label("Overlay", className='multifile-mini-label', style={'fontSize': '13px'}),
+                dcc.Checklist(
+                    id={'type': 'multifile-fit-overlay', 'panel': panel_id},
+                    options=[{'label': 'Show on plot', 'value': 'show'}],
+                    value=['show'] if fit_state.get('overlay', True) else [],
+                    labelStyle={'fontSize': '13px'},
+                ),
+            ], style={'flex': '1'}),
+        ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '10px'}),
+
+        html.Button(
+            "Fit",
+            id={'type': 'multifile-fit-btn', 'panel': panel_id},
+            n_clicks=0,
+            style={
+                'padding': '7px 22px', 'fontSize': '13px', 'fontWeight': '700',
+                'background': '#1a56db', 'color': '#fff',
+                'border': 'none', 'borderRadius': '6px', 'cursor': 'pointer',
+                'marginBottom': '12px',
+            },
+        ),
+
+        html.Div(
+            id={'type': 'multifile-fit-results', 'panel': panel_id},
+            children=results_children,
+        ),
+    ])
+
+
+def _build_fit_results(fit_results: dict) -> html.Div:
+    """Build the fit results display."""
+    if fit_results.get('error'):
+        return html.Div(
+            f"Error: {fit_results['error']}",
+            style={'color': '#b42318', 'fontSize': '13px', 'fontFamily': 'monospace'},
+        )
+
+    params = fit_results.get('params') or {}
+    uncertainties = fit_results.get('uncertainties') or {}
+    r2 = fit_results.get('r_squared')
+    rmse = fit_results.get('rmse')
+    formula = fit_results.get('formula', '')
+
+    param_rows = [
+        html.Tr([
+            html.Td(name, style={'fontWeight': '600', 'paddingRight': '12px', 'fontFamily': 'monospace', 'fontSize': '13px'}),
+            html.Td(f"= {val:.6g}", style={'fontFamily': 'monospace', 'fontSize': '13px'}),
+            html.Td(f"± {uncertainties.get(name, 0):.3g}",
+                    style={'color': '#64748b', 'fontSize': '12px', 'paddingLeft': '8px'}),
+        ])
+        for name, val in sorted(params.items())
+    ]
+
+    return html.Div([
+        html.Div(formula, style={
+            'fontFamily': 'monospace', 'fontSize': '13px', 'color': '#334155',
+            'marginBottom': '6px', 'fontWeight': '600',
+        }),
+        html.Table(html.Tbody(param_rows), style={'borderCollapse': 'collapse', 'marginBottom': '8px'}),
+        html.Div([
+            html.Span(f"R² = {r2:.6f}" if r2 is not None else "", style={
+                'fontFamily': 'monospace', 'fontSize': '13px', 'fontWeight': '700',
+                'color': '#0f5132' if r2 is not None and r2 > 0.99 else '#854d0e',
+                'marginRight': '16px',
+            }),
+            html.Span(f"RMSE = {rmse:.4g}" if rmse is not None else "", style={
+                'fontFamily': 'monospace', 'fontSize': '13px', 'color': '#475569',
+            }),
+        ]),
+    ], style={
+        'background': '#f8fafc', 'border': '1px solid #e2e8f0',
+        'borderRadius': '6px', 'padding': '10px 12px',
+    })
+
+
+def build_notebook_figure(panel_state: Dict) -> tuple[go.Figure, html.Div, tuple]:
+    """Build a Plotly figure from notebook array variables."""
+    import numpy as np
+
+    nb_arrays = panel_state.get('_nb_arrays') or {}
+    nb_x_var  = panel_state.get('nb_x_var') or ''
+    nb_y_vars = panel_state.get('nb_y_vars') or []
+    x_title   = panel_state.get('x_axis_title') or nb_x_var or 'x'
+    y_title   = panel_state.get('y_axis_title') or 'y'
+    show_grid    = panel_state.get('show_grid', True)
+    show_legend  = panel_state.get('show_legend', True)
+
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+              '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+
+    fig = go.Figure()
+
+    x_data = nb_arrays.get(nb_x_var)
+    if x_data is None and nb_x_var:
+        fig.add_annotation(text=f"Array '{nb_x_var}' not found in notebook",
+                           xref='paper', yref='paper', x=0.5, y=0.5, showarrow=False,
+                           font=dict(size=14, color='#b42318'))
+    elif not nb_y_vars:
+        fig.add_annotation(text="Select Y variable(s) above",
+                           xref='paper', yref='paper', x=0.5, y=0.5, showarrow=False,
+                           font=dict(size=14, color='#64748b'))
+    else:
+        x_arr = np.asarray(x_data) if x_data is not None else None
+        for idx, y_name in enumerate(nb_y_vars):
+            y_data = nb_arrays.get(y_name)
+            if y_data is None:
+                continue
+            y_arr = np.asarray(y_data)
+            x_plot = x_arr if x_arr is not None and len(x_arr) == len(y_arr) else list(range(len(y_arr)))
+            fig.add_trace(go.Scatter(
+                x=x_plot, y=y_arr,
+                mode='lines',
+                name=y_name,
+                line=dict(color=colors[idx % len(colors)], width=2),
+            ))
+
+    grid_color = 'rgba(200,210,220,0.5)' if show_grid else None
+    fig.update_layout(
+        xaxis_title=x_title, yaxis_title=y_title,
+        showlegend=show_legend,
+        xaxis=dict(showgrid=show_grid, gridcolor=grid_color, zeroline=False),
+        yaxis=dict(showgrid=show_grid, gridcolor=grid_color, zeroline=False),
+        plot_bgcolor='white', paper_bgcolor='white',
+        margin=dict(l=60, r=20, t=30, b=50),
+        legend=dict(orientation='v', x=0.01, y=0.99, xanchor='left', yanchor='top'),
+    )
+    return fig, html.Div(), (None, None)
+
+
 def build_multifile_figure(files_and_columns: Dict[str, List[str]],
                           column_settings: Dict[str, Dict[str, Dict]] = None,
                           x_axis_title: str = 'Time',
@@ -854,7 +1125,8 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
                           line_range_min: float | None = None,
                           line_range_max: float | None = None,
                           pasted_point_mode: str = 'line_only',
-                          pasted_marker_count: int = 25) -> tuple[go.Figure, html.Div, tuple[float | None, float | None]]:
+                          pasted_marker_count: int = 25,
+                          fit_state: dict | None = None) -> tuple[go.Figure, html.Div, tuple[float | None, float | None]]:
     """Build Plotly figure combining multiple files with per-yaxis unit settings.
 
     Args:
@@ -1617,6 +1889,28 @@ def build_multifile_figure(files_and_columns: Dict[str, List[str]],
         analysis_cards.insert(1 if (show_intersections and intersections) else 0, _build_line_pair_card(line_geometries[0], line_geometries[1]))
 
     fig.update_layout(**layout_config)
+
+    # Overlay fit curve if available
+    fit_results = (fit_state or {}).get('results') or {}
+    fit_overlay = (fit_state or {}).get('overlay', True)
+    if fit_overlay and fit_results and not fit_results.get('error') and fit_results.get('x_curve'):
+        fit_label = f"Fit: {fit_results.get('formula', 'curve')}"
+        # Determine which Y axis the fitted series uses
+        fit_series_key = (fit_state or {}).get('series', '')
+        fit_yaxis = 'y'
+        if fit_series_key and '::' in fit_series_key:
+            _fp, _col = fit_series_key.split('::', 1)
+            _col_cfg = column_settings.get(_fp, {}).get(_col, {})
+            if _col_cfg.get('yaxis') == 'y2':
+                fit_yaxis = 'y2'
+        fig.add_trace(go.Scatter(
+            x=fit_results['x_curve'],
+            y=fit_results['y_curve'],
+            mode='lines',
+            name=fit_label,
+            line={'color': '#e11d48', 'width': 2, 'dash': 'dash'},
+            yaxis=fit_yaxis,
+        ))
 
     if pasted_errors:
         analysis_cards.insert(0, html.Div([
