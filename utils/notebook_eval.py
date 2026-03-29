@@ -22,6 +22,18 @@ def _arr(v):
     return np.asarray(v, dtype=float)
 
 
+class _CallableFloat(float):
+    """Float-like unit value that can also behave like a callable helper."""
+
+    def __new__(cls, value: float, fn):
+        obj = float.__new__(cls, value)
+        obj._fn = fn
+        return obj
+
+    def __call__(self, *args, **kwargs):
+        return self._fn(*args, **kwargs)
+
+
 # ── Engineering functions ─────────────────────────────────────────────────────
 
 def _cfl_dt(dx, u, cfl=1.0):
@@ -775,7 +787,7 @@ def _format_value(value) -> str:
             if n <= 6:
                 return "[" + ", ".join(_format_number(x) for x in value) + "]"
             return (f"[{_format_number(value[0])}, {_format_number(value[1])}, ..."
-                    f", {_format_number(value[-1])}]  len={n}")
+                    f", {_format_number(value[-1])}]")
         if value.ndim == 2:
             r, c = value.shape
             if r <= 3 and c <= 4:
@@ -842,12 +854,14 @@ def _is_block_header(stripped: str) -> bool:
 
 
 def _build_context(variables: dict) -> dict:
+    callable_min = _CallableFloat(UNIT_CONSTANTS["min"], _min_arr)
     return {
+        **UNIT_CONSTANTS,
+        **PHYSICAL_CONSTANTS,
         **ALLOWED_NOTEBOOK_FUNCTIONS,
         **ALLOWED_CONSTANTS,
         "tau": 2 * math.pi, "deg": math.pi / 180, "inf": math.inf,
-        **PHYSICAL_CONSTANTS,
-        **UNIT_CONSTANTS,
+        "min": callable_min,
         **variables,
     }
 
@@ -946,11 +960,12 @@ def _evaluate_expr(expression: str, variables: dict) -> Any:
         raise NotebookEvaluationError("Empty expression")
 
     context: dict = {
+        **UNIT_CONSTANTS,
+        **PHYSICAL_CONSTANTS,
         **ALLOWED_NOTEBOOK_FUNCTIONS,
         **ALLOWED_CONSTANTS,
         "tau": 2 * math.pi, "deg": math.pi / 180, "inf": math.inf,
-        **PHYSICAL_CONSTANTS,
-        **UNIT_CONSTANTS,
+        "min": _CallableFloat(UNIT_CONSTANTS["min"], _min_arr),
         **variables,
     }
 
@@ -1030,6 +1045,12 @@ def evaluate_notebook_rows(
 
             stripped = _strip_comment(raw)
             if not stripped:
+                evaluated_rows.append(updated)
+                continue
+
+            # plot() calls are handled by the plots panel — skip evaluation
+            if re.match(r"^plot\s*\(", stripped):
+                updated["result"] = "📊 plot"
                 evaluated_rows.append(updated)
                 continue
 

@@ -9,6 +9,7 @@ import dash_mantine_components as dmc
 from config import TAB_CONFIGS
 from ui.calculation_notebook import build_calculation_notebook, default_notebook_state
 from ui.initializations_explorer import build_initializations_explorer
+from ui.floating_chat import build_floating_chat
 
 
 def build_app_layout(
@@ -74,6 +75,10 @@ def build_app_layout(
                 dcc.Store(id='graphs-multifile-panels', data={}),  # Graph panels state (memory - resets on refresh)
                 dcc.Store(id='formula-panels', data={}),  # Formula panels state (memory - resets on refresh)
                 dcc.Store(id='notebook-state', data=initial_notebook_state),
+                dcc.Store(id='nb-selector-specs', data=[{
+                    'id': 0, 'x_var': None, 'y_vars': [], 'plot_type': 'lines',
+                    'title': None, 'x_title': None, 'y_title': None,
+                }]),
                 # Exposes notebook variable names to JS autocomplete
                 dcc.Input(id='notebook-vars-for-js', type='hidden', value=''),
                 dcc.Location(id='url', refresh=False),
@@ -333,6 +338,7 @@ def build_app_layout(
                         ),
                     ], className='main-panel')
                 ], className='layout-shell'),
+                build_floating_chat(),
                 dmc.Modal(
                     id='sidebar-path-modal',
                     title="Select Path",

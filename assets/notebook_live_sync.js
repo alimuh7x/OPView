@@ -101,6 +101,19 @@
     throw new Error(`${name} operands are incompatible`);
   }
 
+  // Wraps any scalar function so it applies element-wise when given array args.
+  // Mixed scalar/array: scalar is broadcast to match the array length.
+  function elementwise(fn) {
+    return function () {
+      var args = Array.prototype.slice.call(arguments);
+      var firstArr = args.find(Array.isArray);
+      if (!firstArr) return fn.apply(null, args);
+      return firstArr.map(function (_, i) {
+        return fn.apply(null, args.map(function (a) { return Array.isArray(a) ? a[i] : a; }));
+      });
+    };
+  }
+
   function ensureVector(value, name) {
     if (!isVector(value)) {
       throw new Error(`${name} requires a vector`);
@@ -231,6 +244,93 @@
     return null;
   }
 
+  function splitTopLevelArgs(argsStr) {
+    const result = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < argsStr.length; i++) {
+      const ch = argsStr[i];
+      if (ch === '(' || ch === '[') depth++;
+      else if (ch === ')' || ch === ']') depth--;
+      else if (ch === ',' && depth === 0) {
+        result.push(argsStr.slice(start, i).trim());
+        start = i + 1;
+      }
+    }
+    const last = argsStr.slice(start).trim();
+    if (last) result.push(last);
+    return result;
+  }
+
+  function findTopLevelColon(expr) {
+    let depthRound = 0;
+    let depthSquare = 0;
+    for (let i = 0; i < expr.length; i += 1) {
+      const ch = expr[i];
+      if (ch === "(") depthRound += 1;
+      else if (ch === ")") depthRound -= 1;
+      else if (ch === "[") depthSquare += 1;
+      else if (ch === "]") depthSquare -= 1;
+      else if (ch === ":" && depthRound === 0 && depthSquare === 0) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  function parseSliceIndices(expr, variables, length) {
+    const parts = [];
+    let depthRound = 0;
+    let depthSquare = 0;
+    let start = 0;
+    for (let i = 0; i < expr.length; i += 1) {
+      const ch = expr[i];
+      if (ch === "(") depthRound += 1;
+      else if (ch === ")") depthRound -= 1;
+      else if (ch === "[") depthSquare += 1;
+      else if (ch === "]") depthSquare -= 1;
+      else if (ch === ":" && depthRound === 0 && depthSquare === 0) {
+        parts.push(expr.slice(start, i).trim());
+        start = i + 1;
+      }
+    }
+    parts.push(expr.slice(start).trim());
+    if (parts.length < 2 || parts.length > 3) {
+      throw new Error("Invalid slice syntax");
+    }
+
+    function evalMaybe(part, fallback) {
+      if (!part) return fallback;
+      return Number(evaluateExpression(part, variables));
+    }
+
+    function normalizeIndex(idx, fallback) {
+      if (!Number.isFinite(idx)) return fallback;
+      let value = Math.trunc(idx);
+      if (value < 0) value += length;
+      return value;
+    }
+
+    const rawStart = evalMaybe(parts[0], 0);
+    const rawEnd = evalMaybe(parts[1], length);
+    const rawStep = evalMaybe(parts[2], 1);
+    const step = Math.trunc(rawStep);
+    if (step === 0) throw new Error("Slice step cannot be zero");
+
+    let sliceStart = normalizeIndex(rawStart, step > 0 ? 0 : length - 1);
+    let sliceEnd = normalizeIndex(rawEnd, step > 0 ? length : -1);
+    sliceStart = Math.max(-1, Math.min(length, sliceStart));
+    sliceEnd = Math.max(-1, Math.min(length, sliceEnd));
+
+    const indices = [];
+    if (step > 0) {
+      for (let i = sliceStart; i < sliceEnd; i += step) indices.push(i);
+    } else {
+      for (let i = sliceStart; i > sliceEnd; i += step) indices.push(i);
+    }
+    return indices.filter(function (i) { return i >= 0 && i < length; });
+  }
+
   function transformNotebookOperators(expression) {
     const expr = trimOuterParens(expression);
     const additive = splitByTopLevelOperator(expr, ["+", "-"]);
@@ -243,12 +343,30 @@
       const fnMap = { "*": "op_mul", "/": "op_div", "@": "matmul" };
       return `${fnMap[multiplicative.operator]}(${transformNotebookOperators(multiplicative.left)}, ${transformNotebookOperators(multiplicative.right)})`;
     }
+    const power = splitByTopLevelOperator(expr, ["^"]);
+    if (power) {
+      return `Math.pow(${transformNotebookOperators(power.left)}, ${transformNotebookOperators(power.right)})`;
+    }
+    // Unary negation: -expr → op_sub(0, expr) so arrays are negated element-wise
+    if (expr[0] === '-') {
+      const inner = expr.slice(1).trim();
+      return `op_sub(0, ${transformNotebookOperators(inner)})`;
+    }
+    // Function call: recurse into each argument so operators inside are transformed
+    const funcMatch = /^([a-zA-Z_]\w*)\((.*)\)$/s.exec(expr);
+    if (funcMatch) {
+      const funcName = funcMatch[1];
+      const args = splitTopLevelArgs(funcMatch[2]);
+      return `${funcName}(${args.map(a => transformNotebookOperators(a)).join(', ')})`;
+    }
     return expr;
   }
 
   function normalizeExpression(expression) {
     let normalized = stripInlineComment(expression || "");
-    normalized = normalized.replace(/\^/g, "**").trim();
+    // Do NOT convert ^ to ** here — transformNotebookOperators handles ^ directly
+    // so that x**2 splitting does not corrupt the expression.
+    normalized = normalized.trim();
     normalized = normalized.replace(
       /(^|[^\w.])(\d+(?:\.\d+)?(?:e[+-]?\d+)?)\s+([A-Za-z][A-Za-z0-9]*)\b/g,
       function (_, prefix, number, unit) {
@@ -264,20 +382,30 @@
   function formatScalar(value) {
     if (typeof value === "number" && Number.isFinite(value)) {
       const absValue = Math.abs(value);
-      if (absValue >= 1e3 || (absValue > 0 && absValue <= 1e-3)) {
+      // Integer check
+      if (Math.abs(value - Math.round(value)) < 1e-9 * Math.max(1, absValue)) {
+        return String(Math.round(value));
+      }
+      // Scientific notation for very large or very small
+      if (absValue >= 1e4 || (absValue > 0 && absValue < 1e-3)) {
         return value
-          .toExponential(6)
+          .toExponential(3)
           .replace(/\.?0+e/, "e")
           .replace("e+", "e")
           .replace(/e(-?)0+(\d+)/, "e$1$2");
       }
-      if (Math.abs(value - Math.round(value)) < 1e-12) {
-        return String(Math.round(value));
-      }
-      return Number(value).toPrecision(12).replace(/\.?0+$/, "");
+      // Normal range: 3 decimal places, trim trailing zeros
+      return value.toFixed(3).replace(/\.?0+$/, "").replace(/\.$/, "");
     }
     if (Array.isArray(value)) {
-      return `[${value.map((item) => formatScalar(item)).join(", ")}]`;
+      const flat = value.every(function (v) { return !Array.isArray(v); });
+      if (flat && value.length > 4) {
+        const head = value.slice(0, 3).map(formatScalar).join(", ");
+        const tail = formatScalar(value[value.length - 1]);
+        return `[${head} ... ${tail}]`;
+      }
+      const inner = value.map(function (item) { return formatScalar(item); }).join(", ");
+      return `[${inner}]`;
     }
     if (value && typeof value === "object" && Array.isArray(value.__tuple__)) {
       return `(${value.__tuple__.map((item) => formatScalar(item)).join(", ")})`;
@@ -289,16 +417,42 @@
     return String(value);
   }
 
+  function resultLabel(expression) {
+    const raw = (expression || "").trim();
+    if (!raw) return "";
+    const stripped = stripInlineComment(raw).trim();
+    if (!stripped) return "";
+    if (stripped.includes("=") && !/(==|!=|<=|>=)/.test(stripped)) {
+      const lhs = stripped.split("=", 1)[0].trim();
+      if (/^[A-Za-z_]\w*$/.test(lhs)) {
+        return lhs;
+      }
+    }
+    return stripped;
+  }
+
   function zeros(rows, cols) {
-    if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows <= 0 || cols <= 0) {
-      throw new Error("zeros(rows, cols) requires positive integer dimensions");
+    if (!Number.isInteger(rows) || rows <= 0) {
+      throw new Error("zeros requires positive integer dimensions");
+    }
+    if (cols === undefined) {
+      return Array.from({ length: rows }, () => 0);
+    }
+    if (!Number.isInteger(cols) || cols <= 0) {
+      throw new Error("zeros requires positive integer dimensions");
     }
     return Array.from({ length: rows }, () => Array.from({ length: cols }, () => 0));
   }
 
   function ones(rows, cols) {
-    if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows <= 0 || cols <= 0) {
-      throw new Error("ones(rows, cols) requires positive integer dimensions");
+    if (!Number.isInteger(rows) || rows <= 0) {
+      throw new Error("ones requires positive integer dimensions");
+    }
+    if (cols === undefined) {
+      return Array.from({ length: rows }, () => 1);
+    }
+    if (!Number.isInteger(cols) || cols <= 0) {
+      throw new Error("ones requires positive integer dimensions");
     }
     return Array.from({ length: rows }, () => Array.from({ length: cols }, () => 1));
   }
@@ -612,7 +766,7 @@
     if (Math.abs(dx) < 1e-12) {
       throw new Error("dx must be non-zero");
     }
-    return L / dx;
+    return Math.round(Math.abs(L) / Math.abs(dx)) + 1;
   }
 
   function von_mises(s11, s22, s33, s12 = 0, s23 = 0, s13 = 0) {
@@ -656,17 +810,10 @@
     }
     const G = shear_modulus(E, nu);
     const lam = lame_lambda(E, nu);
-    const strainTrace = exx + eyy + ezz;
-    return {
-      sxx: 2 * G * exx + lam * strainTrace,
-      syy: 2 * G * eyy + lam * strainTrace,
-      szz: 2 * G * ezz + lam * strainTrace,
-      txy: 2 * G * exy,
-      tyz: 2 * G * eyz,
-      txz: 2 * G * exz,
-      G: G,
-      lambda: lam
-    };
+    const tr = exx + eyy + ezz;
+    // Returns [sxx, syy, szz, sxy, syz, sxz] matching Python
+    return [lam*tr + 2*G*exx, lam*tr + 2*G*eyy, lam*tr + 2*G*ezz,
+            2*G*exy, 2*G*eyz, 2*G*exz];
   }
 
   function plane_strain(E, nu, exx, eyy, exy = 0) {
@@ -675,32 +822,18 @@
     }
     const G = shear_modulus(E, nu);
     const lam = lame_lambda(E, nu);
-    const trace2d = exx + eyy;
-    const sxx = 2 * G * exx + lam * trace2d;
-    const syy = 2 * G * eyy + lam * trace2d;
-    const szz = lam * trace2d;
-    return {
-      sxx: sxx,
-      syy: syy,
-      szz: szz,
-      txy: 2 * G * exy,
-      ezz: 0
-    };
+    // Returns [sxx, syy, txy] matching Python
+    return [(lam + 2*G)*exx + lam*eyy, lam*exx + (lam + 2*G)*eyy, 2*G*exy];
   }
 
   function plane_stress(E, nu, exx, eyy, exy = 0) {
     if (![E, nu, exx, eyy, exy].every(isScalar)) {
       throw new Error("plane_stress expects scalar inputs");
     }
-    const factor = E / (1 - nu * nu);
-    const G = shear_modulus(E, nu);
-    return {
-      sxx: factor * (exx + nu * eyy),
-      syy: factor * (eyy + nu * exx),
-      szz: 0,
-      txy: 2 * G * exy,
-      ezz: plane_stress_ezz(nu, exx, eyy)
-    };
+    const C = E / (1 - nu * nu);
+    const G = E / (2 * (1 + nu));
+    // Returns [sxx, syy, txy] matching Python
+    return [C*(exx + nu*eyy), C*(eyy + nu*exx), 2*G*exy];
   }
 
   function plane_stress_ezz(nu, exx, eyy) {
@@ -767,14 +900,20 @@
   }
   function min_arr(v) { return Math.min(..._toArr(v)); }
   function max_arr(v) { return Math.max(..._toArr(v)); }
+  min_arr.valueOf = function () { return UNIT_FACTORS.min; };
+  min_arr.toString = function () { return String(UNIT_FACTORS.min); };
 
   // ── Array builders ───────────────────────────────────────────────────────────
   function linspace(start, stop, num) {
-    num = Math.max(2, Math.round(num));
+    if (num === undefined) num = 50;
+    num = Math.max(1, Math.round(num));
+    if (num === 1) return [start];
     const step = (stop - start) / (num - 1);
     return Array.from({ length: num }, (_, i) => start + i * step);
   }
   function arange(start, stop, step) {
+    // arange(n) → [0, 1, ..., n-1]
+    if (stop === undefined) { stop = start; start = 0; }
     if (step === undefined) { step = 1; }
     if (step === 0) throw new Error("arange: step cannot be 0");
     const out = [];
@@ -988,7 +1127,7 @@
   function lewis(D, alpha_th) { return Math.abs(D) / (Math.abs(alpha_th) + 1e-300); }
   function weber(rho, v, L, sigma) { return Math.abs(rho) * v ** 2 * Math.abs(L) / (Math.abs(sigma) + 1e-300); }
   function grashof(g_acc, beta, dT, L, nu) { return Math.abs(g_acc) * Math.abs(beta) * Math.abs(dT) * L ** 3 / (nu ** 2 + 1e-300); }
-  function stokes(rho_p, rho_f, d, mu) { return Math.abs(rho_p - rho_f) * 9.80665 * d ** 2 / (18 * Math.abs(mu) + 1e-300); }
+  function stokes(rho, mu, g_acc, d) { return Math.abs(rho) * Math.abs(g_acc) * d ** 2 / (18 * Math.abs(mu) + 1e-300); }
 
   // ── Extra array / stats functions ────────────────────────────────────────────
   function diff2_fn(v, n) {
@@ -1082,19 +1221,109 @@
     return coeffs;
   }
 
+  // ── Alloy composition ────────────────────────────────────────────────────────
+  function wt_to_mol(wt, M) {
+    const w = _toArr(wt), m = _toArr(M);
+    if (w.length !== m.length) throw new Error("wt_to_mol: wt and M must have the same length");
+    const n = w.map((wi, i) => wi / m[i]);
+    const total = n.reduce((s, x) => s + x, 0);
+    return n.map(x => x / (total || 1));
+  }
+  function mol_to_wt(x, M) {
+    const xv = _toArr(x), mv = _toArr(M);
+    if (xv.length !== mv.length) throw new Error("mol_to_wt: x and M must have the same length");
+    const w = xv.map((xi, i) => xi * mv[i]);
+    const total = w.reduce((s, v) => s + v, 0);
+    return w.map(v => 100 * v / (total || 1));
+  }
+  function wt_to_mol2(wt_B, M_A, M_B) {
+    const arr = Array.isArray(wt_B) ? wt_B : [wt_B];
+    const result = arr.map(w => {
+      const nB = w / M_B;
+      const nA = (100 - w) / M_A;
+      return nB / (nA + nB || 1);
+    });
+    return result.length === 1 ? result[0] : result;
+  }
+
+  // ── FFT (magnitude spectrum, matching Python np.abs(np.fft.fft(v))) ─────────
+  function fft(v) {
+    const a = _toArr(v);
+    const n = a.length;
+    if (n > 4096) throw new Error("fft: array too large for client-side (use Python side for n > 4096)");
+    const re = new Array(n).fill(0);
+    const im = new Array(n).fill(0);
+    for (let k = 0; k < n; k++) {
+      for (let t = 0; t < n; t++) {
+        const ang = 2 * Math.PI * k * t / n;
+        re[k] += a[t] * Math.cos(ang);
+        im[k] -= a[t] * Math.sin(ang);
+      }
+    }
+    return re.map((r, i) => Math.sqrt(r * r + im[i] * im[i]));
+  }
+  function ifft(v) {
+    // Returns real part of inverse DFT
+    const a = _toArr(v);
+    const n = a.length;
+    if (n > 4096) throw new Error("ifft: array too large for client-side");
+    const out = new Array(n).fill(0);
+    for (let t = 0; t < n; t++) {
+      for (let k = 0; k < n; k++) {
+        out[t] += a[k] * Math.cos(2 * Math.PI * k * t / n);
+      }
+      out[t] /= n;
+    }
+    return out;
+  }
+  function fftfreq(n, dt) {
+    if (dt === undefined) dt = 1.0;
+    n = Math.round(n);
+    const freqs = new Array(n);
+    const half = Math.floor((n - 1) / 2) + 1;
+    for (let i = 0; i < half; i++) freqs[i] = i / (n * dt);
+    for (let i = half; i < n; i++) freqs[i] = (i - n) / (n * dt);
+    return freqs;
+  }
+  function fftshift(v) {
+    const a = _toArr(v);
+    const mid = Math.floor(a.length / 2);
+    return [...a.slice(mid), ...a.slice(0, mid)];
+  }
+  function real_fn(v) { return Array.isArray(v) ? _toArr(v) : v; }
+  function imag_fn(v) { return Array.isArray(v) ? new Array(_toArr(v).length).fill(0) : 0; }
+  function angle_fn(v) { return Array.isArray(v) ? new Array(_toArr(v).length).fill(0) : 0; }
+
   function evaluateExpression(expression, variables) {
     const expr = normalizeExpression(expression);
     if (!expr) {
       return null;
     }
 
-    const scope = Object.assign({}, variables);
+    const scope = {};
     for (const name of MATH_NAMES) {
-      scope[name] = Math[name];
+      const mathFn = Math[name];
+      scope[name] = function () {
+        const args = Array.prototype.slice.call(arguments);
+        if (args.length === 1) {
+          const a = args[0];
+          if (isVector(a)) return a.map(function (x) { return mathFn(x); });
+          if (isMatrix(a)) return a.map(function (row) { return row.map(function (x) { return mathFn(x); }); });
+          return mathFn(a);
+        }
+        if (args.length === 2) {
+          return applyElementwise(args[0], args[1], function (a, b) { return mathFn(a, b); }, name);
+        }
+        return mathFn.apply(Math, args);
+      };
     }
     for (const [unitName, factor] of Object.entries(UNIT_FACTORS)) {
       scope[unitName] = factor;
     }
+    scope.len = (v) => Array.isArray(v) ? v.length : (typeof v === 'string' ? v.length : 0);
+    scope.range = (a, b, s) => { if (b === undefined) { b = a; a = 0; } if (s === undefined) s = 1; return arange(a, b, s); };
+    scope.enumerate = (v) => _toArr(v).map((x, i) => [i, x]);
+    scope.zip = (...arrays) => { const n = Math.min(...arrays.map(a => _toArr(a).length)); return Array.from({length: n}, (_, i) => arrays.map(a => _toArr(a)[i])); };
     scope.dot = dot;
     scope.cross = cross;
     scope.norm = norm;
@@ -1110,20 +1339,20 @@
     scope.shape = shape;
     scope.rank = rank;
     scope.eig = eig;
-    scope.cfl_dt = cfl_dt;
-    scope.diffusion_dt = diffusion_dt;
-    scope.fourier_number = fourier_number;
-    scope.peclet = peclet;
-    scope.cell_size = cell_size;
-    scope.domain_points = domain_points;
-    scope.von_mises = von_mises;
-    scope.shear_modulus = shear_modulus;
-    scope.lame_lambda = lame_lambda;
-    scope.hooke_1d = hooke_1d;
+    scope.cfl_dt = elementwise(cfl_dt);
+    scope.diffusion_dt = elementwise(diffusion_dt);
+    scope.fourier_number = elementwise(fourier_number);
+    scope.peclet = elementwise(peclet);
+    scope.cell_size = elementwise(cell_size);
+    scope.domain_points = elementwise(domain_points);
+    scope.von_mises = elementwise(von_mises);
+    scope.shear_modulus = elementwise(shear_modulus);
+    scope.lame_lambda = elementwise(lame_lambda);
+    scope.hooke_1d = elementwise(hooke_1d);
     scope.hooke_3d = hooke_3d;
     scope.plane_strain = plane_strain;
     scope.plane_stress = plane_stress;
-    scope.plane_stress_ezz = plane_stress_ezz;
+    scope.plane_stress_ezz = elementwise(plane_stress_ezz);
     scope.matmul = matmul;
     scope.op_add = op_add;
     scope.op_sub = op_sub;
@@ -1134,16 +1363,16 @@
     scope.tau = 2 * Math.PI;
     scope.deg = Math.PI / 180;
     scope.inf = Infinity;
-    // Math helpers
-    scope.sign = sign;
-    scope.log2 = log2;
-    scope.degrees = degrees;
-    scope.radians = radians;
-    scope.clamp = clamp;
-    scope.lerp = lerp;
-    scope.factorial = factorial;
-    scope.gcd = gcd;
-    scope.lcm = lcm;
+    // Math helpers — all element-wise on arrays
+    scope.sign = elementwise(sign);
+    scope.log2 = elementwise(log2);
+    scope.degrees = elementwise(degrees);
+    scope.radians = elementwise(radians);
+    scope.clamp = elementwise(clamp);
+    scope.lerp = elementwise(lerp);
+    scope.factorial = elementwise(factorial);
+    scope.gcd = elementwise(gcd);
+    scope.lcm = elementwise(lcm);
     // Statistics
     scope.sum = sum;
     scope.mean = mean;
@@ -1166,11 +1395,11 @@
     scope.lstsq = lstsq;
     scope.norm_p = norm_p;
     scope.svd = svd;
-    // Dimensionless numbers
-    scope.reynolds = reynolds;
-    scope.mach = mach;
-    scope.prandtl = prandtl;
-    scope.nusselt_dittus = nusselt_dittus;
+    // Dimensionless numbers — element-wise on arrays
+    scope.reynolds = elementwise(reynolds);
+    scope.mach = elementwise(mach);
+    scope.prandtl = elementwise(prandtl);
+    scope.nusselt_dittus = elementwise(nusselt_dittus);
     // Physical constants
     scope.g_n      = 9.80665;
     scope.c_0      = 299792458.0;
@@ -1187,12 +1416,12 @@
     scope.mbar = 100.0;
     scope.kWh  = 3.6e6;
     scope.L    = 1e-3;   // litre
-    // Special math
-    scope.erf   = erf;
-    scope.erfc  = erfc;
-    scope.gamma = gamma_fn;
-    scope.lgamma = lgamma_fn;
-    scope.beta  = beta_fn;
+    // Special math — element-wise on arrays
+    scope.erf   = elementwise(erf);
+    scope.erfc  = elementwise(erfc);
+    scope.gamma = elementwise(gamma_fn);
+    scope.lgamma = elementwise(lgamma_fn);
+    scope.beta  = elementwise(beta_fn);
     // Sorting / array ops
     scope.sort     = sort_fn;
     scope.argsort  = argsort;
@@ -1221,13 +1450,13 @@
     scope.zscore     = zscore_fn;
     scope.norm01     = norm01_fn;
     scope.corrcoef   = corrcoef_fn;
-    // More dimensionless
-    scope.biot           = biot;
-    scope.fourier_thermal = fourier_thermal;
-    scope.lewis          = lewis;
-    scope.weber          = weber;
-    scope.grashof        = grashof;
-    scope.stokes         = stokes;
+    // More dimensionless — element-wise on arrays
+    scope.biot           = elementwise(biot);
+    scope.fourier_thermal = elementwise(fourier_thermal);
+    scope.lewis          = elementwise(lewis);
+    scope.weber          = elementwise(weber);
+    scope.grashof        = elementwise(grashof);
+    scope.stokes         = elementwise(stokes);
     // Extra array / stats
     scope.diff2     = diff2_fn;
     scope.vstack    = vstack_fn;
@@ -1237,6 +1466,21 @@
     scope.histogram = histogram_fn;
     scope.mode      = mode_fn;
     scope.eig_full  = eig_full_fn;
+    // Alloy
+    scope.wt_to_mol  = wt_to_mol;
+    scope.mol_to_wt  = mol_to_wt;
+    scope.wt_to_mol2 = wt_to_mol2;
+    // FFT
+    scope.fft      = fft;
+    scope.ifft     = ifft;
+    scope.fftfreq  = fftfreq;
+    scope.fftshift = fftshift;
+    scope.real     = real_fn;
+    scope.imag     = imag_fn;
+    scope.angle    = angle_fn;
+
+    // User-defined variables override built-ins (e.g. user may name a var "angle")
+    Object.assign(scope, variables);
 
     const names = Object.keys(scope);
     const values = Object.values(scope);
@@ -1263,46 +1507,422 @@
     return raw.length > 0 && (raw[0] === " " || raw[0] === "\t");
   }
 
+  // ── Statement execution helpers ─────────────────────────────────────────────
+
+  function findAssignEq(s) {
+    for (var _i = 0; _i < s.length; _i++) {
+      if (s[_i] === '=') {
+        var prev = _i > 0 ? s[_i - 1] : '';
+        var next = _i < s.length - 1 ? s[_i + 1] : '';
+        if (prev !== '!' && prev !== '<' && prev !== '>' && prev !== '=' && next !== '=') return _i;
+      }
+    }
+    return -1;
+  }
+
+  // Execute one statement, mutate variables in place, return the assigned/evaluated value.
+  function executeStatement(expression, variables) {
+    const assignEq = findAssignEq(expression);
+    if (assignEq !== -1) {
+      const lhs = expression.slice(0, assignEq).trim();
+      const rhs = expression.slice(assignEq + 1).trim();
+
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(lhs)) {
+        const value = evaluateExpression(rhs, variables);
+        variables[lhs] = value;
+        return value;
+      }
+      // Index assignment: x[i] = val  or  x[i][j] = val
+      const m = lhs.match(/^([A-Za-z_][A-Za-z0-9_]*)\[([^\]]+)\](?:\[([^\]]+)\])?$/);
+      if (!m) throw new Error("Invalid assignment target");
+      const arrName = m[1], idx1Expr = m[2], idx2Expr = m[3];
+      if (!(arrName in variables)) throw new Error(`${arrName} is not defined`);
+      const arr = variables[arrName];
+      if (!Array.isArray(arr)) throw new Error(`${arrName} is not an array`);
+      const newArr = arr.map(function (row) { return Array.isArray(row) ? row.slice() : row; });
+      const value = evaluateExpression(rhs, variables);
+      if (idx2Expr !== undefined) {
+        const idx1 = Math.round(Number(evaluateExpression(idx1Expr, variables)));
+        const idx2 = Math.round(Number(evaluateExpression(idx2Expr, variables)));
+        if (!Array.isArray(newArr[idx1])) throw new Error(`${arrName}[${idx1}] is not an array`);
+        newArr[idx1][idx2] = value;
+      } else if (findTopLevelColon(idx1Expr) !== -1) {
+        const indices = parseSliceIndices(idx1Expr, variables, newArr.length);
+        if (Array.isArray(value)) {
+          if (value.length !== indices.length) {
+            throw new Error("Slice assignment length mismatch");
+          }
+          indices.forEach(function (idx, index) {
+            newArr[idx] = value[index];
+          });
+        } else {
+          indices.forEach(function (idx) {
+            newArr[idx] = value;
+          });
+        }
+      } else {
+        const idx1 = Math.round(Number(evaluateExpression(idx1Expr, variables)));
+        newArr[idx1] = value;
+      }
+      variables[arrName] = newArr;
+      return value;
+    }
+    return evaluateExpression(expression, variables);
+  }
+
+  // ── Block executor (handles nested for / if / elif / else) ─────────────────
+
+  function indentOf(raw) {
+    var n = 0;
+    for (var _c = 0; _c < raw.length; _c++) {
+      if (raw[_c] === ' ') n++;
+      else if (raw[_c] === '\t') n += 4;
+      else break;
+    }
+    return n;
+  }
+
+  // Evaluate a condition expression (may return boolean, number, etc.)
+  function evaluateCondition(expr, variables) {
+    // Convert Python boolean operators to JS
+    var jsExpr = expr
+      .replace(/\bnot\s+in\b/g, '__notIn__')
+      .replace(/\bin\b/g, 'in')           // JS `in` is object-key check — best-effort
+      .replace(/\b__notIn__\b/g, '!in')
+      .replace(/\band\b/g, '&&')
+      .replace(/\bor\b/g, '||')
+      .replace(/\bnot\b/g, '!');
+    var scope = {};
+    Object.assign(scope, variables);
+    MATH_NAMES.forEach(function (n) { if (!(n in scope)) scope[n] = Math[n]; });
+    scope.pi = Math.PI; scope.e = Math.E; scope.tau = 2 * Math.PI;
+    var names = Object.keys(scope);
+    var values = Object.values(scope);
+    try {
+      var fn = new Function(names, 'return !!(' + jsExpr + ');');
+      return fn.apply(null, values);
+    } catch (e) { return false; }
+  }
+
+  // Execute a flat list of raw lines as a block, handling nested for/if/elif/else.
+  // All lines are expected to share the same minimum indentation.
+  function executeBlock(lines, variables) {
+    var li = 0;
+    while (li < lines.length) {
+      var raw = lines[li] || '';
+      var stmt = stripInlineComment(raw).trim();
+
+      if (!stmt) { li++; continue; }
+
+      var myIndent = indentOf(raw);
+
+      // Collect immediately-following lines that are MORE indented (= sub-body)
+      function collectSubBody() {
+        var sub = [];
+        li++;
+        while (li < lines.length) {
+          var subRaw = lines[li] || '';
+          if (subRaw.trim() === '') { sub.push(subRaw); li++; continue; }
+          if (indentOf(subRaw) > myIndent) { sub.push(subRaw); li++; }
+          else break;
+        }
+        return sub;
+      }
+
+      if (/^for\s/.test(stmt) && stmt.endsWith(':')) {
+        var fmatch = stmt.match(/^for\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+?)\s*:$/);
+        var subBody = collectSubBody();
+        if (fmatch) {
+          try {
+            var iterable = evaluateExpression(fmatch[2], variables);
+            if (Array.isArray(iterable)) {
+              for (var fi = 0; fi < iterable.length; fi++) {
+                variables[fmatch[1]] = iterable[fi];
+                executeBlock(subBody, variables);
+              }
+            }
+          } catch (e) { /* skip on error */ }
+        }
+        continue;
+      }
+
+      if (/^if\s/.test(stmt) && stmt.endsWith(':')) {
+        var condExpr = stmt.replace(/^if\s+/, '').replace(/\s*:\s*$/, '');
+        var ifBody = collectSubBody();
+        var executed = false;
+        try {
+          if (evaluateCondition(condExpr, variables)) {
+            executeBlock(ifBody, variables);
+            executed = true;
+          }
+        } catch (e) {}
+
+        // Handle elif / else chain at same indent
+        while (li < lines.length) {
+          var chainRaw = lines[li] || '';
+          var chainStmt = stripInlineComment(chainRaw).trim();
+          if (!chainStmt) { li++; continue; }
+          if (indentOf(chainRaw) !== myIndent) break;
+          if (!/^(elif\s|else\s*:)/.test(chainStmt)) break;
+
+          var chainIndent = indentOf(chainRaw);
+          myIndent = chainIndent;   // update for collectSubBody
+          var chainBody = collectSubBody();
+
+          if (!executed) {
+            if (/^else\s*:/.test(chainStmt)) {
+              executeBlock(chainBody, variables);
+              executed = true;
+            } else {
+              var elifExpr = chainStmt.replace(/^elif\s+/, '').replace(/\s*:\s*$/, '');
+              try {
+                if (evaluateCondition(elifExpr, variables)) {
+                  executeBlock(chainBody, variables);
+                  executed = true;
+                }
+              } catch (e) {}
+            }
+          }
+        }
+        continue;
+      }
+
+      if (/^(elif\s|else\s*:)/.test(stmt)) {
+        // Orphaned elif/else — skip with body
+        collectSubBody();
+        continue;
+      }
+
+      // Plain statement
+      try { executeStatement(stmt, variables); } catch (e) {}
+      li++;
+    }
+  }
+
+  // ── plot() call parsing ──────────────────────────────────────────────────────
+
+  function splitArgsTopLevel(str) {
+    var depth = 0, current = "", args = [];
+    for (var i = 0; i < str.length; i++) {
+      var c = str[i];
+      if ("([{".indexOf(c) >= 0) depth++;
+      else if (")]}".indexOf(c) >= 0) depth--;
+      if (c === "," && depth === 0) { args.push(current.trim()); current = ""; }
+      else current += c;
+    }
+    if (current.trim()) args.push(current.trim());
+    return args;
+  }
+
+  function parseYVarNames(arg) {
+    arg = arg.trim();
+    if (arg.startsWith("[")) {
+      var inner = arg.slice(1, arg.lastIndexOf("]"));
+      return inner.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+    return arg ? [arg] : [];
+  }
+
+  function parsePlotCall(expr) {
+    var m = expr.match(/^plot\s*\((.+)\)$/);
+    if (!m) return null;
+    var args = splitArgsTopLevel(m[1]);
+    var x_var = null, y_vars = [], plot_type = "lines", title = null, x_title = null, y_title = null;
+    var positional = [];
+    for (var i = 0; i < args.length; i++) {
+      var kv = args[i].match(/^(\w+)\s*=\s*(.+)$/);
+      if (kv) {
+        var key = kv[1], val = kv[2].trim().replace(/^["'`]|["'`]$/g, "");
+        if (key === "type")                         plot_type = val;
+        else if (key === "title")                   title = val;
+        else if (key === "xlabel" || key === "x_title") x_title = val;
+        else if (key === "ylabel" || key === "y_title") y_title = val;
+      } else {
+        positional.push(args[i].trim());
+      }
+    }
+    if (positional.length === 1) {
+      y_vars = parseYVarNames(positional[0]);
+    } else if (positional.length >= 2) {
+      x_var = positional[0];
+      y_vars = parseYVarNames(positional[1]);
+      if (positional[2]) plot_type = positional[2].replace(/^["'`]|["'`]$/g, "").trim();
+    }
+    if (!y_vars.length) return null;
+    return { x_var: x_var, y_vars: y_vars, plot_type: plot_type, title: title, x_title: x_title, y_title: y_title };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+
   function buildResultRows(lines) {
     const variables = {};
-    const results = [];
+    const results = new Array(lines.length).fill("");
 
-    lines.forEach((line) => {
-      const raw = line || "";
+    let li = 0;
+    while (li < lines.length) {
+      const raw = lines[li] || "";
       const expression = stripInlineComment(raw).trim();
 
-      // Block headers (for/if) and indented body lines are handled server-side
-      if (isBlockHeader(expression) || isIndentedLine(raw)) {
-        results.push("");
-        return;
+      if (!expression || isIndentedLine(raw)) {
+        li++;
+        continue;
       }
 
-      if (!expression) {
-        results.push("");
-        return;
+      // Detect plot() call — show icon in gutter, skip normal evaluation
+      const plotSpec = parsePlotCall(expression);
+      if (plotSpec) {
+        results[li] = { name: "plot", value: "📊 plot", count: "", error: false };
+        li++;
+        continue;
       }
-      try {
-        if (expression.includes("=")) {
-          const parts = expression.split("=");
-          const variableName = (parts.shift() || "").trim();
-          const rhs = parts.join("=").trim();
-          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(variableName)) {
-            throw new Error("Variable name is invalid");
-          }
-          const value = evaluateExpression(rhs, variables);
-          variables[variableName] = value;
-          results.push(`-> ${formatScalar(value)}`);
-        } else {
-          const value = evaluateExpression(expression, variables);
-          results.push(`-> ${formatScalar(value)}`);
+
+      if (isBlockHeader(expression)) {
+        // Collect this block header + all immediately following indented lines,
+        // then hand the whole chunk to executeBlock which handles nested for/if/elif/else.
+        const headerIdx = li;
+        const blockLines = [raw];   // include the header line itself
+        li++;
+        while (li < lines.length && isIndentedLine(lines[li] || "")) {
+          blockLines.push(lines[li]);
+          li++;
         }
-      } catch (error) {
-        results.push(`Error: ${error.message}`);
+        try {
+          executeBlock(blockLines, variables);
+        } catch (err) {
+          results[headerIdx] = { name: resultLabel(expression), value: "Error: " + err.message, count: "", error: true };
+        }
+        continue;
       }
-    });
+
+      try {
+        const value = executeStatement(expression, variables);
+        const label = resultLabel(expression);
+        results[li] = {
+          name: label,
+          value: formatScalar(value),
+          count: Array.isArray(value) ? value.length : "",
+          error: false,
+        };
+      } catch (err) {
+        results[li] = { name: resultLabel(expression), value: "Error: " + err.message, count: "", error: true };
+      }
+      li++;
+    }
 
     return { results, variables };
   }
+
+  // ── Monaco CSS injections ─────────────────────────────────────────────────
+  (function injectEditorCSS() {
+    if (document.getElementById('_nb_editor_style')) return;
+    var s = document.createElement('style');
+    s.id = '_nb_editor_style';
+    s.textContent = '.nb-array-var   { color: #1d4ed8 !important; font-weight: 700 !important; }'
+                  + '.nb-scalar-var  { color: #0f766e !important; font-weight: 700 !important; }'
+                  + '.nb-error-line  { background: rgba(239,68,68,0.08) !important; }'
+                  + '.nb-error-glyph::before { content: "●"; color: #ef4444; font-size: 10px; margin-left: 4px; }';
+    document.head.appendChild(s);
+  }());
+
+  function applyErrorDecorations(errorLineIndices) {
+    var editor = window._monacoEditor;
+    if (!editor || !editor.getModel) return;
+    var decorations = errorLineIndices.map(function(lineIdx) {
+      return {
+        range: new monaco.Range(lineIdx + 1, 1, lineIdx + 1, 1),
+        options: {
+          isWholeLine: true,
+          className: 'nb-error-line',
+          glyphMarginClassName: 'nb-error-glyph',
+          overviewRuler: { color: '#ef4444', position: monaco.editor.OverviewRulerLane.Left },
+        },
+      };
+    });
+    window._nbErrorDecorations = editor.deltaDecorations(
+      window._nbErrorDecorations || [], decorations
+    );
+  }
+
+  function renderVarInspector(variables) {
+    var panel = document.getElementById('nb-var-inspector-body');
+    if (!panel) return;
+    var names = Object.keys(variables);
+    if (names.length === 0) {
+      panel.innerHTML = '<div style="color:#94a3b8;font-size:12px;padding:8px;font-style:italic">No variables defined yet.</div>';
+      return;
+    }
+    var rows = names.map(function(name) {
+      var v = variables[name];
+      var type, shape, preview;
+      if (Array.isArray(v)) {
+        if (v.length > 0 && Array.isArray(v[0])) {
+          type = 'matrix'; shape = v.length + '×' + v[0].length;
+          preview = '[[' + v[0].slice(0,3).map(function(x){return +x.toFixed(4);}).join(', ') + (v[0].length>3?', …':'') + '], …]';
+        } else {
+          type = 'vector'; shape = '[' + v.length + ']';
+          preview = '[' + v.slice(0,5).map(function(x){return +x.toFixed(4);}).join(', ') + (v.length>5?', …':'') + ']';
+        }
+      } else if (typeof v === 'number') {
+        type = 'scalar'; shape = '—';
+        preview = isFinite(v) ? +v.toPrecision(6) : String(v);
+      } else if (typeof v === 'object' && v !== null) {
+        type = 'object'; shape = '—';
+        preview = JSON.stringify(v).slice(0, 60);
+      } else {
+        type = typeof v; shape = '—'; preview = String(v);
+      }
+      return '<tr style="border-bottom:1px solid #f1f5f9">'
+        + '<td style="padding:4px 8px;font-weight:600;color:#1e293b;font-family:monospace;font-size:12px">' + name + '</td>'
+        + '<td style="padding:4px 8px;color:#001f41;font-size:11px">' + type + '</td>'
+        + '<td style="padding:4px 8px;color:#64748b;font-size:11px">' + shape + '</td>'
+        + '<td style="padding:4px 8px;color:#334155;font-family:monospace;font-size:11px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + preview + '</td>'
+        + '</tr>';
+    }).join('');
+    panel.innerHTML = '<table style="width:100%;border-collapse:collapse">'
+      + '<thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0">'
+      + '<th style="padding:4px 8px;text-align:left;font-size:11px;color:#64748b;font-weight:600">Name</th>'
+      + '<th style="padding:4px 8px;text-align:left;font-size:11px;color:#64748b;font-weight:600">Type</th>'
+      + '<th style="padding:4px 8px;text-align:left;font-size:11px;color:#64748b;font-weight:600">Shape</th>'
+      + '<th style="padding:4px 8px;text-align:left;font-size:11px;color:#64748b;font-weight:600">Value</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function applyVarDecorations(arrayVarNames, scalarVarNames) {
+    var editor = window._monacoEditor;
+    if (!editor || !editor.getModel) return;
+    var model = editor.getModel();
+    if (!model) return;
+    var decorations = [];
+    function addDecorations(names, cls) {
+      names.forEach(function (name) {
+        var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        var matches = model.findMatches('\\b' + escaped + '\\b', false, true, true, null, false);
+        matches.forEach(function (m) {
+          decorations.push({ range: m.range, options: { inlineClassName: cls } });
+        });
+      });
+    }
+    addDecorations(arrayVarNames,  'nb-array-var');
+    addDecorations(scalarVarNames, 'nb-scalar-var');
+    window._nbVarDecorations = editor.deltaDecorations(
+      window._nbVarDecorations || [], decorations
+    );
+  }
+
+  function refreshVarsFromState(state) {
+    var safeState = state || {};
+    var scalarVars = safeState.variables || {};
+    var arrayVars = safeState.array_variables || {};
+    var arrayNames = Object.keys(arrayVars);
+    var scalarNames = Object.keys(scalarVars);
+    applyVarDecorations(arrayNames, scalarNames);
+
+    var merged = {};
+    Object.keys(scalarVars).forEach(function (name) { merged[name] = scalarVars[name]; });
+    Object.keys(arrayVars).forEach(function (name) { merged[name] = arrayVars[name]; });
+    renderVarInspector(merged);
+  }
+  window._nbRefreshVarsFromState = refreshVarsFromState;
 
   function renderResults(resultsContainer, debugContainer, text) {
     if (!resultsContainer) {
@@ -1311,29 +1931,78 @@
     const lines = (text || "").split("\n");
     const evaluation = buildResultRows(lines);
     const rows = Math.max(NOTEBOOK_ROWS, evaluation.results.length);
+    const maxLabelLen = evaluation.results.reduce(function(acc, entry) {
+      if (!entry || typeof entry !== "object") return acc;
+      const len = String(entry.name || "").length;
+      return Math.max(acc, len);
+    }, 0);
+    const nameColWidth = Math.max(72, Math.min(220, maxLabelLen * 9 + 16));
+    const colTemplate = nameColWidth + "px minmax(0, 1fr) 56px";
 
-    // Use absolute positioning so Monaco's translateY scroll keeps results
-    // pixel-locked to editor lines (lineHeight=34, top padding=18 on Monaco).
-    resultsContainer.style.position = "relative";
-    resultsContainer.style.height = (rows * 34) + "px";
+    // Sync header column widths with data rows
+    const headerSibling = resultsContainer.previousElementSibling;
+    if (headerSibling) headerSibling.style.gridTemplateColumns = colTemplate;
+
+    // Highlight variable names in the editor by type
+    const arrayVarNames  = Object.keys(evaluation.variables).filter(function (k) { return Array.isArray(evaluation.variables[k]); });
+    const scalarVarNames = Object.keys(evaluation.variables).filter(function (k) { return typeof evaluation.variables[k] === 'number'; });
+    applyVarDecorations(arrayVarNames, scalarVarNames);
+
+    // Error line decorations
+    const errorLineIndices = evaluation.results.reduce(function(acc, r, i) {
+      if (r && r.error) acc.push(i);
+      return acc;
+    }, []);
+    applyErrorDecorations(errorLineIndices);
+
+    // Variable inspector
+    renderVarInspector(evaluation.variables);
+
+    resultsContainer.style.position = "";
+    resultsContainer.style.height = "";
     resultsContainer.innerHTML = "";
+    resultsContainer.style.borderTop = "none";
+    resultsContainer.style.borderRight = "1px solid #e2e8f0";
+    resultsContainer.style.borderBottom = "1px solid #e2e8f0";
+    resultsContainer.style.borderLeft = "1px solid #e2e8f0";
+    resultsContainer.style.borderRadius = "0 0 4px 4px";
+    resultsContainer.style.overflow = "hidden";
 
     for (let index = 0; index < rows; index += 1) {
-      const textLine = evaluation.results[index] || "";
+      const entry = evaluation.results[index] || { name: "", value: "", count: "", error: false };
       const row = document.createElement("div");
-      row.textContent = textLine;
-      row.style.position = "absolute";
-      row.style.top = (index * 34) + "px";
-      row.style.left = "0";
-      row.style.right = "0";
+      row.style.display = "grid";
+      row.style.gridTemplateColumns = colTemplate;
+      row.style.columnGap = "0";
       row.style.height = "34px";
       row.style.lineHeight = "34px";
       row.style.fontFamily = "monospace";
-      row.style.fontSize = "18px";
-      row.style.whiteSpace = "nowrap";
-      row.style.overflow = "hidden";
-      row.style.textOverflow = "ellipsis";
-      row.style.color = textLine.startsWith("Error:") ? "#b42318" : (textLine ? "#0f5132" : "#98a2b3");
+      row.style.fontSize = "13px";
+      row.style.alignItems = "center";
+      row.style.borderBottom = "1px solid #e2e8f0";
+      const isError = !!entry.error;
+      const isPlot  = String(entry.value || "").startsWith("📊");
+
+      const cellBase = "padding:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;height:34px;line-height:34px;";
+
+      const nameCell = document.createElement("div");
+      nameCell.textContent = entry.name || "";
+      nameCell.title = "Data";
+      nameCell.style.cssText = cellBase + "border-right:1px solid #e2e8f0;font-weight:600;color:" + (isError ? "#b42318" : "#475467") + ";";
+
+      const valueCell = document.createElement("div");
+      valueCell.textContent = entry.value || "";
+      valueCell.title = "Value";
+      valueCell.style.cssText = cellBase + "border-right:1px solid #e2e8f0;font-weight:" + (isPlot ? "700" : "600") + ";color:" + (isError ? "#b42318" : isPlot ? "#001f41" : (entry.value ? "#1e3a8a" : "#98a2b3")) + ";";
+
+      const countCell = document.createElement("div");
+      countCell.textContent = entry.count === "" ? "" : String(entry.count);
+      countCell.title = "Count";
+      countCell.style.cssText = cellBase + "text-align:right;color:" + (entry.count === "" ? "#98a2b3" : "#64748b") + ";font-weight:600;";
+
+      row.appendChild(nameCell);
+      row.appendChild(valueCell);
+      row.appendChild(countCell);
       resultsContainer.appendChild(row);
     }
     if (debugContainer) {
@@ -1368,10 +2037,13 @@
   function attachNotebookRuntime() {
     const textarea = document.getElementById("notebook-textarea");
     const hiddenInput = document.getElementById("notebook-live-text");
+    const runInput = document.getElementById("notebook-run-text");
     const results = document.getElementById("notebook-results");
     const debug = document.getElementById("notebook-debug");
     const lineNumbers = document.getElementById("notebook-line-numbers");
     const clearButton = document.getElementById("notebook-clear-btn");
+    const runButton = document.getElementById("notebook-run-btn");
+    const autoBox = document.getElementById("notebook-auto-update");
     if (!textarea || !results || textarea.dataset.liveSyncAttached === "true") {
       return;
     }
@@ -1379,35 +2051,397 @@
     // Always expose the render function so Monaco can call it
     exposeRenderGlobal(results, debug);
 
+    const isAutoUpdateEnabled = function () {
+      if (!autoBox) return true;
+      return !!autoBox.querySelector('input[type="checkbox"]:checked');
+    };
+
+    const setDashValue = function (el, value) {
+      if (!el) return;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value");
+      if (setter && setter.set) setter.set.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    const runCurrentValue = function () {
+      const value = textarea.value || "";
+      setDashValue(hiddenInput, value);
+      setDashValue(runInput, value);
+      textarea.style.height = "auto";
+      textarea.style.height = Math.max(400, textarea.scrollHeight) + "px";
+    renderResults(results, debug, value);
+    if (lineNumbers) updateLineNumbers(lineNumbers, value);
+  };
+
     const pushValue = function () {
       // If Monaco has taken over, skip textarea-based sync
       if (window._monacoEditor) return;
       const value = textarea.value || "";
-      if (hiddenInput) {
-        hiddenInput.value = value;
-      }
-      renderResults(results, debug, value);
+      setDashValue(hiddenInput, value);
+      // Auto-grow textarea to fit content (no internal scroll)
+      textarea.style.height = "auto";
+      textarea.style.height = Math.max(400, textarea.scrollHeight) + "px";
       if (lineNumbers) updateLineNumbers(lineNumbers, value);
+      if (isAutoUpdateEnabled()) {
+        setDashValue(runInput, value);
+        renderResults(results, debug, value);
+      }
     };
-
-    // Scroll sync (textarea path — Monaco uses onDidScrollChange instead)
-    textarea.addEventListener("scroll", function () {
-      if (window._monacoEditor) return;
-      if (results) results.style.transform = "translateY(-" + textarea.scrollTop + "px)";
-      if (lineNumbers) lineNumbers.scrollTop = textarea.scrollTop;
-    });
 
     textarea.addEventListener("input", pushValue);
     textarea.addEventListener("keyup", pushValue);
+    textarea.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        runCurrentValue();
+      }
+    });
     if (clearButton && clearButton.dataset.liveSyncAttached !== "true") {
       clearButton.addEventListener("click", function () {
         window.setTimeout(pushValue, 0);
       });
       clearButton.dataset.liveSyncAttached = "true";
     }
+    if (runButton && runButton.dataset.liveSyncAttached !== "true") {
+      runButton.addEventListener("click", function () {
+        runCurrentValue();
+      });
+      runButton.dataset.liveSyncAttached = "true";
+    }
+    if (autoBox && autoBox.dataset.liveSyncAttached !== "true") {
+      autoBox.addEventListener("change", function () {
+        if (isAutoUpdateEnabled()) {
+          runCurrentValue();
+        }
+      });
+      autoBox.dataset.liveSyncAttached = "true";
+    }
     textarea.dataset.liveSyncAttached = "true";
-    pushValue();
+    runCurrentValue();
   }
+
+  // ── AI insert helper (shared by formula bar and chat) ────────────────────
+  function insertCodeIntoMonaco(code, ts, lastTsRef) {
+    if (!code || ts === lastTsRef.val) return false;
+    lastTsRef.val = ts;
+    var editor = window._monacoEditor;
+    if (!editor) {
+      var ta = document.getElementById('notebook-textarea');
+      if (ta) {
+        ta.value = (ta.value || '').trimEnd() + '\n' + code + '\n';
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return true;
+    }
+    var sel   = editor.getSelection();
+    var model = editor.getModel();
+    var line  = sel ? sel.endLineNumber : model.getLineCount();
+    var lineLen = model.getLineMaxColumn(line);
+    editor.executeEdits('ai-insert', [{
+      range: new monaco.Range(line, lineLen, line, lineLen),
+      text: '\n' + code,
+      forceMoveMarkers: true,
+    }]);
+    var newLine = line + code.split('\n').length;
+    editor.setPosition({ lineNumber: newLine, column: model.getLineMaxColumn(newLine) });
+    editor.focus();
+    return true;
+  }
+
+  // ── Chat insert (from Insert button in chat messages) ─────────────────────
+  (function watchChatInsert() {
+    var lastTs = { val: null };
+    function tryInsert() {
+      var storeEl = document.getElementById('nb-chat-insert');
+      if (!storeEl || !storeEl.value) return;
+      var data;
+      try { data = JSON.parse(storeEl.value); } catch(e) { return; }
+      if (data && data.code) insertCodeIntoMonaco(data.code, data.ts, lastTs);
+    }
+    setInterval(tryInsert, 400);
+  })();
+
+  // ── Shared streaming utilities ────────────────────────────────────────────
+
+  function readStore(id) {
+    var el = document.getElementById(id);
+    if (!el || !el.value) return null;
+    try { return JSON.parse(el.value); } catch(e) { return null; }
+  }
+
+  function writeStore(id, data) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var json = JSON.stringify(data);
+    try {
+      var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      nativeSetter.call(el, json);
+    } catch(e) { el.value = json; }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function parseMarkdownParts(text) {
+    var parts = [];
+    var re = /```(?:\w+)?\n?([\s\S]*?)```/g;
+    var last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) parts.push({ type: 'text', content: text.slice(last, m.index) });
+      parts.push({ type: 'code', content: m[1].trim() });
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) parts.push({ type: 'text', content: text.slice(last) });
+    return parts;
+  }
+
+  // Build a rendered AI bubble with optional Insert buttons
+  // theme: 'notebook' | 'floating'
+  function buildAiBubble(text, insertTs, theme) {
+    var wrap = document.createElement('div');
+    if (theme === 'floating') {
+      wrap.className = 'fchat-bubble-ai';
+    } else {
+      wrap.style.cssText = 'padding:8px 12px;border-radius:10px;font-size:13px;line-height:1.55;max-width:88%;word-break:break-word;background:#f1f5f9;color:#1e293b;align-self:flex-start';
+    }
+    var parts = parseMarkdownParts(text);
+    var codeIdx = 0;
+    parts.forEach(function(part) {
+      if (part.type === 'text') {
+        if (part.content.trim()) {
+          var s = document.createElement('span');
+          s.style.whiteSpace = 'pre-wrap';
+          s.textContent = part.content;
+          wrap.appendChild(s);
+        }
+      } else {
+        var code = part.content;
+        var btnKey = String((insertTs || 0) * 1000 + codeIdx);
+        var pre = document.createElement('pre');
+        if (theme === 'floating') {
+          pre.className = 'fchat-code-block';
+        } else {
+          pre.style.cssText = 'background:#1e1e2e;color:#cdd6f4;border-radius:6px;padding:8px 10px;font-size:12px;margin:6px 0;overflow-x:auto;white-space:pre-wrap';
+        }
+        pre.textContent = code;
+        var btn = document.createElement('button');
+        btn.textContent = '↑ Insert';
+        btn.setAttribute('data-code-key', btnKey);
+        btn.setAttribute('data-code-val', code);
+        if (theme === 'floating') {
+          btn.className = 'fchat-insert-btn';
+        } else {
+          btn.style.cssText = 'font-size:11px;padding:2px 10px;border-radius:6px;border:1px solid #c4b5fd;background:#faf5ff;color:#7c3aed;cursor:pointer;margin-bottom:4px';
+        }
+        (function(c) {
+          btn.addEventListener('click', function() {
+            insertCodeIntoMonaco(c, Date.now(), { val: null });
+          });
+        })(code);
+        var block = document.createElement('div');
+        block.appendChild(pre);
+        block.appendChild(btn);
+        wrap.appendChild(block);
+        codeIdx++;
+      }
+    });
+    return wrap;
+  }
+
+  // Generic streaming chat instance factory
+  function makeChatStreamer(cfg) {
+    // cfg: { pendingId, historyId, codeMapId, messagesId,
+    //        theme, buildContextMessages }
+    var _lastKey = null;
+    var _busy = false;
+
+    async function doStream(pending) {
+      if (_busy) return;
+      _busy = true;
+      var userText = pending.text;
+      var ts = pending.ts || 0;
+      var history = readStore(cfg.historyId) || [];
+      var msgEl = document.getElementById(cfg.messagesId);
+      if (!msgEl) { _busy = false; return; }
+
+      // Remove thinking indicator
+      var thinking = msgEl.querySelector('[data-thinking]');
+      if (thinking) msgEl.removeChild(thinking);
+
+      // Streaming bubble placeholder
+      var insertTs = ts * 1000 + history.length + 1;
+      var aiBubble = document.createElement('div');
+      if (cfg.theme === 'floating') {
+        aiBubble.className = 'fchat-bubble-ai';
+      } else {
+        aiBubble.style.cssText = 'padding:8px 12px;border-radius:10px;font-size:13px;line-height:1.55;max-width:88%;word-break:break-word;background:#f1f5f9;color:#1e293b;align-self:flex-start';
+      }
+      var textSpan = document.createElement('span');
+      textSpan.style.whiteSpace = 'pre-wrap';
+      aiBubble.appendChild(textSpan);
+      msgEl.appendChild(aiBubble);
+      msgEl.scrollTop = msgEl.scrollHeight;
+
+      var fullText = '';
+      try {
+        var resp = await fetch('/api/nb-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: cfg.buildContextMessages(userText, history) })
+        });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var reader = resp.body.getReader();
+        var decoder = new TextDecoder();
+        var buf = '';
+        outer: while (true) {
+          var chunk = await reader.read();
+          if (chunk.done) break;
+          buf += decoder.decode(chunk.value, { stream: true });
+          var lines = buf.split('\n');
+          buf = lines.pop();
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (!line.startsWith('data:')) continue;
+            var payload = line.slice(5).trim();
+            if (payload === '[DONE]') break outer;
+            try {
+              var evt = JSON.parse(payload);
+              if (evt.error) {
+                textSpan.textContent = 'Error: ' + evt.error;
+                if (cfg.theme === 'floating') aiBubble.className = 'fchat-error';
+                else aiBubble.style.color = '#ef4444';
+                fullText = '';
+                break outer;
+              }
+              if (evt.t) {
+                fullText += evt.t;
+                textSpan.textContent = fullText;
+                msgEl.scrollTop = msgEl.scrollHeight;
+              }
+            } catch(e) {}
+          }
+        }
+      } catch(e) {
+        textSpan.textContent = 'Error: ' + e.message;
+        if (cfg.theme === 'floating') aiBubble.className = 'fchat-error';
+        else aiBubble.style.color = '#ef4444';
+        fullText = '';
+      }
+
+      // Replace streaming bubble with final rendered bubble (code blocks + Insert buttons)
+      if (fullText) {
+        msgEl.removeChild(aiBubble);
+        var finalBubble = buildAiBubble(fullText, insertTs, cfg.theme);
+        msgEl.appendChild(finalBubble);
+        msgEl.scrollTop = msgEl.scrollHeight;
+
+        var newHistory = history.concat([
+          { role: 'user', content: userText },
+          { role: 'assistant', content: fullText }
+        ]);
+        writeStore(cfg.historyId, newHistory);
+
+        var codeMap = {};
+        finalBubble.querySelectorAll('[data-code-key]').forEach(function(btn) {
+          codeMap[btn.getAttribute('data-code-key')] = btn.getAttribute('data-code-val') || '';
+        });
+        writeStore(cfg.codeMapId, codeMap);
+      }
+
+      _busy = false;
+    }
+
+    setInterval(function() {
+      var pending = readStore(cfg.pendingId);
+      if (!pending || !pending.text) return;
+      var key = pending.ts + ':' + pending.text;
+      if (key === _lastKey) return;
+      _lastKey = key;
+      doStream(pending);
+    }, 200);
+  }
+
+  // ── Notebook chat streamer ────────────────────────────────────────────────
+  var _NB_SYSTEM = (
+    "You are an expert assistant embedded in a physics/materials-science calculation notebook. " +
+    "The notebook uses its OWN built-in functions — do NOT use numpy, scipy, or any Python imports. " +
+    "Available functions include: linspace, arange, zeros, ones, exp, log, log10, sin, cos, sqrt, abs, " +
+    "sum, mean, std, min, max, cumsum, diff, sort, where, clip, interp, gradient, trapz, fft, " +
+    "solve, dot, norm, eig, and more. " +
+    "One expression or assignment per line. Variables carry forward automatically. " +
+    "Use plot(x, y) to plot arrays. Use ^ for power (not **).\n" +
+    "When suggesting code to insert, wrap it in a fenced code block (```). " +
+    "Be concise. Focus on the user's specific notebook context."
+  );
+
+  // ── Floating chat toggle (pure JS, no Dash round-trip) ──────────────────
+  (function watchFChatToggle() {
+    function attach() {
+      var toggleBtn = document.getElementById('fchat-toggle-btn');
+      var closeBtn  = document.getElementById('fchat-close-btn');
+      var panel     = document.getElementById('fchat-panel');
+      if (!toggleBtn || !panel) return false;
+
+      if (!toggleBtn._fchatAttached) {
+        toggleBtn._fchatAttached = true;
+        toggleBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var open = panel.classList.contains('open');
+          if (open) {
+            panel.classList.remove('open');
+          } else {
+            panel.classList.add('open');
+            var inp = document.getElementById('fchat-input');
+            if (inp) setTimeout(function() { inp.focus(); }, 60);
+          }
+        });
+      }
+      if (closeBtn && !closeBtn._fchatAttached) {
+        closeBtn._fchatAttached = true;
+        closeBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          panel.classList.remove('open');
+        });
+      }
+      return true;
+    }
+
+    var done = false;
+    var iv = setInterval(function() {
+      if (!done) done = attach();
+      else clearInterval(iv);
+    }, 300);
+  })();
+
+  // ── Floating chat streamer ────────────────────────────────────────────────
+  makeChatStreamer({
+    pendingId:  'fchat-pending',
+    historyId:  'fchat-history',
+    codeMapId:  'fchat-code-map',
+    messagesId: 'fchat-messages',
+    theme: 'floating',
+    buildContextMessages: function(userText, history) {
+      var sys = "You are a helpful AI assistant for OPView, a materials science simulation visualization tool. " +
+                "Help with simulation analysis, materials science concepts, and data interpretation. " +
+                "When suggesting code for the OPView notebook, wrap it in a fenced code block (```) " +
+                "and use the notebook's built-in functions (linspace, exp, log, plot, etc.) — no numpy/scipy imports.";
+      var codeEl = document.getElementById('notebook-live-text');
+      var codeCtx = codeEl ? (codeEl.value || '').trim() : '';
+      if (!codeCtx && window._monacoEditor) codeCtx = (window._monacoEditor.getValue() || '').trim();
+      var varsCtx = '';
+      var nbState = readStore('notebook-state');
+      if (nbState && nbState.variables) {
+        varsCtx = Object.entries(nbState.variables).slice(0, 20)
+          .map(function(kv) { return '  ' + kv[0] + ' = ' + kv[1]; }).join('\n');
+      }
+      if (codeCtx) sys += '\n\nCurrent notebook code:\n```\n' + codeCtx + '\n```';
+      if (varsCtx) sys += '\n\nCurrent variable values:\n' + varsCtx;
+      var msgs = [{ role: 'system', content: sys }];
+      (history || []).forEach(function(m) { msgs.push({ role: m.role, content: m.content }); });
+      msgs.push({ role: 'user', content: userText });
+      return msgs;
+    }
+  });
 
   window.addEventListener("load", function () {
     attachNotebookRuntime();

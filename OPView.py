@@ -14,6 +14,7 @@ import re
 import warnings
 from glob import glob
 from pathlib import Path
+from flask import send_from_directory
 
 if DEBUG:
     print(f"[{time.time()-_start_time:.2f}s] Standard library imports done")
@@ -32,6 +33,8 @@ if DEBUG:
     print(f"[{time.time()-_start_time:.2f}s] Third-party imports done")
 
 from utils.vtk_reader import VTKReader
+from config.settings_store import apply_env as _apply_settings_env
+_apply_settings_env()  # load API keys from ~/.opview_settings.json into os.environ
 # Defer ViewerPanel import for faster startup - import only when needed
 ViewerPanel = None  # Lazy import later
 
@@ -347,6 +350,103 @@ PLASTIC_STRAIN_DATA = None  # Will be loaded by DataManager if needed
 def render_docs():
     """Flask route for documentation page. Implementation in utils.docs."""
     return _render_docs()
+
+
+@app.server.route('/vendor/<path:filename>')
+def serve_vendor_asset(filename):
+    """Serve vendored frontend assets that should not be auto-loaded by Dash."""
+    return send_from_directory(BASE_DIR / "vendor", filename)
+
+
+_NB_CHAT_GUIDE_PATH = BASE_DIR / "config" / "notebook_chat_guide.md"
+
+
+def _load_nb_chat_guide() -> str:
+    """Load the notebook chat guide markdown file."""
+    try:
+        return _NB_CHAT_GUIDE_PATH.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+@app.server.route('/api/nb-chat', methods=['POST'])
+def nb_chat_stream():
+    """Stream AI chat response as Server-Sent Events for the notebook chat panel."""
+    import json as _json
+    from flask import request as _req, Response, stream_with_context
+    from config.settings_store import get as _cfg_get, apply_env as _apply_env
+    _apply_env()
+    data = _req.get_json(silent=True) or {}
+    messages = data.get('messages', [])
+    provider = _cfg_get('AI_PROVIDER', 'anthropic')
+
+    # Inject guide into the system message (or prepend if already present)
+    guide = _load_nb_chat_guide()
+    if guide:
+        for msg in messages:
+            if msg.get('role') == 'system':
+                msg['content'] = guide + "\n\n---\n\n" + msg['content']
+                break
+        else:
+            messages = [{'role': 'system', 'content': guide}] + messages
+
+    def _generate():
+        try:
+            if provider == 'anthropic':
+                import anthropic as _anth
+                client = _anth.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY', ''))
+                sys_msg = next((m['content'] for m in messages if m['role'] == 'system'), '')
+                chat = [m for m in messages if m['role'] != 'system']
+                with client.messages.stream(
+                    model='claude-haiku-4-5-20251001', max_tokens=1024,
+                    system=sys_msg, messages=chat
+                ) as s:
+                    for token in s.text_stream:
+                        yield f"data: {_json.dumps({'t': token})}\n\n"
+            elif provider == 'github':
+                import subprocess as _sub
+                from openai import OpenAI as _OAI
+                token = os.environ.get('GITHUB_TOKEN', '')
+                if not token:
+                    res = _sub.run(['gh', 'auth', 'token'], capture_output=True, text=True, timeout=5)
+                    token = res.stdout.strip()
+                client = _OAI(api_key=token, base_url='https://models.inference.ai.azure.com')
+                for chunk in client.chat.completions.create(
+                    model='gpt-4o-mini', messages=messages, stream=True, max_tokens=1024
+                ):
+                    t = chunk.choices[0].delta.content
+                    if t:
+                        yield f"data: {_json.dumps({'t': t})}\n\n"
+            elif provider == 'gemini':
+                from openai import OpenAI as _OAI
+                client = _OAI(
+                    api_key=os.environ.get('GEMINI_API_KEY', ''),
+                    base_url='https://generativelanguage.googleapis.com/v1beta/openai/'
+                )
+                for chunk in client.chat.completions.create(
+                    model='gemini-2.0-flash', messages=messages, stream=True, max_tokens=1024
+                ):
+                    t = chunk.choices[0].delta.content
+                    if t:
+                        yield f"data: {_json.dumps({'t': t})}\n\n"
+            else:  # openai
+                from openai import OpenAI as _OAI
+                client = _OAI(api_key=os.environ.get('OPENAI_API_KEY', ''))
+                for chunk in client.chat.completions.create(
+                    model='gpt-4o-mini', messages=messages, stream=True, max_tokens=1024
+                ):
+                    t = chunk.choices[0].delta.content
+                    if t:
+                        yield f"data: {_json.dumps({'t': t})}\n\n"
+        except Exception as exc:
+            yield f"data: {_json.dumps({'error': str(exc)})}\n\n"
+        yield 'data: [DONE]\n\n'
+
+    return Response(
+        stream_with_context(_generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
+    )
 
 
 # Phase 8: Removed chart utility functions - now in utils/chart_utils.py

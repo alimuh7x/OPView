@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dash import dcc, html
 import plotly.graph_objects as go
+from config.settings_store import get as _setting_get
 
 # Download component id used by save/load callbacks
 NOTEBOOK_DOWNLOAD_ID = "notebook-download"
@@ -13,9 +14,11 @@ NOTEBOOK_DOWNLOAD_ID = "notebook-download"
 
 NOTEBOOK_ROWS = 28
 NOTEBOOK_LINE_HEIGHT = "34px"
-RESULTS_GUTTER_WIDTH = "220px"
+RESULTS_GUTTER_WIDTH = "440px"
 FUNCTIONS_CARD_WIDTH = "360px"
 NOTEBOOK_SHEET_WIDTH = "1280px"
+NOTEBOOK_ROW_COLOR_A = "#fefeff"
+NOTEBOOK_ROW_COLOR_B = "#f8fbfe"
 
 NOTEBOOK_HELP = [
     {
@@ -1050,29 +1053,92 @@ def default_notebook_state() -> dict:
     }
 
 
-def build_notebook_results(result_lines: list[str] | None = None) -> list[html.Div]:
+def build_notebook_results(result_lines: list[dict] | list[str] | None = None) -> list[html.Div]:
     """Build the result gutter lines."""
     result_lines = result_lines or []
     rows = max(NOTEBOOK_ROWS, len(result_lines))
+    label_lengths = []
+    for line in result_lines:
+        if isinstance(line, dict):
+            label_lengths.append(len(str(line.get("name", "") or "")))
+    name_col_width = max(72, min(220, max(label_lengths or [0]) * 9 + 16))
     children = []
     for index in range(rows):
-        text = result_lines[index] if index < len(result_lines) else ""
+        line = result_lines[index] if index < len(result_lines) else ""
+        if isinstance(line, dict):
+            name = str(line.get("name", "") or "")
+            value = str(line.get("value", "") or "")
+            count = str(line.get("count", "") or "")
+            is_error = bool(line.get("error"))
+            title_text = " | ".join(part for part in [name, value, count] if part)
+        else:
+            text = str(line or "")
+            is_error = text.startswith("Error:")
+            name = ""
+            value = text
+            count = ""
+            title_text = text
         children.append(
             html.Div(
-                text,
+                [
+                    html.Div(
+                        name,
+                        title="Data",
+                        style={
+                            "overflow": "hidden",
+                            "textOverflow": "ellipsis",
+                            "whiteSpace": "nowrap",
+                            "padding": "0 8px",
+                            "height": NOTEBOOK_LINE_HEIGHT,
+                            "lineHeight": NOTEBOOK_LINE_HEIGHT,
+                            "borderRight": "1px solid #e2e8f0",
+                            "color": "#475467" if not is_error else "#b42318",
+                            "fontWeight": "600",
+                        },
+                    ),
+                    html.Div(
+                        value,
+                        title="Value",
+                        style={
+                            "overflow": "hidden",
+                            "textOverflow": "ellipsis",
+                            "whiteSpace": "nowrap",
+                            "padding": "0 8px",
+                            "height": NOTEBOOK_LINE_HEIGHT,
+                            "lineHeight": NOTEBOOK_LINE_HEIGHT,
+                            "borderRight": "1px solid #e2e8f0",
+                            "color": "#b42318" if is_error else "#1e3a8a" if value else "#98a2b3",
+                            "fontWeight": "600",
+                        },
+                    ),
+                    html.Div(
+                        count,
+                        title="Count",
+                        style={
+                            "overflow": "hidden",
+                            "textOverflow": "ellipsis",
+                            "whiteSpace": "nowrap",
+                            "padding": "0 8px",
+                            "height": NOTEBOOK_LINE_HEIGHT,
+                            "lineHeight": NOTEBOOK_LINE_HEIGHT,
+                            "textAlign": "right",
+                            "color": "#64748b" if count else "#98a2b3",
+                            "fontWeight": "600",
+                        },
+                    ),
+                ],
                 style={
+                    "display": "grid",
+                    "gridTemplateColumns": f"{name_col_width}px minmax(0, 1fr) 56px",
+                    "columnGap": "0",
                     "height": NOTEBOOK_LINE_HEIGHT,
                     "lineHeight": NOTEBOOK_LINE_HEIGHT,
                     "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-                    "fontSize": "19px",
-                    "fontWeight": "600",
-                    "color": "#0b5d52" if text and not text.startswith("Error:") else "#b42318" if text else "#98a2b3",
-                    "whiteSpace": "nowrap",
-                    "overflow": "hidden",
-                    "textOverflow": "ellipsis",
-                    "paddingLeft": "2px",
+                    "fontSize": "13px",
+                    "borderBottom": "1px solid #e2e8f0",
+                    "alignItems": "center",
                 },
-                title=text,
+                title=title_text,
             )
         )
     return children
@@ -1082,8 +1148,20 @@ def _empty_nb_figure() -> go.Figure:
     """Return a blank placeholder figure for the notebook side plot."""
     fig = go.Figure()
     fig.update_layout(
-        xaxis=dict(showgrid=True, gridcolor="rgba(200,210,220,0.5)", zeroline=False),
-        yaxis=dict(showgrid=True, gridcolor="rgba(200,210,220,0.5)", zeroline=False),
+        xaxis=dict(
+            showgrid=True,
+            gridcolor="rgba(200,210,220,0.5)",
+            zeroline=True,
+            zerolinecolor="rgba(100,116,139,0.45)",
+            zerolinewidth=2,
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor="rgba(200,210,220,0.5)",
+            zeroline=True,
+            zerolinecolor="rgba(100,116,139,0.45)",
+            zerolinewidth=2,
+        ),
         plot_bgcolor="white", paper_bgcolor="white",
         margin=dict(l=50, r=20, t=30, b=50),
         annotations=[dict(
@@ -1102,11 +1180,27 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
     array_vars = state.get("array_variables", {})
     arr_options = [{"label": k, "value": k} for k in sorted(array_vars)]
 
-    _btn = lambda label, id_: html.Button(
-        label, id=id_, className="graphs-add-panel-btn", n_clicks=0,
-        style={"background": "#0f2942", "border": "1px solid #173b5c",
-               "boxShadow": "none", "padding": "8px 14px", "fontSize": "13px"},
-    )
+    _BASE_BTN = {
+        "border": "none", "borderRadius": "7px", "cursor": "pointer",
+        "fontFamily": "'Inter','Segoe UI',system-ui,sans-serif",
+        "fontSize": "13px", "fontWeight": "500", "lineHeight": "1",
+        "padding": "7px 13px", "transition": "background 150ms, box-shadow 150ms",
+        "whiteSpace": "nowrap",
+    }
+
+    def _btn(label, id_, variant="secondary"):
+        styles = {
+            "secondary": {**_BASE_BTN, "background": "rgba(15,23,42,0.06)",
+                          "color": "#344054", "border": "1px solid rgba(15,23,42,0.12)"},
+            "danger":    {**_BASE_BTN, "background": "rgba(185,28,28,0.06)",
+                          "color": "#991b1b", "border": "1px solid rgba(185,28,28,0.18)"},
+            "primary":   {**_BASE_BTN, "background": "#1d4ed8", "color": "#ffffff",
+                          "border": "1px solid #1d4ed8",
+                          "boxShadow": "0 1px 4px rgba(29,78,216,0.25)"},
+            "special":   {**_BASE_BTN, "background": "rgba(79,70,229,0.07)",
+                          "color": "#4338ca", "border": "1px solid rgba(79,70,229,0.2)"},
+        }
+        return html.Button(label, id=id_, n_clicks=0, style=styles[variant])
 
     # Build grouped dropdown options with disabled category headers
     snippet_options = []
@@ -1122,19 +1216,21 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
             html.Div(
                 [
                     dcc.ConfirmDialogProvider(
-                        children=_btn("Clear", "notebook-clear-btn"),
+                        children=_btn("Clear", "notebook-clear-btn", "danger"),
                         id="notebook-clear-confirm-provider",
                         message="Clear all notebook content? This cannot be undone.",
                     ),
-                    _btn("Save (.txt)", "notebook-save-btn"),
+                    _btn("Save (.txt)", "notebook-save-btn", "secondary"),
                     dcc.Upload(
-                        _btn("Load (.txt)", "notebook-load-btn"),
+                        _btn("Load (.txt)", "notebook-load-btn", "secondary"),
                         id="notebook-load-upload",
                         accept=".txt",
                         multiple=False,
                     ),
                     dcc.Download(id=NOTEBOOK_DOWNLOAD_ID),
                     dcc.Store(id="notebook-monaco-sync-dummy"),
+                    dcc.Store(id="notebook-var-refresh-dummy"),
+                    dcc.Store(id="notebook-external-sync", data=None),
                     # ── example snippet picker ────────────────────────────
                     html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
                                     "alignSelf": "stretch", "margin": "0 4px"}),
@@ -1146,40 +1242,216 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                         clearable=True,
                         style={"fontSize": "13px", "minWidth": "220px", "maxWidth": "280px"},
                     ),
-                    _btn("Insert", "notebook-insert-example-btn"),
+                    _btn("Insert", "notebook-insert-example-btn", "primary"),
                     html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
                                     "alignSelf": "stretch", "margin": "0 4px"}),
-                    _btn("≡ Functions", "notebook-fn-btn"),
-                    dcc.Store(id="notebook-fn-dummy"),
+                    dcc.Checklist(
+                        id="notebook-auto-update",
+                        options=[{"label": "Auto update", "value": "auto"}],
+                        value=["auto"],
+                        inline=True,
+                        style={"margin": "0"},
+                        inputStyle={"marginRight": "6px"},
+                        labelStyle={
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                            "fontSize": "13px",
+                            "fontWeight": "600",
+                            "color": "#475467",
+                            "whiteSpace": "nowrap",
+                            "marginRight": "0",
+                        },
+                    ),
+                    dcc.Input(id="notebook-auto-update-state", type="hidden", value="on"),
+                    _btn("Run", "notebook-run-btn", "primary"),
                     html.Div(
-                        "New here? Start with  Quick Start",
-                        style={"fontSize": "12px", "color": "#667085", "fontStyle": "italic",
-                               "marginLeft": "4px"},
+                        [
+                            html.Span(
+                                "Shortcut",
+                                style={
+                                    "fontSize": "11px",
+                                    "fontWeight": "700",
+                                    "color": "#64748b",
+                                    "textTransform": "uppercase",
+                                    "letterSpacing": "0.05em",
+                                },
+                            ),
+                            html.Span(
+                                "Ctrl+Enter",
+                                style={
+                                    "fontFamily": "'JetBrains Mono','Fira Code',monospace",
+                                    "fontSize": "12px",
+                                    "color": "#334155",
+                                    "background": "rgba(15,23,42,0.055)",
+                                    "border": "1px solid rgba(15,23,42,0.12)",
+                                    "borderRadius": "6px",
+                                    "padding": "3px 8px",
+                                    "whiteSpace": "nowrap",
+                                },
+                            ),
+                        ],
+                        style={
+                            "display": "flex",
+                            "alignItems": "center",
+                            "gap": "6px",
+                            "whiteSpace": "nowrap",
+                        },
+                    ),
+                    html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
+                                    "alignSelf": "stretch", "margin": "0 4px"}),
+                    dcc.Checklist(
+                        id="notebook-vim-toggle",
+                        options=[{"label": "Vim mode", "value": "vim"}],
+                        value=[],
+                        inline=True,
+                        style={"margin": "0"},
+                        inputStyle={"marginRight": "6px"},
+                        labelStyle={
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                            "fontSize": "13px",
+                            "fontWeight": "600",
+                            "color": "#475467",
+                            "whiteSpace": "nowrap",
+                            "marginRight": "0",
+                        },
+                    ),
+                    html.Span(
+                        "",
+                        id="notebook-vim-note",
+                        style={"fontSize": "12px", "color": "#94a3b8", "whiteSpace": "nowrap"},
+                    ),
+                    html.Button("✦ AI ⚙", id="nb-settings-open-btn", n_clicks=0,
+                        title="AI settings",
+                        style={"fontSize": "12px", "padding": "4px 10px",
+                               "borderRadius": "6px", "border": "1px solid #e9d5ff",
+                               "background": "#faf5ff", "color": "#7c3aed",
+                               "cursor": "pointer", "fontWeight": "600",
+                               "whiteSpace": "nowrap"}),
+                    html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
+                                    "alignSelf": "stretch", "margin": "0 4px"}),
+                    _btn("≡ Functions", "notebook-fn-btn", "special"),
+                    dcc.Store(id="notebook-fn-dummy"),
+                    html.Span(
+                        "New? → Quick Start",
+                        style={"fontSize": "12px", "color": "#94a3b8", "fontStyle": "italic",
+                               "marginLeft": "4px", "whiteSpace": "nowrap"},
                     ),
                 ],
-                style={"display": "flex", "gap": "10px", "marginBottom": "10px",
-                       "alignItems": "center"},
+                style={"display": "flex", "gap": "8px", "marginBottom": "10px",
+                       "alignItems": "center", "flexWrap": "wrap"},
             ),
             html.Div(
                 [
-                    html.Span("Type one expression per line — results appear instantly on the right.  "
-                              "Variables carry through all lines below.  "
-                              "Use  "),
-                    html.Code("// comment", style={"fontFamily": "monospace", "fontSize": "12px",
-                                                   "background": "rgba(15,23,42,0.05)",
-                                                   "borderRadius": "4px", "padding": "1px 5px"}),
-                    html.Span("  to annotate,  "),
-                    html.Code("^", style={"fontFamily": "monospace", "fontSize": "12px",
-                                          "background": "rgba(15,23,42,0.05)",
-                                          "borderRadius": "4px", "padding": "1px 5px"}),
-                    html.Span("  for power,  "),
-                    html.Code("210*GPa", style={"fontFamily": "monospace", "fontSize": "12px",
-                                                "background": "rgba(15,23,42,0.05)",
-                                                "borderRadius": "4px", "padding": "1px 5px"}),
-                    html.Span("  for units.  Arrays defined here appear in the plot panel →"),
+                    html.Span("One expression per line  ·  results appear on the right",
+                              style={"color": "#64748b", "marginRight": "12px"}),
+                    *[
+                        html.Span(
+                            chip,
+                            style={
+                                "fontFamily": "'JetBrains Mono','Fira Code',monospace",
+                                "fontSize": "11px", "color": "#334155",
+                                "background": "rgba(15,23,42,0.055)",
+                                "border": "1px solid rgba(15,23,42,0.09)",
+                                "borderRadius": "5px", "padding": "2px 7px",
+                                "marginRight": "6px", "whiteSpace": "nowrap",
+                            }
+                        )
+                        for chip in ["// comment", "x ^ 2  power", "210 * GPa  units", "v = [1,2,3]  arrays"]
+                    ],
                 ],
-                style={"fontSize": "13px", "color": "#667085", "marginBottom": "14px",
-                       "lineHeight": "1.6"},
+                style={"display": "flex", "alignItems": "center", "flexWrap": "wrap",
+                       "gap": "2px", "fontSize": "12px", "color": "#667085",
+                       "marginBottom": "12px", "lineHeight": "1"},
+            ),
+            # ── AI settings modal ────────────────────────────────────────────
+            html.Div(
+                id="nb-settings-modal",
+                children=[
+                    html.Div(
+                        [
+                            html.Div(
+                                [
+                                    html.Span("AI Settings", style={
+                                        "fontWeight": "700", "fontSize": "15px",
+                                        "color": "#1e1b4b",
+                                    }),
+                                    html.Button("✕", id="nb-settings-close-btn",
+                                        n_clicks=0,
+                                        style={"background": "none", "border": "none",
+                                               "fontSize": "18px", "cursor": "pointer",
+                                               "color": "#6b7280", "lineHeight": "1",
+                                               "padding": "0 4px"}),
+                                ],
+                                style={"display": "flex", "justifyContent": "space-between",
+                                       "alignItems": "center", "marginBottom": "16px"},
+                            ),
+                            html.Label("Provider", style={"fontSize": "12px", "fontWeight": "600",
+                                                           "color": "#374151", "display": "block",
+                                                           "marginBottom": "6px"}),
+                            dcc.RadioItems(
+                                id="nb-settings-provider",
+                                options=[
+                                    {"label": " Anthropic (Claude Haiku)", "value": "anthropic"},
+                                    {"label": " OpenAI (GPT-4o-mini)",      "value": "openai"},
+                                    {"label": " Google Gemini (gemini-2.0-flash)", "value": "gemini"},
+                                    {"label": " GitHub Models (auto gh auth)", "value": "github"},
+                                ],
+                                value="anthropic",
+                                style={"fontSize": "13px", "marginBottom": "14px"},
+                                inputStyle={"marginRight": "6px"},
+                            ),
+                            html.Label(
+                                id="nb-settings-key-label",
+                                children="API Key",
+                                style={"fontSize": "12px", "fontWeight": "600",
+                                       "color": "#374151", "display": "block",
+                                       "marginBottom": "6px"},
+                            ),
+                            dcc.Input(
+                                id="nb-settings-apikey",
+                                type="password",
+                                placeholder="Paste your API key here…",
+                                value=_setting_get("ANTHROPIC_API_KEY") or _setting_get("OPENAI_API_KEY"),
+                                style={
+                                    "width": "100%", "fontSize": "13px",
+                                    "padding": "7px 10px", "borderRadius": "8px",
+                                    "border": "1px solid #d1d5db", "boxSizing": "border-box",
+                                    "marginBottom": "14px",
+                                },
+                            ),
+                            html.Div(
+                                [
+                                    html.Button("Save", id="nb-settings-save-btn", n_clicks=0,
+                                        style={"background": "#7c3aed", "color": "#fff",
+                                               "border": "none", "borderRadius": "8px",
+                                               "padding": "7px 20px", "fontSize": "13px",
+                                               "fontWeight": "600", "cursor": "pointer"}),
+                                    html.Span(id="nb-settings-status",
+                                              style={"fontSize": "12px", "color": "#6b7280",
+                                                     "marginLeft": "10px"}),
+                                ],
+                                style={"display": "flex", "alignItems": "center"},
+                            ),
+                        ],
+                        style={
+                            "background": "#fff",
+                            "borderRadius": "14px",
+                            "padding": "24px",
+                            "width": "380px",
+                            "boxShadow": "0 20px 60px rgba(0,0,0,0.18)",
+                            "position": "relative",
+                        },
+                    ),
+                ],
+                style={
+                    "display": "none",
+                    "position": "fixed", "inset": "0",
+                    "background": "rgba(0,0,0,0.45)",
+                    "zIndex": "9999",
+                    "justifyContent": "center",
+                    "alignItems": "center",
+                },
             ),
             # ── main row: notebook sheet + side plot ─────────────────────────
             html.Div(
@@ -1187,14 +1459,35 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
             html.Div(
                 [
                     # ── Monaco editor container (shown after Monaco loads) ──
+                    # JS sets height dynamically via onDidContentSizeChange so
+                    # the editor grows with content and the browser scrolls.
                     html.Div(
-                        id="notebook-monaco-container",
-                        style={
-                            "flex": "1",
-                            "height": "76vh",
-                            "minHeight": "76vh",
-                            "display": "none",   # Monaco JS sets this to 'flex'
-                        },
+                        [
+                            html.Div(
+                                id="notebook-monaco-container",
+                                style={
+                                    "flex": "1",
+                                    "minHeight": "400px",
+                                    "display": "none",   # Monaco JS sets this to 'block'
+                                },
+                            ),
+                            # Vim status bar (shown only when Vim mode is active)
+                            html.Div(
+                                id="notebook-vim-statusbar",
+                                style={
+                                    "display": "none",
+                                    "fontFamily": "'JetBrains Mono','Fira Code',monospace",
+                                    "fontSize": "13px",
+                                    "padding": "3px 10px",
+                                    "background": "#1e1e2e",
+                                    "color": "#cdd6f4",
+                                    "borderTop": "1px solid #313244",
+                                    "minHeight": "24px",
+                                    "userSelect": "none",
+                                },
+                            ),
+                        ],
+                        style={"display": "flex", "flexDirection": "column", "flex": "1"},
                     ),
                     # ── Plain textarea fallback (hidden once Monaco loads) ──
                     dcc.Textarea(
@@ -1203,8 +1496,8 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                         placeholder="# Start typing or load an example from the dropdown above\nx = 5\ny = 3\nz = x^2 + y       // result appears on the right →",
                         style={
                             "flex": "1",
-                            "height": "76vh",
-                            "minHeight": "76vh",
+                            "minHeight": "400px",
+                            "height": "auto",
                             "padding": "18px 18px",
                             "fontSize": "20px",
                             "lineHeight": NOTEBOOK_LINE_HEIGHT,
@@ -1213,36 +1506,104 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                             "outline": "none",
                             "resize": "none",
                             "backgroundColor": "transparent",
-                            "backgroundImage": "repeating-linear-gradient(to bottom, transparent 0px, transparent 33px, #eef2f6 33px, #eef2f6 34px)",
+                            "backgroundImage": (
+                                f"repeating-linear-gradient(to bottom, {NOTEBOOK_ROW_COLOR_A} 0px, {NOTEBOOK_ROW_COLOR_A} 34px, "
+                                f"{NOTEBOOK_ROW_COLOR_B} 34px, {NOTEBOOK_ROW_COLOR_B} 68px), "
+                                "repeating-linear-gradient(to bottom, transparent 0px, transparent 33px, #e5edf5 33px, #e5edf5 34px)"
+                            ),
                             "backgroundPosition": "0 18px",
                             "backgroundAttachment": "local",
                             "color": "#0f172a",
                             "whiteSpace": "pre",
-                            "overflowY": "auto",
+                            "overflowY": "hidden",
                         },
                     ),
-                    dcc.Input(
+                    dcc.Textarea(
                         id="notebook-live-text",
-                        type="text",
+                        value=text,
+                        style={"display": "none"},
+                    ),
+                    dcc.Textarea(
+                        id="notebook-run-text",
                         value=text,
                         style={"display": "none"},
                     ),
                     html.Div(
                         [
                             html.Div(
+                                [
+                                    html.Div("Expression", style={"padding": "0 8px", "borderRight": "1px solid #e2e8f0"}),
+                                    html.Div("Value", style={"padding": "0 8px", "borderRight": "1px solid #e2e8f0"}),
+                                    html.Div("Size", style={"padding": "0 8px", "textAlign": "right"}),
+                                ],
+                                style={
+                                    "display": "grid",
+                                    "gridTemplateColumns": "160px minmax(0, 1fr) 56px",
+                                    "columnGap": "0",
+                                    "height": "18px",
+                                    "lineHeight": "18px",
+                                    "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+                                    "fontSize": "11px",
+                                    "fontWeight": "600",
+                                    "color": "#94a3b8",
+                                    "background": "#f8fafc",
+                                    "borderTop": "1px solid #e2e8f0",
+                                    "borderLeft": "1px solid #e2e8f0",
+                                    "borderRight": "1px solid #e2e8f0",
+                                    "borderBottom": "2px solid #e2e8f0",
+                                    "borderRadius": "4px 4px 0 0",
+                                    "alignItems": "center",
+                                },
+                            ),
+                            html.Div(
                                 build_notebook_results([]),
                                 id="notebook-results",
+                                style={
+                                    "border": "1px solid #e2e8f0",
+                                    "borderTop": "none",
+                                    "borderRadius": "0 0 4px 4px",
+                                    "overflow": "hidden",
+                                },
                             ),
-                            html.Div(id="notebook-debug", style={"display": "none"}),
+                            html.Pre(
+                                id="notebook-debug",
+                                style={
+                                    "margin": "8px 0 0 0",
+                                    "padding": "8px 10px",
+                                    "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+                                    "fontSize": "11px",
+                                    "lineHeight": "1.45",
+                                    "color": "#475467",
+                                    "background": "rgba(255,255,255,0.85)",
+                                    "border": "1px solid rgba(148,163,184,0.24)",
+                                    "borderRadius": "8px",
+                                    "whiteSpace": "pre-wrap",
+                                },
+                            ),
+                            html.Pre(
+                                id="notebook-client-debug",
+                                style={
+                                    "margin": "8px 0 0 0",
+                                    "padding": "8px 10px",
+                                    "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+                                    "fontSize": "11px",
+                                    "lineHeight": "1.45",
+                                    "color": "#475467",
+                                    "background": "rgba(248,250,252,0.95)",
+                                    "border": "1px solid rgba(203,213,225,0.8)",
+                                    "borderRadius": "8px",
+                                    "whiteSpace": "pre-wrap",
+                                },
+                            ),
                         ],
                         style={
                             "width": RESULTS_GUTTER_WIDTH,
                             "minWidth": RESULTS_GUTTER_WIDTH,
-                            "padding": "18px 14px 18px 8px",
-                            "borderLeft": "1px solid rgba(15, 23, 42, 0.045)",
-                            "background": "linear-gradient(180deg, rgba(252,253,255,0.78) 0%, rgba(248,250,252,0.68) 100%)",
-                            "overflowY": "hidden",
-                            "height": "76vh",
+                            "padding": "0 12px 18px 10px",
+                            "borderLeft": "2px solid rgba(29,78,216,0.08)",
+                            "background": "linear-gradient(180deg, #f8faff 0%, #f1f5fb 100%)",
+                            "overflowY": "visible",
+                            "minHeight": "400px",
                         },
                     ),
                 ],
@@ -1250,139 +1611,96 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                     "display": "flex",
                     "alignItems": "stretch",
                     "width": "100%",
+                    "minWidth": f"calc({RESULTS_GUTTER_WIDTH} + 300px)",
                     "maxWidth": NOTEBOOK_SHEET_WIDTH,
-                    "minHeight": "76vh",
-                    "background": "#fffdf8",
-                    "border": "1px solid rgba(148, 163, 184, 0.22)",
-                    "borderRadius": "18px",
-                    "boxShadow": "0 14px 34px rgba(15, 23, 42, 0.06)",
-                    "overflow": "hidden",
+                    "minHeight": "400px",
+                    "background": "#ffffff",
+                    "border": "1px solid rgba(100, 116, 139, 0.18)",
+                    "borderRadius": "14px",
+                    "boxShadow": "0 4px 6px rgba(15,23,42,0.04), 0 10px 28px rgba(15,23,42,0.06)",
+                    "overflow": "visible",
                     "position": "relative",
-                    "flexShrink": "0",
+                    "flex": "1 1 auto",
                 },
             ),
-            # ── side plot panel ──────────────────────────────────────────────
+            # ── plots panel ──────────────────────────────────────────────────
             html.Div(
                 [
-                    # controls row
+                    # panel header: title + global controls
                     html.Div(
                         [
-                            html.Div(
-                                [
-                                    html.Div("X", style={"fontSize": "11px", "fontWeight": "700",
-                                                         "color": "#475467", "marginBottom": "3px",
-                                                         "textTransform": "uppercase", "letterSpacing": "0.06em"}),
-                                    dcc.Dropdown(
-                                        id="nb-plot-x-var",
-                                        options=arr_options,
-                                        value=None,
-                                        placeholder="x array…",
-                                        clearable=True,
-                                        style={"fontSize": "12px", "minWidth": "120px"},
-                                    ),
-                                ],
-                                style={"flex": "1"},
+                            html.Span("Plots", style={"fontSize": "12px", "fontWeight": "700",
+                                                       "textTransform": "uppercase", "letterSpacing": "0.08em",
+                                                       "color": "#475467"}),
+                            html.Span("Call plot(x, y) in the notebook",
+                                      style={"fontSize": "11px", "color": "#94a3b8", "marginLeft": "10px"}),
+                            html.Div(style={"flex": "1"}),
+                            html.Div("Font", style={"fontSize": "11px", "fontWeight": "700",
+                                                     "color": "#475467", "alignSelf": "center",
+                                                     "marginRight": "4px"}),
+                            dcc.Input(
+                                id="nb-global-font-size",
+                                type="number", value=14, min=8, max=28, step=1,
+                                style={"fontSize": "12px", "width": "50px", "padding": "3px 5px",
+                                       "border": "1px solid rgba(100,116,139,0.35)", "borderRadius": "6px",
+                                       "marginRight": "10px",
+                                       "fontFamily": "'Inter','Segoe UI',system-ui,sans-serif"},
                             ),
-                            html.Div(
-                                [
-                                    html.Div("Y", style={"fontSize": "11px", "fontWeight": "700",
-                                                         "color": "#475467", "marginBottom": "3px",
-                                                         "textTransform": "uppercase", "letterSpacing": "0.06em"}),
-                                    dcc.Dropdown(
-                                        id="nb-plot-y-vars",
-                                        options=arr_options,
-                                        value=[],
-                                        multi=True,
-                                        placeholder="y array(s)…",
-                                        style={"fontSize": "12px", "minWidth": "160px"},
-                                    ),
-                                ],
-                                style={"flex": "2"},
-                            ),
-                            html.Div(
-                                [
-                                    html.Div("Type", style={"fontSize": "11px", "fontWeight": "700",
-                                                            "color": "#475467", "marginBottom": "3px",
-                                                            "textTransform": "uppercase", "letterSpacing": "0.06em"}),
-                                    dcc.Dropdown(
-                                        id="nb-plot-type",
-                                        options=[
-                                            {"label": "Lines", "value": "lines"},
-                                            {"label": "Lines+Markers", "value": "lines+markers"},
-                                            {"label": "Markers", "value": "markers"},
-                                            {"label": "Bar", "value": "bar"},
-                                            {"label": "Histogram", "value": "histogram"},
-                                        ],
-                                        value="lines",
-                                        clearable=False,
-                                        style={"fontSize": "12px", "minWidth": "130px"},
-                                    ),
-                                ],
-                                style={"flex": "1"},
+                            html.Div("Line W", style={"fontSize": "11px", "fontWeight": "700",
+                                                       "color": "#475467", "alignSelf": "center",
+                                                       "marginRight": "4px"}),
+                            dcc.Input(
+                                id="nb-global-line-width",
+                                type="number", value=2, min=0.5, max=8, step=0.5,
+                                style={"fontSize": "12px", "width": "50px", "padding": "3px 5px",
+                                       "border": "1px solid rgba(100,116,139,0.35)", "borderRadius": "6px",
+                                       "fontFamily": "'Inter','Segoe UI',system-ui,sans-serif"},
                             ),
                         ],
-                        style={"display": "flex", "gap": "8px", "alignItems": "flex-start",
-                               "marginBottom": "8px"},
+                        style={"display": "flex", "alignItems": "center", "flexWrap": "wrap",
+                               "gap": "4px", "borderBottom": "1px solid rgba(100,116,139,0.12)",
+                               "paddingBottom": "10px", "marginBottom": "10px"},
                     ),
-                    # plot tip
-                    html.Div(
-                        [
-                            "Arrays from the notebook appear in X / Y above. "
-                            "Pick Y (and optionally X), then choose a plot type. ",
-                            html.Br(),
-                            html.Span(
-                                "Tip: ",
-                                style={"fontWeight": "600", "color": "#667085"},
-                            ),
-                            html.Span(
-                                "add ",
-                                style={"color": "#94a3b8"},
-                            ),
-                            html.Code(
-                                "// Side plot: X=t, Y=T, Type=lines",
-                                style={
-                                    "fontFamily": "'JetBrains Mono','Fira Code',monospace",
-                                    "fontSize": "11px",
-                                    "background": "rgba(15,23,42,0.04)",
-                                    "borderRadius": "4px",
-                                    "padding": "1px 5px",
-                                    "color": "#475467",
-                                },
-                            ),
-                            html.Span(
-                                " to any snippet to auto-set the dropdowns on Insert.",
-                                style={"color": "#94a3b8"},
-                            ),
-                        ],
-                        style={"fontSize": "12px", "color": "#94a3b8", "marginBottom": "6px",
-                               "lineHeight": "1.6"},
-                    ),
-                    # the plot
-                    dcc.Graph(
-                        id="notebook-side-plot",
-                        figure=_empty_nb_figure(),
-                        config={"displayModeBar": True, "scrollZoom": True},
-                        style={"height": "calc(76vh - 60px)", "minHeight": "300px"},
+                    # notebook-driven plots (from plot() calls) — updated by notebook-state
+                    html.Div(id="notebook-auto-plots", style={"flex": "0 0 auto"}),
+                    # quick plots (user-created) — updated by selector-specs only
+                    html.Div(id="notebook-plots-panel", style={"overflow": "visible", "flex": "0 0 auto"}),
+                    html.Button(
+                        "+ New Plot",
+                        id="nb-plot-new-btn",
+                        n_clicks=0,
+                        style={
+                            "fontSize": "13px", "padding": "8px 12px",
+                            "background": "rgba(124,58,237,0.08)",
+                            "border": "1px solid rgba(124,58,237,0.24)",
+                            "borderRadius": "8px", "cursor": "pointer",
+                            "color": "#6d28d9", "fontWeight": "700",
+                            "marginTop": "10px", "whiteSpace": "nowrap",
+                        },
                     ),
                 ],
                 style={
-                    "flex": "1",
-                    "minWidth": "380px",
-                    "padding": "14px 16px 14px 20px",
+                    "flex": "1 1 420px",
+                    "minWidth": "420px",
+                    "padding": "14px 16px",
                     "display": "flex",
                     "flexDirection": "column",
+                    "background": "#ffffff",
+                    "border": "1px solid rgba(100,116,139,0.18)",
+                    "boxShadow": "0 4px 6px rgba(15,23,42,0.04), 0 10px 28px rgba(15,23,42,0.06)",
                 },
             ),
                 ],  # end flex row children
                 style={
                     "display": "flex",
                     "alignItems": "flex-start",
-                    "gap": "16px",
+                    "flexWrap": "wrap",
+                    "gap": "14px",
                     "width": "100%",
                 },
             ),  # end flex row
             # ── floating functions reference overlay ─────────────────────────
             build_fn_overlay(),
         ],
-        style={"padding": "18px 24px", "width": "100%"},
+        style={"padding": "16px 20px", "width": "100%", "overflowX": "auto"},
     )
