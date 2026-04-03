@@ -88,18 +88,9 @@ def build_graph_card(file_path: str, available_columns: List[str], selected_colu
                 html.H3(card_title, className='dataset-title')
             ], style={'flex': '1'}),
             html.Button(
-                '×',
+                '',
                 id={'type': 'graph-close-btn', 'file': file_path},
-                className='graph-close-btn',
-                style={
-                    'background': 'none',
-                    'border': 'none',
-                    'color': '#999',
-                    'fontSize': '28px',
-                    'cursor': 'pointer',
-                    'padding': '0 8px',
-                    'lineHeight': '1'
-                }
+                className='graph-close-btn opview-image-close-btn',
             )
         ], className='dataset-header', style={'display': 'flex', 'alignItems': 'center'}),
 
@@ -487,18 +478,9 @@ def build_multifile_panel(panel_id: str, available_files: List[str],
                 ]),
             ], style={'flex': '1'}),
             html.Button(
-                '×',
+                '',
                 id={'type': 'multifile-close-btn', 'panel': panel_id},
-                className='graph-close-btn',
-                style={
-                    'background': 'none',
-                    'border': 'none',
-                    'color': '#999',
-                    'fontSize': '28px',
-                    'cursor': 'pointer',
-                    'padding': '0 8px',
-                    'lineHeight': '1'
-                }
+                className='graph-close-btn opview-image-close-btn',
             )
         ], className='dataset-header', style={'display': 'flex', 'alignItems': 'center'}),
 

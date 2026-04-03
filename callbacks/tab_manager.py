@@ -283,6 +283,7 @@ class TabCallbackManager(BaseCallbackManager):
             Output('formula-content', 'style'),
             Output('notebook-content', 'style'),
             Output('initializations-content', 'style'),
+            Output('mechanical-loads-content', 'style'),
             Input('active-tab', 'data'),
             Input('open-tabs', 'data'),
             Input('comparison-active-tab', 'data'),
@@ -309,6 +310,11 @@ class TabCallbackManager(BaseCallbackManager):
 
             # Determine what triggered this callback
             triggered = ctx.triggered_id
+            print(
+                f"[mechanical-loads] render_active_tab:enter triggered={triggered!r} "
+                f"active_folder={active_folder!r} active_tab={active_tab!r} open_tabs={open_tabs!r}",
+                flush=True,
+            )
 
             # === HANDLE CUSTOM GRAPH TAB ===
             if active_folder == 'custom-graph':
@@ -322,6 +328,7 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},         # formula-content style - HIDE formula
                     {'display': 'none'},         # notebook-content style - HIDE notebook
                     {'display': 'none'},         # initializations-content style - HIDE explorer
+                    {'display': 'none'},         # mechanical-loads-content style - HIDE
                 )
 
             # === HANDLE FORMULA PLOT TAB ===
@@ -335,6 +342,7 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'block'},        # formula-content style - SHOW formula
                     {'display': 'none'},         # notebook-content style - HIDE notebook
                     {'display': 'none'},         # initializations-content style - HIDE explorer
+                    {'display': 'none'},         # mechanical-loads-content style - HIDE
                 )
 
             # === HANDLE CALCULATION NOTEBOOK TAB ===
@@ -348,6 +356,7 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},         # formula-content style - HIDE formula
                     {'display': 'block'},        # notebook-content style - SHOW notebook
                     {'display': 'none'},         # initializations-content style - HIDE explorer
+                    {'display': 'none'},         # mechanical-loads-content style - HIDE
                 )
 
             # === HANDLE INITIALIZATIONS EXPLORER TAB ===
@@ -361,6 +370,26 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},
                     {'display': 'none'},
                     {'display': 'block'},
+                    {'display': 'none'},         # mechanical-loads-content style - HIDE
+                )
+
+            # === HANDLE MECHANICAL LOADS EXPLORER TAB ===
+            if active_folder == 'mechanical-loads-explorer':
+                print(
+                    f"[mechanical-loads] render_active_tab trigger={triggered!r} "
+                    f"active_tab={active_tab!r} open_tabs={open_tabs!r}",
+                    flush=True,
+                )
+                return (
+                    no_update,
+                    {'display': 'none'},
+                    no_update,
+                    {'display': 'none'},
+                    {'display': 'none'},
+                    {'display': 'none'},
+                    {'display': 'none'},
+                    {'display': 'none'},
+                    {'display': 'block'},        # mechanical-loads-content style - SHOW
                 )
 
             # === HANDLE COMPARISON TAB ===
@@ -376,6 +405,7 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'none'},         # formula-content - HIDE
                         {'display': 'none'},         # notebook-content - HIDE
                         {'display': 'none'},         # initializations-content - HIDE
+                        {'display': 'none'},         # mechanical-loads-content - HIDE
                     )
 
                 # Multi View has its own panels; start empty until user adds one.
@@ -391,6 +421,7 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'none'},         # formula-content - HIDE
                         {'display': 'none'},         # notebook-content - HIDE
                         {'display': 'none'},         # initializations-content - HIDE
+                        {'display': 'none'},         # mechanical-loads-content - HIDE
                     )
 
                 # Check if we need to rebuild comparison panels
@@ -449,6 +480,7 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'none'},         # formula-content - HIDE
                         {'display': 'none'},         # notebook-content - HIDE
                         {'display': 'none'},         # initializations-content - HIDE
+                        {'display': 'none'},         # mechanical-loads-content - HIDE
                     )
                 else:
                     # Pure visibility change - let clientside handle it
@@ -468,6 +500,7 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},          # formula-content - HIDE
                     {'display': 'none'},          # notebook-content - HIDE
                     {'display': 'none'},          # initializations-content - HIDE
+                    {'display': 'none'},          # mechanical-loads-content - HIDE
                 )
 
             # Build VTK tab content for all open panels and hide inactive ones.
@@ -501,6 +534,7 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'none'},         # formula-content - HIDE
                         {'display': 'none'},         # notebook-content - HIDE
                         {'display': 'none'},         # initializations-content - HIDE
+                        {'display': 'none'},         # mechanical-loads-content - HIDE
                     )
                 else:
                     # Structure didn't change, just visibility - let clientside handle it
@@ -632,9 +666,9 @@ class TabCallbackManager(BaseCallbackManager):
                     html.Div([
                         html.Span(label, className='tab-label'),
                         html.Button(
-                            '×',
+                            '',
                             id={'type': 'close-tab-btn', 'tab': tab_id},
-                            className='tab-close-btn'
+                            className='tab-close-btn opview-image-close-btn'
                         )
                     ],
                     id={'type': 'tab-header', 'tab': tab_id},
@@ -691,9 +725,9 @@ class TabCallbackManager(BaseCallbackManager):
                     html.Div([
                         html.Span(label, className='tab-label'),
                         html.Button(
-                            '×',
+                            '',
                             id={'type': 'comparison-close-tab-btn', 'tab': tab_id},
-                            className='tab-close-btn'
+                            className='tab-close-btn opview-image-close-btn'
                         )
                     ],
                     id={'type': 'comparison-tab-header', 'tab': tab_id},
@@ -886,6 +920,9 @@ class TabCallbackManager(BaseCallbackManager):
                 return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
             if active_folder == 'initializations-explorer':
                 # On Initializations Explorer tab: hide sidebar selectors, controls live in the content area.
+                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
+            if active_folder == 'mechanical-loads-explorer':
+                # On Mechanical Loads Explorer tab: hide sidebar selectors, controls live in the content area.
                 return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
             if active_folder == 'comparison':
                 # On Multi View: show comparison panel selector, hide Single View selector.

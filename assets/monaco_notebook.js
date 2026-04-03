@@ -6,12 +6,19 @@
 (function () {
   var VERSION = '0.45.0';
   var CDN = 'https://cdn.jsdelivr.net/npm/monaco-editor@' + VERSION + '/min/vs';
+  var MIN_CELL_LINES = 4;
+  window._markdownJustOpened = window._markdownJustOpened || {};
 
   function setClientDebug(message) {
-    var debugEl = document.getElementById('notebook-client-debug');
-    if (!debugEl) return;
-    var stamp = new Date().toLocaleTimeString();
-    debugEl.textContent = '[Client ' + stamp + '] ' + message;
+    return;
+  }
+
+  function debugMarkdown(message, cellType) {
+    if (cellType !== 'markdown') return;
+  }
+
+  function dumpClientState(reason) {
+    return;
   }
 
   // ── Completion provider ───────────────────────────────────────────────────
@@ -205,14 +212,14 @@
           { token: 'delimiter.curly',       foreground: '7c2d12' },
         ],
         colors: {
-          'editor.background':                   '#fffdf8',
-          'editor.lineHighlightBackground':      '#f0f4f8',
+          'editor.background':                   '#ffffff',
+          'editor.lineHighlightBackground':      '#ffffff',
           'editorLineNumber.foreground':         '#b8c5d0',
           'editorLineNumber.activeForeground':   '#475467',
           'editor.selectionBackground':          '#93c5fd99',
           'editor.inactiveSelectionBackground':  '#bfdbfe88',
           'editor.selectionHighlightBackground': '#93c5fd55',
-          'editorBracketMatch.background':       '#fef9c3',
+          'editorBracketMatch.background':       '#ffffff',
           'editorBracketMatch.border':           '#f59e0b',
           'editorIndentGuide.background':        '#e2e8f0',
         }
@@ -605,98 +612,179 @@
     });
   }
 
-  // ── Editor creation ───────────────────────────────────────────────────────
-  function createEditor() {
-    var container = document.getElementById('notebook-monaco-container');
-    var textarea  = document.getElementById('notebook-textarea');
-    var lineNums  = document.getElementById('notebook-line-numbers');
-    var runButton = document.getElementById('notebook-run-btn');
+  // ── Multi-cell editor system ──────────────────────────────────────────────
+  window._cellEditors = {};   // { cellId: editor }
+  window._nbNotebookState = window._nbNotebookState || {};
+  window._nbResultZoneIds = window._nbResultZoneIds || {};
+  var _langRegistered = false;
 
-    if (!container || window._monacoEditor) return;
+  function isAutoUpdateEnabled() {
+    var box = document.getElementById('notebook-auto-update');
+    if (box) return !!box.querySelector('input[type="checkbox"]:checked');
+    return true;
+  }
 
-    registerLanguage();
+  // Find Dash pattern-matched textarea for a cell (Dash sorts keys alphabetically)
+  function getCellTextarea(cellId) {
+    return document.getElementById('{"index":"' + cellId + '","type":"nb-cell-text"}');
+  }
 
-    // Show Monaco container, hide plain textarea and old line-number column
-    container.style.display = 'block';
-    if (textarea)  textarea.style.display  = 'none';
-    if (lineNums)  lineNums.style.display   = 'none';
+  function pushHiddenValue(el, val) {
+    if (!el || !document.body.contains(el)) return;
+    var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
+    if (setter && setter.set) setter.set.call(el, val);
+    else el.value = val;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
 
-    // Restore from sessionStorage if textarea is empty (tab switch / page refresh within same session)
-    var initialValue = textarea ? (textarea.value || '') : '';
-    if (!initialValue) {
-      try {
-        var saved = sessionStorage.getItem('opview_notebook');
-        if (saved) initialValue = saved;
-      } catch (e) {}
+  function triggerCellRun(cellId) {
+    // Click the cell's run button to trigger the Dash callback
+    var btnId = '{"index":"' + cellId + '","type":"nb-cell-run"}';
+    var btn = document.getElementById(btnId);
+    if (btn) { btn.click(); return; }
+    // Fallback: try to find by data attribute
+    var btns = document.querySelectorAll('[data-cell-run-id="' + cellId + '"]');
+    if (btns.length) btns[0].click();
+  }
+
+  function scheduleCellEditorRetry(cellId, reason) {
+    window._cellEditorRetryCounts = window._cellEditorRetryCounts || {};
+    var count = (window._cellEditorRetryCounts[cellId] || 0) + 1;
+    window._cellEditorRetryCounts[cellId] = count;
+    if (count > 20) {
+      setClientDebug('defer createCellEditor gave up for ' + cellId + ' | reason=' + reason + ' | tries=' + count);
+      return;
+    }
+    setClientDebug('defer createCellEditor for ' + cellId + ' | reason=' + reason + ' | tries=' + count);
+    window.setTimeout(function () {
+      createCellEditors();
+    }, Math.min(40 * count, 250));
+  }
+
+  function applyInlineResultZonesForCell(cellId, outputs) {
+    var editor = window._cellEditors[cellId];
+    if (!editor || !editor.changeViewZones) return;
+    var existingZoneIds = window._nbResultZoneIds[cellId] || [];
+    editor.changeViewZones(function (accessor) {
+      existingZoneIds.forEach(function (zoneId) {
+        try { accessor.removeZone(zoneId); } catch (e) {}
+      });
+      var nextZoneIds = [];
+      (outputs || []).forEach(function (line, index) {
+        if (!line || typeof line !== 'object') return;
+        if (line.kind !== 'matrix') return;
+        var sourceSpan = parseInt(line.source_span || 1, 10);
+        var rowSpan = parseInt(line.row_span || 1, 10);
+        var extraRows = Math.max(0, rowSpan - sourceSpan);
+        if (!extraRows) return;
+        var sourceLine = parseInt(line.source_line || (index + 1), 10);
+        var sourceEndLine = sourceLine + sourceSpan - 1;
+        nextZoneIds.push(accessor.addZone({
+          afterLineNumber: sourceEndLine,
+          heightInPx: extraRows * 34,
+          domNode: document.createElement('div'),
+        }));
+      });
+      window._nbResultZoneIds[cellId] = nextZoneIds;
+    });
+  }
+
+  window._nbApplyInlineResultZones = function (state) {
+    window._nbNotebookState = state || {};
+    var cells = (window._nbNotebookState && window._nbNotebookState.cells) || [];
+    cells.forEach(function (cell) {
+      if (!cell || cell.type !== 'code' || !cell.id) return;
+      applyInlineResultZonesForCell(cell.id, cell.outputs || []);
+    });
+  };
+
+  function createCellEditor(cellId, initialValue, cellType) {
+    var container = document.getElementById('nb-cell-editor-' + cellId);
+    if (!container) {
+      setClientDebug('createCellEditor skipped: missing container for ' + cellId);
+      return;
+    }
+    if (window._cellEditors[cellId]) {
+      setClientDebug('createCellEditor skipped: editor already exists for ' + cellId);
+      return;
+    }
+    if (container.offsetWidth === 0) {
+      scheduleCellEditorRetry(cellId, 'container width is 0');
+      return;
     }
 
-    var editor = monaco.editor.create(container, {
-      value:                initialValue,
-      language:             'nb',
-      theme:                'nb-light',
-      fontSize:             14,
-      lineHeight:           34,
-      fontFamily:           "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-      minimap:              { enabled: false },
-      lineNumbers:          'on',
-      automaticLayout:      false,
-      scrollBeyondLastLine: false,
-      wordWrap:             'off',
-      renderLineHighlight:  'line',
-      tabSize:              4,
-      insertSpaces:         true,
-      autoIndent:           'advanced',
-      matchBrackets:        'always',
-      padding:              { top: 18, bottom: 36 },
-      scrollbar:            {
-        vertical:             'hidden',
-        horizontal:           'hidden',
-        verticalScrollbarSize: 0,
-        horizontalScrollbarSize: 0,
-        handleMouseWheel:     false,
-      },
-      suggest:              { showWords: false },
-      quickSuggestions:     { other: true, comments: false, strings: false },
-    });
+    // Ensure language registered once
+    if (!_langRegistered) {
+      registerLanguage();
+      _langRegistered = true;
+    }
+
+    container.removeAttribute('data-cell-init');
+    container.style.display = 'block';
+    debugMarkdown(
+      'mount container for ' + cellId +
+      ' | w=' + container.offsetWidth +
+      ' | h=' + container.offsetHeight +
+      ' | textareas=' + (getCellTextarea(cellId) ? 1 : 0),
+      cellType
+    );
+
+    var lang = (cellType === 'markdown') ? 'markdown' : 'nb';
+
+    var editor;
+    try {
+      editor = monaco.editor.create(container, {
+        value:                initialValue || '',
+        language:             lang,
+        theme:                'nb-light',
+        fontSize:             14,
+        lineHeight:           34,
+        fontFamily:           "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+        minimap:              { enabled: false },
+        lineNumbers:          'on',
+        automaticLayout:      false,
+        scrollBeyondLastLine: false,
+        wordWrap:             'off',
+        renderLineHighlight:  'line',
+        tabSize:              4,
+        insertSpaces:         true,
+        autoIndent:           'advanced',
+        matchBrackets:        'always',
+        padding:              { top: 0, bottom: 0 },
+        scrollbar:            {
+          vertical:             'hidden',
+          horizontal:           'hidden',
+          verticalScrollbarSize: 0,
+          horizontalScrollbarSize: 0,
+          handleMouseWheel:     false,
+        },
+        suggest:              { showWords: false },
+        quickSuggestions:     { other: true, comments: false, strings: false },
+      });
+    } catch (e) {
+      setClientDebug('createCellEditor failed for ' + cellId + ': ' + (e && e.message ? e.message : e));
+      throw e;
+    }
 
     container.classList.add('theme-nb-light');
-    window._monacoEditor = editor;
-    initVimToggle(editor);
+    window._cellEditors[cellId] = editor;
+    if (window._cellEditorRetryCounts) delete window._cellEditorRetryCounts[cellId];
+    window._monacoEditor = editor;  // keep alias pointing to last active editor
     var altLineDecorations = [];
-    function isAutoUpdateEnabled() {
-      // Read checkbox state directly — no cache, no async Dash delay
-      var box = document.getElementById('notebook-auto-update');
-      if (box) return !!box.querySelector('input[type="checkbox"]:checked');
-      return true;
-    }
+    debugMarkdown('editor created for ' + cellId + ' len=' + (initialValue || '').length, cellType);
+    debugMarkdown(
+      'editor layout for ' + cellId +
+      ' | w=' + container.offsetWidth +
+      ' | h=' + container.offsetHeight +
+      ' | dom=' + (!!editor.getDomNode()) +
+      ' | lines=' + (editor.getModel() ? editor.getModel().getLineCount() : 0),
+      cellType
+    );
 
-    function getLiveHiddenInput() {
-      return document.getElementById('notebook-live-text');
-    }
-
-    function getRunHiddenInput() {
-      return document.getElementById('notebook-run-text');
-    }
-
-    function pushHiddenValue(el, val) {
-      if (!el || !document.body.contains(el)) {
-        setClientDebug('push skipped: hidden input missing or detached');
-        return;
-      }
-      var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
-      if (setter && setter.set) setter.set.call(el, val);
-      else el.value = val;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
-    function runNotebook(force) {
-      var val = editor.getValue();
-      setClientDebug('runNotebook(force=' + (!!force) + ', auto=' + isAutoUpdateEnabled() + ', len=' + val.length + ')');
-      pushHiddenValue(getLiveHiddenInput(), val);
-      if (force || isAutoUpdateEnabled()) {
-        pushHiddenValue(getRunHiddenInput(), val);
-      }
+    // Init Vim toggle on the first code cell editor created
+    if (cellType !== 'markdown' && Object.keys(window._cellEditors).length === 1) {
+      initVimToggle(editor);
     }
 
     function updateAlternatingLines() {
@@ -715,75 +803,161 @@
       }
       altLineDecorations = editor.deltaDecorations(altLineDecorations, decorations);
     }
-    window._refreshMonacoAltLines = updateAlternatingLines;
 
-    // ── Grow Monaco container with content (no internal scroll) ──────────
-    function updateEditorHeight() {
-      var contentHeight = Math.max(400, editor.getContentHeight());
-      container.style.height = contentHeight + 'px';
-      editor.layout({ width: container.offsetWidth, height: contentHeight });
-      // Also stretch the results gutter to the same height so they grow together
-      var gutter = document.getElementById('notebook-results');
-      if (gutter && gutter.parentElement) {
-        gutter.parentElement.style.minHeight = contentHeight + 'px';
-      }
+    // Auto-height per cell
+    function updateCellHeight() {
+      var model = editor.getModel();
+      var visibleLines = Math.max(MIN_CELL_LINES, model ? model.getLineCount() : 1);
+      var minHeight = visibleLines * 34;
+      var h = Math.max(minHeight, editor.getContentHeight());
+      container.style.height = h + 'px';
+      editor.layout({ width: container.offsetWidth, height: h });
+      debugMarkdown(
+        'updateCellHeight ' + cellId +
+        ' | w=' + container.offsetWidth +
+        ' | h=' + h +
+        ' | content=' + editor.getContentHeight(),
+        cellType
+      );
     }
-    editor.onDidContentSizeChange(updateEditorHeight);
-    // Set initial height after first render tick
+    editor.onDidContentSizeChange(updateCellHeight);
+    setTimeout(updateCellHeight, 0);
     setTimeout(function () {
-      updateEditorHeight();
-      updateAlternatingLines();
-    }, 0);
+      debugMarkdown(
+        'post-create ' + cellId +
+        ' | hasFocus=' + editor.hasTextFocus() +
+        ' | scrollTop=' + editor.getScrollTop(),
+        cellType
+      );
+    }, 30);
 
-    // Re-layout when window resizes (width changes)
     window.addEventListener('resize', function () {
-      if (window._monacoEditor) updateEditorHeight();
+      if (window._cellEditors[cellId]) updateCellHeight();
     });
 
-    // Debounced sessionStorage save (cleared on server restart automatically)
-    var _saveTimer = null;
-    function schedSave(val) {
-      if (_saveTimer) clearTimeout(_saveTimer);
-      _saveTimer = setTimeout(function () {
-        try { sessionStorage.setItem('opview_notebook', val); } catch (e) {}
-      }, 800);
-    }
+    container.addEventListener('mousedown', function () {
+      debugMarkdown('container mousedown ' + cellId + ' | hasFocus=' + editor.hasTextFocus(), cellType);
+    });
 
-    // ── Monaco → Dash (via hidden input) ─────────────────────────────────
-    // _monacoSyncing prevents re-triggering when WE set the value from Dash
+    editor.onDidFocusEditorWidget(function () {
+      if (cellType === 'markdown') {
+        window._markdownJustOpened = window._markdownJustOpened || {};
+        window._markdownJustOpened[cellId] = true;
+        window.setTimeout(function () {
+          delete window._markdownJustOpened[cellId];
+        }, 220);
+      }
+      if (cellType === 'markdown' && window._showMarkdownEditor) {
+        window._showMarkdownEditor(cellId);
+      }
+      debugMarkdown('editor focus ' + cellId + ' | hasFocus=' + editor.hasTextFocus(), cellType);
+    });
+
+    editor.onDidBlurEditorWidget(function () {
+      window.setTimeout(function () {
+        if (cellType !== 'markdown') return;
+        if (window._markdownJustOpened && window._markdownJustOpened[cellId]) return;
+        if (editor.hasTextFocus()) return;
+        if (window._renderMarkdownCell) {
+          window._renderMarkdownCell(cellId, editor.getValue());
+        }
+      }, 120);
+      debugMarkdown('editor blur ' + cellId + ' | hasFocus=' + editor.hasTextFocus(), cellType);
+    });
+
+    editor.onDidChangeCursorSelection(function (event) {
+      var pos = event && event.selection ? event.selection.getPosition() : null;
+      if (!pos) return;
+      debugMarkdown('cursor ' + cellId + ' | line=' + pos.lineNumber + ' | col=' + pos.column, cellType);
+    });
+
+    // On content change
     editor.onDidChangeModelContent(function () {
       if (window._monacoSyncing) return;
-      updateAlternatingLines();
       var val = editor.getValue();
-      setClientDebug('editor change -> len=' + val.length + ', auto=' + isAutoUpdateEnabled());
-      schedSave(val);
-      pushHiddenValue(getLiveHiddenInput(), val);
-      if (isAutoUpdateEnabled()) {
-        pushHiddenValue(getRunHiddenInput(), val);
-        if (window._notebookRenderResults) window._notebookRenderResults(val);
-      }
+      updateAlternatingLines();
+      // Push to Dash-tracked textarea
+      var ta = getCellTextarea(cellId);
+      debugMarkdown(
+        'editor change ' + cellId +
+        ' -> len=' + val.length +
+        ' | textarea=' + (!!ta) +
+        ' | attached=' + (!!ta && document.body.contains(ta)),
+        cellType
+      );
+      if (ta) pushHiddenValue(ta, val);
     });
 
-    // Initial client-side render
-    runNotebook(true);
+    // Shift+Enter: run this cell
+    editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, function () {
+      triggerCellRun(cellId);
+      return false;  // prevent default newline
+    });
 
-    if (runButton) {
-      runButton.addEventListener('click', function () {
-        runNotebook(true);
-      });
-    }
-    var autoBox = document.getElementById('notebook-auto-update');
-    if (autoBox) {
-      autoBox.addEventListener('change', function () {
-        setClientDebug('auto update toggled -> ' + isAutoUpdateEnabled());
-        if (isAutoUpdateEnabled()) {
-          runNotebook(true);
-        }
-      });
-    }
+    // Ctrl+Enter: run all cells
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, function () {
-      runNotebook(true);
+      var btn = document.getElementById('notebook-run-btn');
+      if (btn) btn.click();
     });
+
+    setTimeout(updateAlternatingLines, 0);
+    if (cellType !== 'markdown') {
+      window.setTimeout(function () {
+        var state = window._nbNotebookState || {};
+        var cells = state.cells || [];
+        var cell = cells.find(function (candidate) { return candidate && candidate.id === cellId; });
+        applyInlineResultZonesForCell(cellId, cell ? (cell.outputs || []) : []);
+      }, 0);
+    }
+  }
+
+  function createCellEditors(forceSyncExisting) {
+    var selector = forceSyncExisting ? '[id^="nb-cell-editor-"]' : '[data-cell-init="true"]';
+    var containers = document.querySelectorAll(selector);
+    setClientDebug(
+      'createCellEditors found ' + containers.length +
+      (forceSyncExisting ? ' container(s) for sync' : ' pending container(s)')
+    );
+    containers.forEach(function (container) {
+      var cellId    = container.getAttribute('data-cell-id');
+      var cellType  = container.getAttribute('data-cell-type') || 'code';
+      var initValue = container.getAttribute('data-cell-value') || '';
+      if (!cellId) return;
+
+      // If an editor already exists for this cell, check whether its DOM node
+      // is still attached. Dash re-renders replace old DOM nodes, leaving the
+      // Monaco instance pointing at a detached (orphaned) element.
+      if (window._cellEditors[cellId]) {
+        var domNode = window._cellEditors[cellId].getDomNode
+          ? window._cellEditors[cellId].getDomNode()
+          : null;
+        if (domNode && container.contains(domNode)) {
+          // Editor is still live — nothing to do.
+          var currentValue = window._cellEditors[cellId].getValue();
+          if (currentValue !== initValue) {
+            setClientDebug('sync existing editor ' + cellId + ' from len=' + currentValue.length + ' to len=' + initValue.length);
+            window._monacoSyncing = true;
+            window._cellEditors[cellId].setValue(initValue);
+            window._monacoSyncing = false;
+          } else {
+            setClientDebug('reuse existing editor ' + cellId + ' len=' + currentValue.length);
+          }
+          container.removeAttribute('data-cell-init');
+          return;
+        }
+        // Editor is orphaned — dispose and fall through to recreate.
+        setClientDebug('dispose orphaned editor ' + cellId);
+        try { window._cellEditors[cellId].dispose(); } catch (e) {}
+        delete window._cellEditors[cellId];
+      }
+
+      createCellEditor(cellId, initValue, cellType);
+    });
+  }
+
+  // Legacy single-editor stub kept for backward compat (never actually creates)
+  function createEditor() {
+    createCellEditors();
   }
 
   // ── Vim mode toggle ──────────────────────────────────────────────────────
@@ -921,42 +1095,108 @@
 
   // ── CDN loader ────────────────────────────────────────────────────────────
   function loadMonaco() {
-    if (window.monaco)                               { createEditor(); return; }
-    if (document.getElementById('_monaco_loader'))   { return; }
+    if (window.monaco) {
+      setClientDebug('loadMonaco: monaco already available');
+      createCellEditors();
+      return;
+    }
+    if (document.getElementById('_monaco_loader')) {
+      setClientDebug('loadMonaco: loader already present');
+      return;
+    }
 
     var s   = document.createElement('script');
     s.id    = '_monaco_loader';
     s.src   = CDN + '/loader.js';
     s.async = true;
     s.onload = function () {
+      setClientDebug('loadMonaco: loader.js loaded');
       window.require.config({ paths: { vs: CDN } });
-      window.require(['vs/editor/editor.main'], createEditor);
+      window.require(['vs/editor/editor.main'], function () {
+        setClientDebug('loadMonaco: editor.main loaded');
+        registerSignatureHelpProvider();
+        createCellEditors();
+      });
     };
     s.onerror = function () {
+      setClientDebug('loadMonaco failed: CDN unavailable');
       console.warn('[OPView] Monaco CDN unavailable — falling back to plain textarea.');
     };
     document.head.appendChild(s);
+    setClientDebug('loadMonaco: appended CDN loader');
   }
 
-  // ── Dash → Monaco sync (called from Dash clientside callback) ─────────
+  // ── Dash → Monaco sync (legacy, operates on active/last cell editor) ──
   window._syncToMonaco = function (val) {
-    if (!window._monacoEditor) return;
-    var current = window._monacoEditor.getValue();
-    if (current === (val || '')) return;
-    setClientDebug('external sync received -> len=' + ((val || '').length));
-    window._monacoSyncing = true;
-    window._monacoEditor.setValue(val || '');
-    window._monacoSyncing = false;
-    if (window._refreshMonacoAltLines) window._refreshMonacoAltLines();
-    setClientDebug('external sync applied -> len=' + ((val || '').length));
+    // No-op in cell mode — cells manage their own content
   };
 
   // ── Boot ─────────────────────────────────────────────────────────────────
-  window.addEventListener('load', function () {
+  var _notebookEditorsBooted = false;
+
+  function bootNotebookEditors() {
+    if (_notebookEditorsBooted) return;
+    _notebookEditorsBooted = true;
+    setClientDebug('window load');
+    dumpClientState('before-loadMonaco');
     loadMonaco();
-    // Re-try when Dash rebuilds the DOM (tab switches, etc.)
-    new MutationObserver(function () {
-      if (!window._monacoEditor) loadMonaco();
-    }).observe(document.body, { childList: true, subtree: true });
+
+    // Watch for new cell containers added by Dash re-renders
+    new MutationObserver(function (mutations) {
+      if (!window.monaco) return;
+      var shouldRefresh = false;
+      var forceSyncExisting = false;
+      mutations.forEach(function (m) {
+        if (m.type === 'attributes') {
+          var target = m.target;
+          if (
+            target &&
+            target.nodeType === 1 &&
+            target.id &&
+            target.id.indexOf('nb-cell-editor-') === 0 &&
+            (m.attributeName === 'data-cell-init' || m.attributeName === 'data-cell-value')
+          ) {
+            shouldRefresh = true;
+            if (m.attributeName === 'data-cell-value') forceSyncExisting = true;
+            setClientDebug('mutation attribute ' + target.id + ' | ' + m.attributeName);
+          }
+          return;
+        }
+        m.addedNodes.forEach(function (node) {
+          if (node.nodeType !== 1) return;
+          if (node.getAttribute && node.getAttribute('data-cell-init') === 'true') shouldRefresh = true;
+          else if (node.querySelector && node.querySelector('[data-cell-init="true"]')) shouldRefresh = true;
+        });
+      });
+      if (shouldRefresh) {
+        setClientDebug('mutation refresh -> createCellEditors' + (forceSyncExisting ? ' (forceSyncExisting)' : ''));
+        createCellEditors(forceSyncExisting);
+      }
+    }).observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-cell-init', 'data-cell-value'],
+    });
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    window.setTimeout(bootNotebookEditors, 0);
+  } else {
+    document.addEventListener('DOMContentLoaded', bootNotebookEditors);
+  }
+  window.addEventListener('load', bootNotebookEditors);
+
+  window.addEventListener('error', function (event) {
+    var msg = event && event.message ? event.message : 'unknown error';
+    var src = event && event.filename ? event.filename : 'unknown source';
+    var line = event && event.lineno ? event.lineno : '?';
+    setClientDebug('window.error ' + src + ':' + line + ' | ' + msg);
+  });
+
+  window.addEventListener('unhandledrejection', function (event) {
+    var reason = event && event.reason;
+    var msg = reason && reason.message ? reason.message : String(reason);
+    setClientDebug('unhandledrejection | ' + msg);
   });
 })();

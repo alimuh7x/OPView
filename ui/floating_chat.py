@@ -20,8 +20,8 @@ def build_floating_chat():
                 html.Div([
                     html.Button("🗑", id="fchat-clear-btn", n_clicks=0,
                                 className="fchat-action-btn", title="Clear chat"),
-                    html.Button("✕", id="fchat-close-btn", n_clicks=0,
-                                className="fchat-action-btn", title="Close"),
+                    html.Button("", id="fchat-close-btn", n_clicks=0,
+                                className="fchat-action-btn opview-image-close-btn", title="Close"),
                 ], className="fchat-header-right"),
             ], className="fchat-header"),
 

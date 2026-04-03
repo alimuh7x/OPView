@@ -302,10 +302,10 @@ def build_comparison_heatmap_row(panels, entries, settings, group, app=None):
                 [
                     html.Span(file_name, className='comparison-heatmap-title-text'),
                     html.Button(
-                        "×",
+                        "",
                         id={'type': 'comparison-remove-file', 'group': group, 'path': entry.get('path')},
                         n_clicks=0,
-                        className='comparison-heatmap-remove',
+                        className='comparison-heatmap-remove opview-image-close-btn',
                         title='Remove from comparison'
                     ),
                 ],

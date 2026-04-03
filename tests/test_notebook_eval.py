@@ -72,6 +72,16 @@ class TestVariables:
         ev, variables, _ = _run("n = 10", "n = n + 5")
         assert variables["n"] == pytest.approx(15)
 
+    def test_multiline_parenthesized_assignment(self):
+        ev, variables, _ = _run(
+            "x = (1 + 2 +",
+            "     3 + 4)",
+        )
+        assert _error(ev, 0) == ""
+        assert _result(ev, 0) == "10"
+        assert variables["x"] == pytest.approx(10)
+        assert ev[0]["source_span"] == 2
+
 
 # ── Unit constants ─────────────────────────────────────────────────────────────
 
@@ -139,6 +149,34 @@ class TestArrays:
         ev, _, _ = _run("[1, 2, 3]")
         assert _result(ev, 0) == "[1, 2, 3]"
 
+    def test_list_comprehension(self):
+        ev, _, _ = _run("vals = [i * i for i in range(4)]")
+        assert _error(ev, 0) == ""
+        assert _result(ev, 0) == "[0, 1, 4, 9]"
+
+    def test_list_comprehension_uses_existing_variable(self):
+        ev, _, _ = _run("scale = 3", "vals = [scale * i for i in range(4)]")
+        assert _error(ev, 1) == ""
+        assert _result(ev, 1) == "[0, 3, 6, 9]"
+
+
+class TestDictionaries:
+    def test_dictionary_literal(self):
+        ev, _, _ = _run("params = {'a': 1, 'b': 2}")
+        assert _error(ev, 0) == ""
+        assert "'a': 1" in _result(ev, 0)
+        assert "'b': 2" in _result(ev, 0)
+
+    def test_multiline_dictionary_literal(self):
+        ev, _, _ = _run(
+            "params = {",
+            "    'a': 1,",
+            "    'b': 2,",
+            "}",
+        )
+        assert _error(ev, 0) == ""
+        assert "'a': 1" in _result(ev, 0)
+
 
 # ── Matrix operations ──────────────────────────────────────────────────────────
 
@@ -167,6 +205,25 @@ class TestMatrix:
         # solve returns [2, 3]
         assert "x_sol" in arr_vars
         assert arr_vars["x_sol"] == pytest.approx([2.0, 3.0])
+
+    def test_multiline_matrix_assignment(self):
+        ev, _, _ = _run(
+            "n_all = [[ 1, 1, 1],[ 1, 1, 1],[ 1, 1, 1],[-1, 1, 1],",
+            "         [-1, 1, 1],[-1, 1, 1],[ 1,-1, 1],[ 1,-1, 1]]",
+        )
+        assert _error(ev, 0) == ""
+        assert _result(ev, 0) != ""
+        assert _error(ev, 1) == ""
+        assert ev[0]["source_span"] == 2
+
+
+class TestBlocks:
+    def test_for_block_carries_source_span(self):
+        ev, _, _ = _run(
+            "for i in range(3):",
+            "    x = i",
+        )
+        assert ev[0]["source_span"] == 2
 
 
 # ── Engineering functions ──────────────────────────────────────────────────────

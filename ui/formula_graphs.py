@@ -461,17 +461,11 @@ def _build_formula_rows(panel_id: str, formulas: List[Dict]) -> List[html.Div]:
         )
 
         remove_button = html.Button(
-            '×',
+            '',
             id={'type': 'formula-row-remove-btn', 'panel': panel_id, 'row': row_id},
-            className='graph-close-btn',
+            className='graph-close-btn opview-image-close-btn',
             title='Remove formula',
             style={
-                'background': 'none',
-                'border': 'none',
-                'color': '#999',
-                'fontSize': '24px',
-                'cursor': 'pointer',
-                'padding': '0 8px',
                 'alignSelf': 'flex-end',
             }
         )
@@ -830,18 +824,9 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                 html.H3(f"Formula Panel {panel_num}", className='dataset-title')
             ], style={'flex': '1'}),
             html.Button(
-                '×',
+                '',
                 id={'type': 'formula-close-btn', 'panel': panel_id},
-                className='graph-close-btn',
-                style={
-                    'background': 'none',
-                    'border': 'none',
-                    'color': '#999',
-                    'fontSize': '28px',
-                    'cursor': 'pointer',
-                    'padding': '0 8px',
-                    'lineHeight': '1'
-                }
+                className='graph-close-btn opview-image-close-btn',
             )
         ], className='dataset-header', style={'display': 'flex', 'alignItems': 'center'}),
         html.Div([
@@ -900,9 +885,9 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                         ),
                     ], style=GRID_FIELD_STYLE),
                     html.Button(
-                        "+ Add Formula",
+                        "Add Formula",
                         id={'type': 'formula-add-row-btn', 'panel': panel_id},
-                        className='graphs-add-panel-btn',
+                        className='graphs-add-panel-btn opview-image-add-btn',
                         n_clicks=0,
                         style={'marginBottom': '0', 'alignSelf': 'flex-end', 'padding': '8px 12px', 'fontSize': '13px'}
                     ),
@@ -1016,17 +1001,11 @@ def build_formula_panel(panel_id: str, panel_state: Dict | None = None) -> html.
                         ),
                     ], style=GRID_FIELD_STYLE),
                     html.Button(
-                        '×',
+                        '',
                         id={'type': 'formula-row-remove-btn', 'panel': panel_id, 'row': primary_formula['id']},
-                        className='graph-close-btn',
+                        className='graph-close-btn opview-image-close-btn',
                         title='Remove formula',
                         style={
-                            'background': 'none',
-                            'border': 'none',
-                            'color': '#999',
-                            'fontSize': '24px',
-                            'cursor': 'pointer',
-                            'padding': '0 8px',
                             'alignSelf': 'flex-end',
                         }
                     ),
@@ -1251,10 +1230,9 @@ def build_formula_panel_2d(panel_id: str, panel_state: Dict | None = None) -> ht
         html.Div([
             html.Div([html.H3(f"Formula Panel {state['panel_number']} (2D)", className='dataset-title')], style={'flex': '1'}),
             html.Button(
-                '×',
+                '',
                 id={'type': 'formula-close-btn', 'panel': panel_id},
-                className='graph-close-btn',
-                style={'background': 'none', 'border': 'none', 'color': '#999', 'fontSize': '24px', 'cursor': 'pointer', 'padding': '0 8px'}
+                className='graph-close-btn opview-image-close-btn',
             ),
         ], className='dataset-header'),
         html.Div([
@@ -2251,5 +2229,3 @@ def build_formula_2d_slice_figures(panel_state: Dict) -> tuple[go.Figure, go.Fig
         '#dc2626',
     )
     return x_slice, y_slice
-
-

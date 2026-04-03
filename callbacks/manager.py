@@ -11,6 +11,7 @@ from .graphs_manager import GraphsCallbackManager
 from .formula_manager import FormulaCallbackManager
 from .notebook_manager import NotebookCallbackManager
 from .initializations_explorer_manager import InitializationsExplorerCallbackManager
+from .mechanical_loads_manager import MechanicalLoadsCallbackManager
 
 
 class CallbackManager:
@@ -49,6 +50,7 @@ class CallbackManager:
         self.formula_manager = FormulaCallbackManager(app, context)
         self.notebook_manager = NotebookCallbackManager(app, context)
         self.initializations_explorer_manager = InitializationsExplorerCallbackManager(app, context)
+        self.mechanical_loads_manager = MechanicalLoadsCallbackManager(app, context)
 
     def register_all(self):
         """
@@ -84,6 +86,11 @@ class CallbackManager:
         self.initializations_explorer_manager.register()
         print(f"  ✓ Initializations Explorer callbacks: {self.initializations_explorer_manager.count()}")
 
+        print("  [mechanical-loads] about to register Mechanical Loads Explorer callbacks...", flush=True)
+        self.mechanical_loads_manager.register()
+        print(f"  ✓ Mechanical Loads Explorer callbacks: {self.mechanical_loads_manager.count()}")
+        print("  [mechanical-loads] finished registering Mechanical Loads Explorer callbacks.", flush=True)
+
         # Note: Comparison callbacks are already registered by ComparisonManager
         if self.comparison_manager:
             print(f"  ✓ Comparison callbacks: registered via ComparisonManager")
@@ -95,7 +102,8 @@ class CallbackManager:
             self.graphs_manager.count() +
             self.formula_manager.count() +
             self.notebook_manager.count() +
-            self.initializations_explorer_manager.count()
+            self.initializations_explorer_manager.count() +
+            self.mechanical_loads_manager.count()
         )
         print(f"[CallbackManager] Total callbacks registered: {total}")
 
@@ -114,6 +122,7 @@ class CallbackManager:
             'formula': self.formula_manager.count(),
             'notebook': self.notebook_manager.count(),
             'initializations_explorer': self.initializations_explorer_manager.count(),
+            'mechanical_loads_explorer': self.mechanical_loads_manager.count(),
             'total': (
                 self.tab_manager.count() +
                 self.project_manager.count() +
@@ -121,6 +130,7 @@ class CallbackManager:
                 self.graphs_manager.count() +
                 self.formula_manager.count() +
                 self.notebook_manager.count() +
-                self.initializations_explorer_manager.count()
+                self.initializations_explorer_manager.count() +
+                self.mechanical_loads_manager.count()
             )
         }

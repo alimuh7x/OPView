@@ -1825,22 +1825,37 @@
   }());
 
   function applyErrorDecorations(errorLineIndices) {
-    var editor = window._monacoEditor;
-    if (!editor || !editor.getModel) return;
-    var decorations = errorLineIndices.map(function(lineIdx) {
-      return {
-        range: new monaco.Range(lineIdx + 1, 1, lineIdx + 1, 1),
-        options: {
-          isWholeLine: true,
-          className: 'nb-error-line',
-          glyphMarginClassName: 'nb-error-glyph',
-          overviewRuler: { color: '#ef4444', position: monaco.editor.OverviewRulerLane.Left },
-        },
-      };
+    var editors = (window._cellEditors && Object.keys(window._cellEditors).length > 0)
+      ? Object.values(window._cellEditors)
+      : (window._monacoEditor ? [window._monacoEditor] : []);
+    editors.forEach(function(editor) {
+      if (!editor || !editor.getModel) return;
+      var decorations = errorLineIndices.map(function(lineIdx) {
+        return {
+          range: new monaco.Range(lineIdx + 1, 1, lineIdx + 1, 1),
+          options: {
+            isWholeLine: true,
+            className: 'nb-error-line',
+            glyphMarginClassName: 'nb-error-glyph',
+            overviewRuler: { color: '#ef4444', position: monaco.editor.OverviewRulerLane.Left },
+          },
+        };
+      });
+      if (!editor._nbErrorDecorations) editor._nbErrorDecorations = [];
+      editor._nbErrorDecorations = editor.deltaDecorations(editor._nbErrorDecorations, decorations);
     });
-    window._nbErrorDecorations = editor.deltaDecorations(
-      window._nbErrorDecorations || [], decorations
-    );
+  }
+
+  function _fmtNum(x) {
+    if (!isFinite(x)) return String(x);
+    var a = Math.abs(x);
+    if (a === 0) return '0';
+    if (a >= 1e4 || (a > 0 && a < 1e-2)) {
+      var s = x.toExponential(2).replace(/\.?0+e/, 'e').replace('e+', 'e').replace(/e(-?)0*(\d+)/, 'e$1$2');
+      return s;
+    }
+    var s3 = parseFloat(x.toPrecision(3));
+    return String(s3);
   }
 
   function renderVarInspector(variables) {
@@ -1857,14 +1872,14 @@
       if (Array.isArray(v)) {
         if (v.length > 0 && Array.isArray(v[0])) {
           type = 'matrix'; shape = v.length + '×' + v[0].length;
-          preview = '[[' + v[0].slice(0,3).map(function(x){return +x.toFixed(4);}).join(', ') + (v[0].length>3?', …':'') + '], …]';
+          preview = '[[' + v[0].slice(0,3).map(_fmtNum).join(', ') + (v[0].length>3?', …':'') + '], …]';
         } else {
           type = 'vector'; shape = '[' + v.length + ']';
-          preview = '[' + v.slice(0,5).map(function(x){return +x.toFixed(4);}).join(', ') + (v.length>5?', …':'') + ']';
+          preview = '[' + v.slice(0,5).map(_fmtNum).join(', ') + (v.length>5?', …':'') + ']';
         }
       } else if (typeof v === 'number') {
         type = 'scalar'; shape = '—';
-        preview = isFinite(v) ? +v.toPrecision(6) : String(v);
+        preview = isFinite(v) ? _fmtNum(v) : String(v);
       } else if (typeof v === 'object' && v !== null) {
         type = 'object'; shape = '—';
         preview = JSON.stringify(v).slice(0, 60);
@@ -1888,25 +1903,28 @@
   }
 
   function applyVarDecorations(arrayVarNames, scalarVarNames) {
-    var editor = window._monacoEditor;
-    if (!editor || !editor.getModel) return;
-    var model = editor.getModel();
-    if (!model) return;
-    var decorations = [];
-    function addDecorations(names, cls) {
-      names.forEach(function (name) {
-        var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        var matches = model.findMatches('\\b' + escaped + '\\b', false, true, true, null, false);
-        matches.forEach(function (m) {
-          decorations.push({ range: m.range, options: { inlineClassName: cls } });
+    var editors = (window._cellEditors && Object.keys(window._cellEditors).length > 0)
+      ? Object.values(window._cellEditors)
+      : (window._monacoEditor ? [window._monacoEditor] : []);
+    editors.forEach(function(editor) {
+      if (!editor || !editor.getModel) return;
+      var model = editor.getModel();
+      if (!model) return;
+      var decorations = [];
+      function addDecorations(names, cls) {
+        names.forEach(function (name) {
+          var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          var matches = model.findMatches('\\b' + escaped + '\\b', false, true, true, null, false);
+          matches.forEach(function (m) {
+            decorations.push({ range: m.range, options: { inlineClassName: cls } });
+          });
         });
-      });
-    }
-    addDecorations(arrayVarNames,  'nb-array-var');
-    addDecorations(scalarVarNames, 'nb-scalar-var');
-    window._nbVarDecorations = editor.deltaDecorations(
-      window._nbVarDecorations || [], decorations
-    );
+      }
+      addDecorations(arrayVarNames,  'nb-array-var');
+      addDecorations(scalarVarNames, 'nb-scalar-var');
+      if (!editor._nbVarDecorations) editor._nbVarDecorations = [];
+      editor._nbVarDecorations = editor.deltaDecorations(editor._nbVarDecorations, decorations);
+    });
   }
 
   function refreshVarsFromState(state) {
@@ -2005,14 +2023,6 @@
       row.appendChild(countCell);
       resultsContainer.appendChild(row);
     }
-    if (debugContainer) {
-      debugContainer.textContent = [
-        `[NotebookDebug] lines=${lines.length}`,
-        `[NotebookDebug] results=${evaluation.results.length}`,
-        `[NotebookDebug] variables=${Object.keys(evaluation.variables).join(", ") || "(none)"}`,
-        `[NotebookDebug] preview=${JSON.stringify((text || "").slice(0, 120))}`
-      ].join("\n");
-    }
   }
 
   function updateLineNumbers(el, text) {
@@ -2035,6 +2045,9 @@
   }
 
   function attachNotebookRuntime() {
+    // Skip legacy runtime when the cell-based notebook is active
+    if (document.getElementById("notebook-cells-container")) return;
+
     const textarea = document.getElementById("notebook-textarea");
     const hiddenInput = document.getElementById("notebook-live-text");
     const runInput = document.getElementById("notebook-run-text");
@@ -2447,5 +2460,249 @@
     attachNotebookRuntime();
     const observer = new MutationObserver(attachNotebookRuntime);
     observer.observe(document.body, { childList: true, subtree: true });
+    loadMarkdownLibs();
   });
+
+  // ── Markdown + KaTeX rendering ────────────────────────────────────────────
+
+  var _markdownReady = false;
+
+  function loadMarkdownLibs() {
+    if (window.marked && window.katex && window.renderMathInElement) {
+      _markdownReady = true;
+      return;
+    }
+
+    // Load KaTeX CSS
+    if (!document.getElementById('_katex_css')) {
+      var link = document.createElement('link');
+      link.id = '_katex_css';
+      link.rel = 'stylesheet';
+      link.href = '/assets/vendor/katex.min.css';
+      document.head.appendChild(link);
+    }
+
+    // Load marked.js
+    function loadScript(src, id, onload) {
+      var existing = document.getElementById(id);
+      if (existing) {
+        if (existing.dataset.loaded === 'true') {
+          if (onload) onload();
+        } else if (onload) {
+          existing.addEventListener('load', onload, { once: true });
+        }
+        return;
+      }
+      var s = document.createElement('script');
+      s.id = id; s.src = src; s.async = true;
+      s.onload = function () {
+        s.dataset.loaded = 'true';
+        if (onload) onload();
+      };
+      document.head.appendChild(s);
+    }
+
+    loadScript('/assets/vendor/marked.min.js', '_marked_js', function () {
+      loadScript('/assets/vendor/katex.min.js', '_katex_js', function () {
+        loadScript('/assets/vendor/katex-auto-render.min.js', '_katex_auto_js', function () {
+          _markdownReady = true;
+          // Render any pending markdown cells
+          document.querySelectorAll('[data-md-pending="true"]').forEach(function(el) {
+            var cellId = el.getAttribute('data-md-cell-id');
+            var src = el.getAttribute('data-md-src') || '';
+            if (cellId) renderMarkdownInto(cellId, src);
+          });
+        });
+      });
+    });
+  }
+
+  function _sanitizeHtml(html) {
+    var tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    // Remove script and style elements entirely
+    tmp.querySelectorAll('script, style').forEach(function(el) { el.remove(); });
+    // Strip on* event handlers and javascript: URIs from every element
+    tmp.querySelectorAll('*').forEach(function(el) {
+      Array.from(el.attributes).forEach(function(attr) {
+        if (/^on/i.test(attr.name)) {
+          el.removeAttribute(attr.name);
+        }
+      });
+      var href = el.getAttribute('href');
+      if (href && /^\s*javascript:/i.test(href)) el.removeAttribute('href');
+      var src = el.getAttribute('src');
+      if (src && /^\s*javascript:/i.test(src)) el.removeAttribute('src');
+    });
+    return tmp.innerHTML;
+  }
+
+  function _normalizeMarkdownMathHtml(html) {
+    if (!html) return html;
+    return html
+      .replace(/<p>\s*\$\$<br\s*\/?>\s*([\s\S]*?)\s*<br\s*\/?>\s*\$\$\s*<\/p>/gi, function(_, inner) {
+        return '<div class="nb-math-block">$$' + inner.replace(/<br\s*\/?>/gi, '\n') + '$$</div>';
+      })
+      .replace(/<p>\s*\\\[\s*<br\s*\/?>\s*([\s\S]*?)\s*<br\s*\/?>\s*\\\]\s*<\/p>/gi, function(_, inner) {
+        return '<div class="nb-math-block">\\[' + inner.replace(/<br\s*\/?>/gi, '\n') + '\\]</div>';
+      });
+  }
+
+  function _renderDirectKatexBlocks(container) {
+    if (!container || !window.katex) return 0;
+    var count = 0;
+    container.querySelectorAll('.nb-math-block').forEach(function (el) {
+      var text = (el.textContent || '').trim();
+      var expr = text;
+      if (expr.startsWith('$$') && expr.endsWith('$$')) {
+        expr = expr.slice(2, -2).trim();
+      } else if (expr.startsWith('\\[') && expr.endsWith('\\]')) {
+        expr = expr.slice(2, -2).trim();
+      }
+      if (!expr) return;
+      try {
+        window.katex.render(expr, el, {
+          displayMode: true,
+          throwOnError: false
+        });
+        count += 1;
+      } catch (e) {}
+    });
+    return count;
+  }
+
+  function _renderDirectKatexInline(container) {
+    if (!container || !window.katex) return 0;
+    var count = 0;
+    container.querySelectorAll('p, li, td, th, span').forEach(function (el) {
+      if (el.closest && el.closest('.katex, .katex-display, .nb-math-block')) return;
+      var text = el.textContent || '';
+      if (!text || text.indexOf('$') === -1) return;
+      var html = el.innerHTML;
+      var replaced = false;
+
+      html = html.replace(/\$([^$\n]+)\$/g, function (_, expr) {
+        expr = expr.trim();
+        if (!expr) return _;
+        try {
+          replaced = true;
+          count += 1;
+          return window.katex.renderToString(expr, {
+            displayMode: false,
+            throwOnError: false
+          });
+        } catch (e) {
+          return _;
+        }
+      });
+
+      html = html.replace(/\\\(([^()\n]+)\\\)/g, function (_, expr) {
+        expr = expr.trim();
+        if (!expr) return _;
+        try {
+          replaced = true;
+          count += 1;
+          return window.katex.renderToString(expr, {
+            displayMode: false,
+            throwOnError: false
+          });
+        } catch (e) {
+          return _;
+        }
+      });
+
+      if (replaced) el.innerHTML = html;
+    });
+    return count;
+  }
+
+  function renderMarkdownInto(cellId, source) {
+    var container = document.getElementById('nb-cell-md-preview-' + cellId);
+    var editorContainer = document.getElementById('nb-cell-editor-' + cellId);
+    if (!container) return;
+    if (!_markdownReady || !window.marked) {
+      // Store for later rendering
+      container.setAttribute('data-md-pending', 'true');
+      container.setAttribute('data-md-cell-id', cellId);
+      container.setAttribute('data-md-src', source);
+      return;
+    }
+
+    // Render markdown
+    try {
+      var rawHtml = window.marked.parse(source || '', { breaks: true, gfm: true });
+      var normalizedHtml = _normalizeMarkdownMathHtml(rawHtml);
+      container.innerHTML = _sanitizeHtml(normalizedHtml);
+    } catch(e) {
+      var pre = document.createElement('pre');
+      pre.textContent = source || '';
+      container.innerHTML = '';
+      container.appendChild(pre);
+    }
+
+    // Render math with KaTeX
+    if (window.renderMathInElement) {
+      try {
+        window.renderMathInElement(container, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true  },
+            { left: '$',  right: '$',  display: false },
+            { left: '\\(', right: '\\)', display: false },
+            { left: '\\[', right: '\\]', display: true  },
+            { left: '\\begin{equation}', right: '\\end{equation}', display: true },
+            { left: '\\begin{align}', right: '\\end{align}', display: true },
+            { left: '\\begin{alignat}', right: '\\end{alignat}', display: true },
+            { left: '\\begin{gather}', right: '\\end{gather}', display: true },
+          ],
+          throwOnError: false,
+        });
+      } catch(e) {}
+    } else {
+    }
+
+    var directBlocks = _renderDirectKatexBlocks(container);
+    var directInline = _renderDirectKatexInline(container);
+
+    container.removeAttribute('data-md-pending');
+    container.style.display = 'block';
+
+    // Show preview, hide monaco editor div
+    if (editorContainer) editorContainer.style.display = 'none';
+  }
+
+  function showMarkdownEditor(cellId) {
+    var container = document.getElementById('nb-cell-md-preview-' + cellId);
+    var editorContainer = document.getElementById('nb-cell-editor-' + cellId);
+    if (container) container.style.display = 'none';
+    if (editorContainer) {
+      editorContainer.style.display = 'block';
+      // Re-layout Monaco
+      if (window._cellEditors && window._cellEditors[cellId]) {
+        window._cellEditors[cellId].layout();
+        window._cellEditors[cellId].focus();
+      }
+    }
+  }
+
+  document.addEventListener('mousedown', function (event) {
+    window._markdownJustOpened = window._markdownJustOpened || {};
+    var target = event.target && event.target.nodeType === 3
+      ? event.target.parentElement
+      : event.target;
+    var preview = target && target.closest
+      ? target.closest('[id^="nb-cell-md-preview-"]')
+      : null;
+    if (!preview) return;
+    var cellId = preview.id.replace('nb-cell-md-preview-', '');
+    if (!cellId) return;
+    window._markdownJustOpened[cellId] = true;
+    window.setTimeout(function () {
+      delete window._markdownJustOpened[cellId];
+    }, 220);
+    showMarkdownEditor(cellId);
+  });
+
+  // Expose globally for Monaco and button click handlers
+  window._renderMarkdownCell = renderMarkdownInto;
+  window._showMarkdownEditor = showMarkdownEditor;
 })();

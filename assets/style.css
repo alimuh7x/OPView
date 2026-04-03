@@ -2463,7 +2463,7 @@ input:focus,
 /* Project name header (no checkbox) */
 .project-group-header {
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.95);
+    color: #ffffff;
     font-size: 0.95rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -2582,6 +2582,109 @@ input:focus,
     box-shadow:
         0 1px 3px rgba(0, 0, 0, 0.12),
         inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.opview-image-add-btn {
+    background-image: url("/assets/plus.png");
+    background-repeat: no-repeat;
+    background-position: 12px center;
+    background-size: 18px 18px;
+    padding-left: 40px !important;
+}
+
+.opview-image-add-btn:hover {
+    background-image: url("/assets/plus_hover.png");
+    background-repeat: no-repeat;
+    background-position: 12px center;
+    background-size: 22px 22px;
+}
+
+.mechanical-add-load-btn.opview-image-add-btn {
+    background-position: 14px center;
+    background-size: 24px 24px;
+    padding-left: 50px !important;
+}
+
+.mechanical-add-load-btn.opview-image-add-btn:hover {
+    background-position: 14px center;
+    background-size: 24px 24px;
+}
+
+.mechanical-add-load-btn {
+    width: 100%;
+    max-width: 100%;
+    padding: 7px 20px;
+    margin: 0 0 12px 0;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%),
+        linear-gradient(135deg, #001f41 0%, #001f41 100%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 5px;
+    color: #ffffff;
+    font-size: 0.98rem;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    text-align: center;
+    display: block;
+    box-sizing: border-box;
+    box-shadow:
+        0 1px 3px rgba(0, 0, 0, 0.12),
+        0 1px 2px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mechanical-add-load-btn:hover {
+    background:
+        linear-gradient(135deg, #95041a 0%, #95041a 100%);
+    border-color: rgba(255, 255, 255, 0.35);
+    transform: translateY(-1px);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.15),
+        0 2px 4px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.mechanical-add-load-btn:active {
+    transform: translateY(0);
+    box-shadow:
+        0 1px 3px rgba(0, 0, 0, 0.12),
+        inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.mechanical-remove-load-btn,
+.opview-image-close-btn {
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background-color: transparent !important;
+    background-image: url("/assets/remove.png") !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    background-size: contain !important;
+    color: transparent !important;
+    cursor: pointer;
+    font-size: 0 !important;
+    line-height: 0 !important;
+    text-indent: -9999px;
+    overflow: hidden;
+    box-shadow: none !important;
+}
+
+.mechanical-remove-load-btn:hover,
+.opview-image-close-btn:hover {
+    background-image: url("/assets/remove_hover.png") !important;
+}
+
+.mechanical-remove-load-btn:focus,
+.opview-image-close-btn:focus {
+    outline: none;
 }
 
 /* Responsive Controls Update - Phase 15 */
@@ -2786,12 +2889,16 @@ input:focus,
 
 /* Monaco notebook alternating rows */
 #notebook-monaco-container.theme-nb-light .monaco-editor .view-overlays .nb-alt-line-a,
-#notebook-monaco-container.theme-nb-github .monaco-editor .view-overlays .nb-alt-line-a {
+#notebook-monaco-container.theme-nb-github .monaco-editor .view-overlays .nb-alt-line-a,
+[id^="nb-cell-editor-"].theme-nb-light .monaco-editor .view-overlays .nb-alt-line-a,
+[id^="nb-cell-editor-"].theme-nb-github .monaco-editor .view-overlays .nb-alt-line-a {
     background: #fefeff;
 }
 
 #notebook-monaco-container.theme-nb-light .monaco-editor .view-overlays .nb-alt-line-b,
-#notebook-monaco-container.theme-nb-github .monaco-editor .view-overlays .nb-alt-line-b {
+#notebook-monaco-container.theme-nb-github .monaco-editor .view-overlays .nb-alt-line-b,
+[id^="nb-cell-editor-"].theme-nb-light .monaco-editor .view-overlays .nb-alt-line-b,
+[id^="nb-cell-editor-"].theme-nb-github .monaco-editor .view-overlays .nb-alt-line-b {
     background: #f8fbfe;
 }
 
@@ -3074,3 +3181,161 @@ input:focus,
     padding: 0;
 }
 .fchat-send-btn:hover { background: #003166; }
+
+/* ── Cell inserter strip ────────────────────────────────── */
+.nb-cell-inserter { opacity: 0.02; transition: opacity 180ms; }
+.nb-cell-inserter:hover { opacity: 0.92; }
+.nb-cell-inserter:hover button {
+    color: #001f41;
+    border-color: rgba(0,31,65,0.42) !important;
+    background: rgba(0,31,65,0.12) !important;
+}
+
+.nb-markdown-toolbar {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms ease-in-out;
+}
+
+.nb-markdown-cell:hover .nb-markdown-toolbar {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.nb-markdown-preview {
+    font-family: 'Nunito', 'Segoe UI', system-ui, sans-serif;
+    font-weight: 600;
+    color: #0f172a;
+    line-height: 1.72;
+}
+
+.nb-markdown-preview h1,
+.nb-markdown-preview h2,
+.nb-markdown-preview h3,
+.nb-markdown-preview h4,
+.nb-markdown-preview h5,
+.nb-markdown-preview h6 {
+    font-family: 'Dosis', 'Nunito', 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: #0f172a;
+    margin: 0.35em 0 0.55em;
+    line-height: 1.2;
+}
+
+.nb-markdown-preview h1 { font-size: 2rem; }
+.nb-markdown-preview h2 { font-size: 1.7rem; }
+.nb-markdown-preview h3 { font-size: 1.38rem; }
+.nb-markdown-preview h4 { font-size: 1.15rem; }
+
+.nb-markdown-preview p {
+    margin: 0.45em 0 0.9em;
+}
+
+.nb-markdown-preview ul,
+.nb-markdown-preview ol {
+    margin: 0.4em 0 0.9em 1.35em;
+    padding: 0;
+}
+
+.nb-markdown-preview li + li {
+    margin-top: 0.28em;
+}
+
+.nb-markdown-preview p,
+.nb-markdown-preview li,
+.nb-markdown-preview blockquote,
+.nb-markdown-preview table,
+.nb-markdown-preview td,
+.nb-markdown-preview th {
+    font-family: 'Nunito', 'Segoe UI', system-ui, sans-serif;
+    font-weight: 600;
+}
+
+.nb-markdown-preview a {
+    color: #1d4ed8;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(29, 78, 216, 0.25);
+}
+
+.nb-markdown-preview a:hover {
+    color: #1e40af;
+    border-bottom-color: rgba(30, 64, 175, 0.45);
+}
+
+.nb-markdown-preview blockquote {
+    margin: 1em 0;
+    padding: 0.75em 1em;
+    border-left: 4px solid rgba(79, 70, 229, 0.45);
+    background: linear-gradient(180deg, rgba(238,242,255,0.9), rgba(248,250,252,0.98));
+    color: #334155;
+    border-radius: 0 10px 10px 0;
+}
+
+.nb-markdown-preview table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0 1.2em;
+    overflow: hidden;
+    border: 1px solid rgba(148,163,184,0.24);
+    border-radius: 12px;
+    background: #ffffff;
+}
+
+.nb-markdown-preview th,
+.nb-markdown-preview td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(226,232,240,0.95);
+    text-align: left;
+}
+
+.nb-markdown-preview th {
+    background: #f8fafc;
+    color: #334155;
+    font-weight: 800;
+}
+
+.nb-markdown-preview tr:last-child td {
+    border-bottom: none;
+}
+
+.nb-markdown-preview hr {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(148,163,184,0.1), rgba(79,70,229,0.35), rgba(148,163,184,0.1));
+    margin: 1.25em 0;
+}
+
+.nb-markdown-preview code,
+.nb-markdown-preview pre,
+.nb-markdown-preview kbd,
+.nb-markdown-preview samp {
+    font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+
+.nb-markdown-preview code {
+    background: rgba(15,23,42,0.055);
+    color: #0f172a;
+    padding: 0.15em 0.4em;
+    border-radius: 6px;
+    font-size: 0.93em;
+}
+
+.nb-markdown-preview pre {
+    margin: 1em 0 1.15em;
+    padding: 14px 16px;
+    background: #f8fafc;
+    border: 1px solid rgba(148,163,184,0.18);
+    border-radius: 12px;
+    overflow-x: auto;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+}
+
+.nb-markdown-preview pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: #102a43;
+    display: block;
+    line-height: 1.6;
+}

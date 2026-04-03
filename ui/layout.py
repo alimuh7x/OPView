@@ -9,6 +9,7 @@ import dash_mantine_components as dmc
 from config import TAB_CONFIGS
 from ui.calculation_notebook import build_calculation_notebook, default_notebook_state
 from ui.initializations_explorer import build_initializations_explorer
+from ui.mechanical_loads_explorer import build_mechanical_loads_explorer
 from ui.floating_chat import build_floating_chat
 
 
@@ -153,6 +154,12 @@ def build_app_layout(
                                 value='initializations-explorer',
                                 className='vtk-tab',
                                 selected_className='vtk-tab--selected'
+                            ),
+                            dcc.Tab(
+                                label='Mechanical Loads Explorer',
+                                value='mechanical-loads-explorer',
+                                className='vtk-tab',
+                                selected_className='vtk-tab--selected'
                             )
                         ]
                     ),
@@ -283,21 +290,21 @@ def build_app_layout(
                             children=[
                                 html.Div([
                                     html.Button(
-                                        "+ Add or Select Text File",
+                                        "Add or Select Text File",
                                         id='graphs-add-file-panel-btn',
-                                        className='graphs-add-panel-btn',
+                                        className='graphs-add-panel-btn opview-image-add-btn',
                                         n_clicks=0
                                     ),
                                     html.Button(
-                                        "+ Add Data",
+                                        "Add Data",
                                         id='graphs-add-data-panel-btn',
-                                        className='graphs-add-panel-btn',
+                                        className='graphs-add-panel-btn opview-image-add-btn',
                                         n_clicks=0
                                     ),
                                     html.Button(
-                                        "+ Notebook Plot",
+                                        "Notebook Plot",
                                         id='graphs-add-notebook-panel-btn',
-                                        className='graphs-add-panel-btn',
+                                        className='graphs-add-panel-btn opview-image-add-btn',
                                         n_clicks=0
                                     ),
                                 ], style={'display': 'flex', 'gap': '10px', 'flexWrap': 'wrap'}),
@@ -310,15 +317,15 @@ def build_app_layout(
                             children=[
                                 html.Div([
                                     html.Button(
-                                        "+ Add Formula Panel 1D",
+                                        "Add Formula Panel 1D",
                                         id='formula-add-panel-1d-btn',
-                                        className='graphs-add-panel-btn',
+                                        className='graphs-add-panel-btn opview-image-add-btn',
                                         n_clicks=0
                                     ),
                                     html.Button(
-                                        "+ Add Formula Panel 2D",
+                                        "Add Formula Panel 2D",
                                         id='formula-add-panel-2d-btn',
-                                        className='graphs-add-panel-btn',
+                                        className='graphs-add-panel-btn opview-image-add-btn',
                                         n_clicks=0
                                     ),
                                 ], style={'display': 'flex', 'gap': '10px', 'flexWrap': 'wrap'}),
@@ -334,6 +341,11 @@ def build_app_layout(
                         html.Div(
                             id='initializations-content',
                             children=[build_initializations_explorer()],
+                            style={'display': 'none'}
+                        ),
+                        html.Div(
+                            id='mechanical-loads-content',
+                            children=[build_mechanical_loads_explorer()],
                             style={'display': 'none'}
                         ),
                     ], className='main-panel')

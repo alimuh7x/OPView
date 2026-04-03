@@ -12,6 +12,7 @@ from .graphs_manager import GraphsCallbackManager
 from .formula_manager import FormulaCallbackManager
 from .notebook_manager import NotebookCallbackManager
 from .initializations_explorer_manager import InitializationsExplorerCallbackManager
+from .mechanical_loads_manager import MechanicalLoadsCallbackManager
 from .manager import CallbackManager
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     'FormulaCallbackManager',
     'NotebookCallbackManager',
     'InitializationsExplorerCallbackManager',
+    'MechanicalLoadsCallbackManager',
     'CallbackManager',
 ]

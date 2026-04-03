@@ -4,6 +4,8 @@ Calculation notebook UI for OPView.
 
 from __future__ import annotations
 
+import uuid
+
 from dash import dcc, html
 import plotly.graph_objects as go
 from config.settings_store import get as _setting_get
@@ -12,7 +14,7 @@ from config.settings_store import get as _setting_get
 NOTEBOOK_DOWNLOAD_ID = "notebook-download"
 
 
-NOTEBOOK_ROWS = 28
+NOTEBOOK_ROWS = 4
 NOTEBOOK_LINE_HEIGHT = "34px"
 RESULTS_GUTTER_WIDTH = "440px"
 FUNCTIONS_CARD_WIDTH = "360px"
@@ -167,6 +169,17 @@ NOTEBOOK_EXAMPLES = [
     "reynolds(1000, 0.5, 0.01, 1e-3)",
 ]
 
+NOTEBOOK_MARKDOWN_HELP = [
+    ("Headings", "# Title\n## Section\n### Subsection"),
+    ("Emphasis", "**bold**  *italic*  `inline code`"),
+    ("Lists", "- item one\n- item two\n1. first\n2. second"),
+    ("Links", "[OpenPhase](https://github.com/)"),
+    ("Tables", "| Name | Value |\n| --- | ---: |\n| A | 10 |\n| B | 20 |"),
+    ("Math", "$E = mc^2$\n\n$$\\sigma = E\\varepsilon$$"),
+    ("Blockquote", "> Notes, assumptions, or warnings"),
+    ("Code Block", "```python\nx = linspace(0, 1, 5)\ny = sin(x)\n```"),
+]
+
 
 # ── Snippet examples (multi-line, loaded via dropdown) ────────────────────────
 
@@ -204,8 +217,8 @@ F = 5 * kN             // 5 kilonewtons (stored in Newtons)
 E_steel = 210 * GPa    // Young's modulus in Pascals
 
 # ── Functions ─────────────────────────────────────────────
-angle = 45 * deg       // 45° converted to radians
-s = sin(angle)         // sine of 45° ≈ 0.707
+theta = 45 * deg       // 45° converted to radians
+s = sin(theta)         // sine of 45° ≈ 0.707
 
 # ── Vectors & statistics ──────────────────────────────────
 data = [1, 4, 9, 16, 25]
@@ -217,6 +230,32 @@ t = linspace(0, 2*pi, 200)
 y_wave = sin(t)
 // After running: in the plot panel on the right →
 //   set X = t,  Y = y_wave,  Type = Lines
+
+# ── Multiline expressions ───────────────────────────
+long_total = (
+    x^2
+    + y
+    + total
+)
+
+# ── Dictionaries ───────────────────────────────────
+material = {
+    "name": "Steel",
+    "E_GPa": 210,
+    "nu": 0.30,
+}
+nu_value = material["nu"]
+
+# ── List comprehensions ────────────────────────────
+squares = [i^2 for i in range(6)]
+shifted = [v + avg for v in data]
+
+# ── Split matrix literals ──────────────────────────
+small_mat = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9],
+]
 """,
     "Newton's Law of Cooling": """\
 # Newton's law of cooling
@@ -789,8 +828,12 @@ sigma_c = transpose(R) @ sigma @ R
 
 // FCC: 12 slip systems {111}<110> (Schmid-Boas notation)
 // Systems 1-3: (111), 4-6: (-111), 7-9: (1-11), 10-12: (11-1)
-n_all = [[ 1, 1, 1],[ 1, 1, 1],[ 1, 1, 1],[-1, 1, 1],[-1, 1, 1],[-1, 1, 1],[ 1,-1, 1],[ 1,-1, 1],[ 1,-1, 1],[ 1, 1,-1],[ 1, 1,-1],[ 1, 1,-1]]
-b_all = [[ 0, 1,-1],[ 1, 0,-1],[ 1,-1, 0],[ 0, 1,-1],[ 1, 1, 0],[ 1, 0, 1],[ 0, 1, 1],[ 1, 1, 0],[ 1, 0,-1],[ 0, 1, 1],[ 1, 0, 1],[ 1,-1, 0]]
+n_all = [[ 1, 1, 1],[ 1, 1, 1],[ 1, 1, 1],[-1, 1, 1],
+         [-1, 1, 1],[-1, 1, 1],[ 1,-1, 1],[ 1,-1, 1],
+         [ 1,-1, 1],[ 1, 1,-1],[ 1, 1,-1],[ 1, 1,-1]]
+b_all = [[ 0, 1,-1],[ 1, 0,-1],[ 1,-1, 0],[ 0, 1,-1],
+         [ 1, 1, 0],[ 1, 0, 1],[ 0, 1, 1],[ 1, 1, 0],
+         [ 1, 0,-1],[ 0, 1, 1],[ 1, 0, 1],[ 1,-1, 0]]
 
 // RSS for each of the 12 slip systems
 rss = zeros(12)
@@ -995,18 +1038,10 @@ def build_fn_overlay() -> html.Div:
                         style={"fontWeight": "700", "fontSize": "14px", "color": "#0f172a"},
                     ),
                     html.Button(
-                        "×",
+                        "",
                         id="notebook-fn-close-btn",
                         n_clicks=0,
-                        style={
-                            "background": "none",
-                            "border": "none",
-                            "cursor": "pointer",
-                            "fontSize": "22px",
-                            "color": "#667085",
-                            "lineHeight": "1",
-                            "padding": "0 2px",
-                        },
+                        className="opview-image-close-btn",
                     ),
                 ],
                 style={
@@ -1050,34 +1085,474 @@ def default_notebook_state() -> dict:
     return {
         "text": "",
         "variables": {},
+        "array_variables": {},
+        "cells": [default_notebook_cell()],
     }
 
 
-def build_notebook_results(result_lines: list[dict] | list[str] | None = None) -> list[html.Div]:
+# ── Cell data model ───────────────────────────────────────────────────────────
+
+def new_cell_id() -> str:
+    return "cell-" + uuid.uuid4().hex[:12]
+
+
+def default_cell(cell_type: str = "code", source: str = "") -> dict:
+    """Return a new empty cell dict."""
+    return {
+        "id": new_cell_id(),
+        "type": cell_type,
+        "source": source,
+        "outputs": [],
+        "execution_blocks": [],
+        "dirty": False,
+    }
+
+
+def default_notebook_cell(source: str = "") -> dict:
+    """Return the default code-first notebook cell."""
+    return default_cell(cell_type="code", source=source)
+
+
+# ── Button styles ─────────────────────────────────────────────────────────────
+
+_CELL_BTN = {
+    "border": "none", "borderRadius": "5px", "cursor": "pointer",
+    "fontFamily": "'Inter','Segoe UI',system-ui,sans-serif",
+    "fontSize": "11px", "fontWeight": "500", "lineHeight": "1",
+    "padding": "3px 9px", "transition": "background 150ms",
+    "whiteSpace": "nowrap",
+}
+
+def _cell_btn(label, id_dict, variant="secondary", disabled=False, title=""):
+    styles = {
+        "secondary": {**_CELL_BTN, "background": "rgba(15,23,42,0.06)",
+                      "color": "#344054", "border": "1px solid rgba(15,23,42,0.12)"},
+        "danger":    {**_CELL_BTN, "background": "rgba(185,28,28,0.06)",
+                      "color": "#991b1b", "border": "1px solid rgba(185,28,28,0.18)"},
+        "primary":   {**_CELL_BTN, "background": "#001f41", "color": "#ffffff",
+                      "border": "1px solid #001f41"},
+        "add":       {**_CELL_BTN, "background": "rgba(0,31,65,0.08)",
+                      "color": "#001f41", "border": "1px solid rgba(0,31,65,0.26)"},
+        "md":        {**_CELL_BTN, "background": "rgba(0,31,65,0.08)",
+                      "color": "#001f41", "border": "1px solid rgba(0,31,65,0.26)"},
+    }
+    if disabled:
+        style = {**styles[variant], "opacity": "0.35", "cursor": "default"}
+    else:
+        style = styles[variant]
+    kwargs = {"id": id_dict, "n_clicks": 0, "style": style}
+    if disabled:
+        kwargs["disabled"] = True
+    if title:
+        kwargs["title"] = title
+    return html.Button(label, **kwargs)
+
+
+# ── Cell layout builder ───────────────────────────────────────────────────────
+
+def build_cell(cell: dict, cell_index: int, total_cells: int) -> html.Div:
+    """Build the HTML layout for one notebook cell."""
+    cell_id = cell["id"]
+    cell_type = cell.get("type", "code")
+    source = cell.get("source", "")
+    outputs = cell.get("outputs", [])
+    dirty = cell.get("dirty", False)
+    is_code_cell = cell_type == "code"
+
+    # ── Left: editor ─────────────────────────────────────────────────────────
+    editor_area = html.Div(
+        [
+            # Hidden source mirror (JS writes here on change so Python can read it)
+            dcc.Textarea(
+                id={"type": "nb-cell-text", "index": cell_id},
+                value=source,
+                style={"display": "none"},
+            ),
+            # Monaco mount point — JS finds this by data attributes
+            html.Div(
+                id=f"nb-cell-editor-{cell_id}",
+                **{
+                    "data-cell-id": cell_id,
+                    "data-cell-type": cell_type,
+                    "data-cell-value": source,
+                    "data-cell-init": "true",
+                },
+                style={"minHeight": "102px", "flex": "1"},
+            ),
+            # Markdown preview (hidden for code cells, shown for markdown)
+            html.Div(
+                id=f"nb-cell-md-preview-{cell_id}",
+                className="nb-markdown-preview",
+                style={
+                    "display": "none",
+                    "padding": "12px 16px 4px 16px",
+                    "flex": "1",
+                    "fontSize": "14px",
+                    "lineHeight": "1.6",
+                    "color": "#0f172a",
+                    "fontFamily": "'Nunito','Segoe UI',system-ui,sans-serif",
+                    "fontWeight": "600",
+                    "minHeight": "102px",
+                },
+            ),
+            html.Div(
+                [
+                    html.Button(
+                        "Preview",
+                        id={"type": "nb-cell-preview", "index": cell_id},
+                        n_clicks=0,
+                        style={
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                            "justifyContent": "center",
+                            "padding": "3px 8px",
+                            "fontSize": "11px",
+                            "fontWeight": "700",
+                            "borderRadius": "6px",
+                            "border": "1px solid rgba(0,31,65,0.18)",
+                            "background": "rgba(255,255,255,0.92)",
+                            "color": "#001f41",
+                            "cursor": "pointer",
+                            "boxShadow": "0 2px 10px rgba(15,23,42,0.06)",
+                        },
+                    ),
+                    html.Button(
+                        "Edit",
+                        id={"type": "nb-cell-edit", "index": cell_id},
+                        n_clicks=0,
+                        style={
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                            "justifyContent": "center",
+                            "padding": "3px 8px",
+                            "fontSize": "11px",
+                            "fontWeight": "700",
+                            "borderRadius": "6px",
+                            "border": "1px solid rgba(185,28,28,0.18)",
+                            "background": "rgba(255,255,255,0.92)",
+                            "color": "#991b1b",
+                            "cursor": "pointer",
+                            "boxShadow": "0 2px 10px rgba(15,23,42,0.06)",
+                        },
+                    ),
+                    html.Button(
+                        "✕",
+                        id={"type": "nb-cell-delete", "index": cell_id},
+                        n_clicks=0,
+                        title="Delete cell",
+                        style={
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                            "justifyContent": "center",
+                            "padding": "3px 8px",
+                            "fontSize": "11px",
+                            "fontWeight": "700",
+                            "borderRadius": "6px",
+                            "border": "1px solid rgba(185,28,28,0.18)",
+                            "background": "rgba(255,255,255,0.92)",
+                            "color": "#991b1b",
+                            "cursor": "pointer",
+                            "boxShadow": "0 2px 10px rgba(15,23,42,0.06)",
+                        },
+                    ),
+                ],
+                className="nb-markdown-toolbar",
+                style={
+                    "display": "flex",
+                    "gap": "4px",
+                    "position": "absolute",
+                    "top": "8px",
+                    "right": "8px",
+                    "zIndex": "2",
+                },
+            ) if not is_code_cell else None,
+        ],
+        style={"flex": "1", "minWidth": "0", "display": "flex", "flexDirection": "column", "position": "relative"},
+    )
+
+    # ── Right: results (code cells) or nothing (markdown cells) ──────────────
+    if cell_type == "code":
+        results_area = html.Div(
+            [
+                html.Div(
+                    build_notebook_results(outputs),
+                    id={"type": "nb-cell-results", "index": cell_id},
+                    style={
+                        "border": "1px solid #e2e8f0",
+                        "borderRadius": "4px",
+                        "overflow": "hidden",
+                        "background": "#ffffff",
+                    },
+                ),
+            ],
+            style={
+                "flex": "0 0 440px",
+                "width": "440px",
+                "minWidth": "440px",
+                "padding": "0 10px 8px 0",
+                "borderLeft": "none",
+                "background": "transparent",
+            },
+        )
+    else:
+        results_area = html.Div(style={"width": "0", "overflow": "hidden"})
+
+    # ── Controls bar (below the cell) ─────────────────────────────────────────
+    stale_badge = html.Span(
+        "⚠ stale",
+        style={
+            "display": "inline-flex" if dirty else "none",
+            "fontSize": "10px", "fontWeight": "700",
+            "color": "#b45309", "background": "#fef3c7",
+            "border": "1px solid #fcd34d", "borderRadius": "4px",
+            "padding": "1px 6px", "alignItems": "center",
+        },
+    )
+
+    if cell_type == "code":
+        run_btn = _cell_btn("▶ Run", {"type": "nb-cell-run", "index": cell_id}, "primary", title="Shift+Enter")
+        controls = html.Div(
+            [
+                stale_badge,
+                html.Div(style={"flex": "1"}),
+                run_btn,
+                _cell_btn("↑", {"type": "nb-cell-up", "index": cell_id}, "secondary",
+                          disabled=(cell_index == 0), title="Move cell up"),
+                _cell_btn("↓", {"type": "nb-cell-down", "index": cell_id}, "secondary",
+                          disabled=(cell_index == total_cells - 1), title="Move cell down"),
+                html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
+                                "alignSelf": "stretch", "margin": "0 2px"}),
+                _cell_btn("✕", {"type": "nb-cell-delete", "index": cell_id}, "danger", title="Delete cell"),
+            ],
+            style={
+                "display": "flex", "alignItems": "center", "gap": "4px",
+                "padding": "4px 8px",
+                "background": "#f8fafc",
+                "borderTop": "1px solid rgba(148,163,184,0.2)",
+            },
+        )
+    else:
+        controls = html.Div(style={"display": "none"})
+
+    # ── Cell wrapper ──────────────────────────────────────────────────────────
+    return html.Div(
+        [
+            html.Div(
+                [editor_area, results_area] if is_code_cell else [editor_area],
+                style={"display": "flex", "alignItems": "stretch", "minHeight": "34px"},
+            ),
+            controls,
+        ],
+        id=f"nb-cell-wrapper-{cell_id}",
+        className="nb-markdown-cell" if not is_code_cell else None,
+        style={
+            "border": "1px solid rgba(100,116,139,0.18)" if is_code_cell else "none",
+            "borderLeft": "none",
+            "borderRadius": "8px",
+            "marginBottom": "10px" if is_code_cell else "2px",
+            "background": "#ffffff" if is_code_cell else "transparent",
+            "boxShadow": "0 1px 4px rgba(15,23,42,0.04)" if is_code_cell else "none",
+            "overflow": "visible",
+        },
+    )
+
+
+def build_markdown_help_overlay() -> html.Div:
+    """Floating markdown help panel for notebook cells."""
+    sections = []
+    for title, sample in NOTEBOOK_MARKDOWN_HELP:
+        sections.append(
+            html.Div(
+                [
+                    html.Div(
+                        title,
+                        style={
+                            "fontSize": "12px",
+                            "fontWeight": "800",
+                            "textTransform": "uppercase",
+                            "letterSpacing": "0.05em",
+                            "color": "#475467",
+                            "marginBottom": "6px",
+                        },
+                    ),
+                    html.Pre(
+                        sample,
+                        style={
+                            "margin": "0",
+                            "whiteSpace": "pre-wrap",
+                            "fontFamily": "'JetBrains Mono','Fira Code','Consolas',monospace",
+                            "fontSize": "12px",
+                            "lineHeight": "1.55",
+                            "color": "#102a43",
+                            "background": "rgba(248,250,252,0.95)",
+                            "border": "1px solid rgba(148,163,184,0.22)",
+                            "borderRadius": "10px",
+                            "padding": "10px 12px",
+                        },
+                    ),
+                ],
+                style={"display": "grid", "gap": "6px"},
+            )
+        )
+
+    return html.Div(
+        [
+            html.Div(
+                [
+                    html.Span(
+                        "Markdown Help",
+                        style={"fontWeight": "700", "fontSize": "14px", "color": "#0f172a"},
+                    ),
+                    html.Button(
+                        "",
+                        id="notebook-md-close-btn",
+                        n_clicks=0,
+                        className="opview-image-close-btn",
+                    ),
+                ],
+                style={
+                    "display": "flex",
+                    "justifyContent": "space-between",
+                    "alignItems": "center",
+                    "borderBottom": "1px solid rgba(148,163,184,0.2)",
+                    "paddingBottom": "10px",
+                    "marginBottom": "14px",
+                    "position": "sticky",
+                    "top": "0",
+                    "background": "white",
+                    "zIndex": "1",
+                },
+            ),
+            html.Div(
+                "Supported here: GFM-style markdown, lists, tables, fenced code blocks, inline code, and KaTeX math.",
+                style={"fontSize": "13px", "lineHeight": "1.6", "color": "#475467", "marginBottom": "12px"},
+            ),
+            html.Div(sections, style={"display": "grid", "gap": "12px"}),
+        ],
+        id="notebook-md-panel",
+        style={
+            "display": "none",
+            "position": "fixed",
+            "top": "60px",
+            "right": "440px",
+            "width": "380px",
+            "maxHeight": "84vh",
+            "overflowY": "auto",
+            "background": "white",
+            "borderRadius": "14px",
+            "boxShadow": "0 20px 60px rgba(15,23,42,0.18)",
+            "padding": "18px 16px",
+            "zIndex": "9999",
+            "border": "1px solid rgba(148,163,184,0.25)",
+        },
+    )
+
+
+def _build_cell_inserter(after_cell_id: str) -> html.Div:
+    """Thin strip between cells with Add Code / Add Markdown buttons."""
+    return html.Div(
+        [
+            _cell_btn("+ Code",     {"type": "nb-add-code",     "index": after_cell_id}, "add",  title="Add code cell below"),
+            _cell_btn("+ Markdown", {"type": "nb-add-markdown", "index": after_cell_id}, "md",   title="Add markdown cell below"),
+        ],
+        className="nb-cell-inserter",
+        style={"display": "flex", "alignItems": "center", "justifyContent": "center", "gap": "4px", "padding": "1px 2px"},
+    )
+
+
+def build_cells_container(cells: list) -> list:
+    """Build the full list of cell HTML elements, with inserter strips between them."""
+    total = len(cells)
+    items = [_build_cell_inserter("__start__")]
+    for i, cell in enumerate(cells):
+        items.append(build_cell(cell, i, total))
+        items.append(_build_cell_inserter(cell["id"]))
+    return items
+
+
+def build_notebook_results(
+    result_lines: list[dict] | list[str] | None = None,
+    min_rows: int = NOTEBOOK_ROWS,
+) -> list[html.Div]:
     """Build the result gutter lines."""
     result_lines = result_lines or []
-    rows = max(NOTEBOOK_ROWS, len(result_lines))
+    total_rendered_rows = 0
+    for line in result_lines:
+        if isinstance(line, dict):
+            total_rendered_rows += int(line.get("row_span", 1) or 1)
+        else:
+            total_rendered_rows += 1
+    rows = max(min_rows, total_rendered_rows)
     label_lengths = []
     for line in result_lines:
         if isinstance(line, dict):
             label_lengths.append(len(str(line.get("name", "") or "")))
     name_col_width = max(72, min(220, max(label_lengths or [0]) * 9 + 16))
     children = []
-    for index in range(rows):
-        line = result_lines[index] if index < len(result_lines) else ""
+    rendered_rows = 0
+    for line in result_lines:
         if isinstance(line, dict):
+            kind = str(line.get("kind", "") or "")
+            row_span = int(line.get("row_span", 1) or 1)
             name = str(line.get("name", "") or "")
             value = str(line.get("value", "") or "")
             count = str(line.get("count", "") or "")
             is_error = bool(line.get("error"))
             title_text = " | ".join(part for part in [name, value, count] if part)
+            matrix_rows = line.get("matrix", [])
         else:
             text = str(line or "")
+            kind = ""
+            row_span = 1
             is_error = text.startswith("Error:")
             name = ""
             value = text
             count = ""
             title_text = text
+            matrix_rows = []
+        row_height = f"{row_span * int(NOTEBOOK_LINE_HEIGHT[:-2])}px"
+        if kind == "matrix":
+            value_component = html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Div(
+                                cell_value,
+                                style={
+                                    "height": NOTEBOOK_LINE_HEIGHT,
+                                    "lineHeight": NOTEBOOK_LINE_HEIGHT,
+                                    "padding": "0 8px",
+                                    "borderBottom": "1px solid rgba(226,232,240,0.8)" if r_index < len(matrix_rows) - 1 else "none",
+                                    "borderRight": "1px solid rgba(226,232,240,0.8)" if c_index < len(row_values) - 1 else "none",
+                                    "textAlign": "right",
+                                    "fontWeight": "600",
+                                    "color": "#001f41",
+                                },
+                            )
+                            for c_index, cell_value in enumerate(row_values)
+                        ],
+                        style={"display": "grid", "gridTemplateColumns": "repeat(" + str(len(row_values)) + ", minmax(0, 1fr))"},
+                    )
+                    for r_index, row_values in enumerate(matrix_rows)
+                ],
+                style={"display": "grid", "gridAutoRows": NOTEBOOK_LINE_HEIGHT, "borderRight": "1px solid #e2e8f0"},
+            )
+        else:
+            value_component = html.Div(
+                value,
+                title="Value",
+                style={
+                    "overflow": "hidden",
+                    "textOverflow": "ellipsis",
+                    "whiteSpace": "nowrap",
+                    "padding": "0 8px",
+                    "height": row_height,
+                    "lineHeight": row_height,
+                    "borderRight": "1px solid #e2e8f0",
+                    "color": "#b42318" if is_error else "#001f41" if value else "#b0bec5",
+                    "fontWeight": "600",
+                },
+            )
         children.append(
             html.Div(
                 [
@@ -1089,28 +1564,15 @@ def build_notebook_results(result_lines: list[dict] | list[str] | None = None) -
                             "textOverflow": "ellipsis",
                             "whiteSpace": "nowrap",
                             "padding": "0 8px",
-                            "height": NOTEBOOK_LINE_HEIGHT,
-                            "lineHeight": NOTEBOOK_LINE_HEIGHT,
+                            "height": row_height,
+                            "lineHeight": row_height,
                             "borderRight": "1px solid #e2e8f0",
                             "color": "#475467" if not is_error else "#b42318",
                             "fontWeight": "600",
+                            "alignSelf": "stretch",
                         },
                     ),
-                    html.Div(
-                        value,
-                        title="Value",
-                        style={
-                            "overflow": "hidden",
-                            "textOverflow": "ellipsis",
-                            "whiteSpace": "nowrap",
-                            "padding": "0 8px",
-                            "height": NOTEBOOK_LINE_HEIGHT,
-                            "lineHeight": NOTEBOOK_LINE_HEIGHT,
-                            "borderRight": "1px solid #e2e8f0",
-                            "color": "#b42318" if is_error else "#1e3a8a" if value else "#98a2b3",
-                            "fontWeight": "600",
-                        },
-                    ),
+                    value_component,
                     html.Div(
                         count,
                         title="Count",
@@ -1119,13 +1581,37 @@ def build_notebook_results(result_lines: list[dict] | list[str] | None = None) -
                             "textOverflow": "ellipsis",
                             "whiteSpace": "nowrap",
                             "padding": "0 8px",
-                            "height": NOTEBOOK_LINE_HEIGHT,
-                            "lineHeight": NOTEBOOK_LINE_HEIGHT,
+                            "height": row_height,
+                            "lineHeight": row_height,
                             "textAlign": "right",
                             "color": "#64748b" if count else "#98a2b3",
                             "fontWeight": "600",
+                            "alignSelf": "stretch",
                         },
                     ),
+                ],
+                style={
+                    "display": "grid",
+                    "gridTemplateColumns": f"{name_col_width}px minmax(0, 1fr) 56px",
+                    "columnGap": "0",
+                    "height": row_height,
+                    "lineHeight": NOTEBOOK_LINE_HEIGHT,
+                    "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+                    "fontSize": "13px",
+                    "borderBottom": "1px solid #e2e8f0",
+                    "alignItems": "center",
+                },
+                title=title_text,
+            )
+        )
+        rendered_rows += row_span
+    for _ in range(rows - rendered_rows):
+        children.append(
+            html.Div(
+                [
+                    html.Div("", style={"padding": "0 8px", "height": NOTEBOOK_LINE_HEIGHT, "lineHeight": NOTEBOOK_LINE_HEIGHT, "borderRight": "1px solid #e2e8f0"}),
+                    html.Div("", style={"padding": "0 8px", "height": NOTEBOOK_LINE_HEIGHT, "lineHeight": NOTEBOOK_LINE_HEIGHT, "borderRight": "1px solid #e2e8f0"}),
+                    html.Div("", style={"padding": "0 8px", "height": NOTEBOOK_LINE_HEIGHT, "lineHeight": NOTEBOOK_LINE_HEIGHT, "textAlign": "right"}),
                 ],
                 style={
                     "display": "grid",
@@ -1138,9 +1624,99 @@ def build_notebook_results(result_lines: list[dict] | list[str] | None = None) -
                     "borderBottom": "1px solid #e2e8f0",
                     "alignItems": "center",
                 },
-                title=title_text,
             )
         )
+    return children
+
+
+def build_notebook_execution_view(execution_blocks: list[dict] | None = None) -> list[html.Div]:
+    """Render aligned source/result execution blocks for a code cell."""
+    execution_blocks = execution_blocks or []
+    children: list[html.Div] = []
+    for block in execution_blocks:
+        source_span = max(1, int(block.get("source_span", 1) or 1))
+        result_span = max(1, int(block.get("result_span", 1) or 1))
+        block_span = max(source_span, result_span)
+        block_height = f"{block_span * int(NOTEBOOK_LINE_HEIGHT[:-2])}px"
+        kind = str(block.get("result_kind", "") or "")
+        source_component = html.Pre(
+            str(block.get("source", "") or ""),
+            style={
+                "margin": "0",
+                "padding": "8px 12px",
+                "minHeight": block_height,
+                "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+                "fontSize": "13px",
+                "lineHeight": NOTEBOOK_LINE_HEIGHT,
+                "whiteSpace": "pre-wrap",
+                "color": "#102a43",
+                "background": "transparent",
+            },
+        )
+        if kind == "matrix":
+            matrix_rows = block.get("matrix", [])
+            result_component = html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Div(
+                                cell_value,
+                                style={
+                                    "height": NOTEBOOK_LINE_HEIGHT,
+                                    "lineHeight": NOTEBOOK_LINE_HEIGHT,
+                                    "padding": "0 8px",
+                                    "borderBottom": "1px solid rgba(226,232,240,0.8)" if r_index < len(matrix_rows) - 1 else "none",
+                                    "borderRight": "1px solid rgba(226,232,240,0.8)" if c_index < len(row_values) - 1 else "none",
+                                    "textAlign": "right",
+                                    "fontWeight": "600",
+                                    "color": "#001f41",
+                                },
+                            )
+                            for c_index, cell_value in enumerate(row_values)
+                        ],
+                        style={"display": "grid", "gridTemplateColumns": "repeat(" + str(len(row_values)) + ", minmax(0, 1fr))"},
+                    )
+                    for r_index, row_values in enumerate(matrix_rows)
+                ],
+                style={
+                    "display": "grid",
+                    "gridAutoRows": NOTEBOOK_LINE_HEIGHT,
+                    "border": "1px solid #e2e8f0",
+                    "background": "#ffffff",
+                    "minHeight": block_height,
+                },
+            )
+        else:
+            color = "#b42318" if block.get("error") else "#001f41" if block.get("value") else "#98a2b3"
+            result_component = html.Div(
+                str(block.get("value", "") or ""),
+                style={
+                    "padding": "8px 12px",
+                    "minHeight": block_height,
+                    "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+                    "fontSize": "13px",
+                    "lineHeight": NOTEBOOK_LINE_HEIGHT,
+                    "color": color,
+                    "fontWeight": "600",
+                    "whiteSpace": "pre-wrap",
+                    "background": "#ffffff",
+                    "border": "1px solid #e2e8f0",
+                },
+            )
+        children.append(
+            html.Div(
+                [source_component, result_component],
+                style={
+                    "display": "grid",
+                    "gridTemplateColumns": "minmax(0, 1fr) 440px",
+                    "gap": "12px",
+                    "alignItems": "start",
+                    "borderBottom": "1px solid rgba(226,232,240,0.8)",
+                },
+            )
+        )
+    if not children:
+        children.append(html.Div(style={"minHeight": NOTEBOOK_LINE_HEIGHT}))
     return children
 
 
@@ -1179,6 +1755,7 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
     text = state.get("text", "")
     array_vars = state.get("array_variables", {})
     arr_options = [{"label": k, "value": k} for k in sorted(array_vars)]
+    cells = state.get("cells") or [default_notebook_cell()]
 
     _BASE_BTN = {
         "border": "none", "borderRadius": "7px", "cursor": "pointer",
@@ -1194,11 +1771,11 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                           "color": "#344054", "border": "1px solid rgba(15,23,42,0.12)"},
             "danger":    {**_BASE_BTN, "background": "rgba(185,28,28,0.06)",
                           "color": "#991b1b", "border": "1px solid rgba(185,28,28,0.18)"},
-            "primary":   {**_BASE_BTN, "background": "#1d4ed8", "color": "#ffffff",
-                          "border": "1px solid #1d4ed8",
-                          "boxShadow": "0 1px 4px rgba(29,78,216,0.25)"},
-            "special":   {**_BASE_BTN, "background": "rgba(79,70,229,0.07)",
-                          "color": "#4338ca", "border": "1px solid rgba(79,70,229,0.2)"},
+            "primary":   {**_BASE_BTN, "background": "#001f41", "color": "#ffffff",
+                          "border": "1px solid #001f41",
+                          "boxShadow": "0 1px 4px rgba(0,31,65,0.25)"},
+            "special":   {**_BASE_BTN, "background": "rgba(0,31,65,0.07)",
+                          "color": "#001f41", "border": "1px solid rgba(0,31,65,0.2)"},
         }
         return html.Button(label, id=id_, n_clicks=0, style=styles[variant])
 
@@ -1215,22 +1792,31 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
             # ── top toolbar ─────────────────────────────────────────────────
             html.Div(
                 [
+                    html.Div(
+                        [
                     dcc.ConfirmDialogProvider(
                         children=_btn("Clear", "notebook-clear-btn", "danger"),
                         id="notebook-clear-confirm-provider",
                         message="Clear all notebook content? This cannot be undone.",
                     ),
-                    _btn("Save (.txt)", "notebook-save-btn", "secondary"),
+                    _btn("Save (.json)", "notebook-save-btn", "secondary"),
                     dcc.Upload(
-                        _btn("Load (.txt)", "notebook-load-btn", "secondary"),
+                        _btn("Load (.json/.txt)", "notebook-load-btn", "secondary"),
                         id="notebook-load-upload",
-                        accept=".txt",
+                        accept=".json,.txt",
                         multiple=False,
                     ),
                     dcc.Download(id=NOTEBOOK_DOWNLOAD_ID),
                     dcc.Store(id="notebook-monaco-sync-dummy"),
                     dcc.Store(id="notebook-var-refresh-dummy"),
+                    dcc.Store(id="notebook-markdown-preview-dummy"),
+                    dcc.Store(id="notebook-md-panel-dummy"),
                     dcc.Store(id="notebook-external-sync", data=None),
+                    dcc.Store(id="notebook-save-sync", data=None),
+                    # ── cell management stores ────────────────────────────
+                    dcc.Store(id="notebook-cells-store", data=cells),
+                    dcc.Store(id="nb-op-sync", data=None),
+                    dcc.Store(id="nb-cell-run-trigger", data=None),
                     # ── example snippet picker ────────────────────────────
                     html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
                                     "alignSelf": "stretch", "margin": "0 4px"}),
@@ -1240,9 +1826,12 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                         value=None,
                         placeholder="Load example…",
                         clearable=True,
+                        optionHeight=34,
+                        maxHeight=408,
                         style={"fontSize": "13px", "minWidth": "220px", "maxWidth": "280px"},
                     ),
                     _btn("Insert", "notebook-insert-example-btn", "primary"),
+                    _btn("Markdown Help", "notebook-md-help-btn", "special"),
                     html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
                                     "alignSelf": "stretch", "margin": "0 4px"}),
                     dcc.Checklist(
@@ -1263,7 +1852,7 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                         },
                     ),
                     dcc.Input(id="notebook-auto-update-state", type="hidden", value="on"),
-                    _btn("Run", "notebook-run-btn", "primary"),
+                    _btn("Run All", "notebook-run-btn", "primary"),
                     html.Div(
                         [
                             html.Span(
@@ -1297,30 +1886,6 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                             "whiteSpace": "nowrap",
                         },
                     ),
-                    html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
-                                    "alignSelf": "stretch", "margin": "0 4px"}),
-                    dcc.Checklist(
-                        id="notebook-vim-toggle",
-                        options=[{"label": "Vim mode", "value": "vim"}],
-                        value=[],
-                        inline=True,
-                        style={"margin": "0"},
-                        inputStyle={"marginRight": "6px"},
-                        labelStyle={
-                            "display": "inline-flex",
-                            "alignItems": "center",
-                            "fontSize": "13px",
-                            "fontWeight": "600",
-                            "color": "#475467",
-                            "whiteSpace": "nowrap",
-                            "marginRight": "0",
-                        },
-                    ),
-                    html.Span(
-                        "",
-                        id="notebook-vim-note",
-                        style={"fontSize": "12px", "color": "#94a3b8", "whiteSpace": "nowrap"},
-                    ),
                     html.Button("✦ AI ⚙", id="nb-settings-open-btn", n_clicks=0,
                         title="AI settings",
                         style={"fontSize": "12px", "padding": "4px 10px",
@@ -1337,12 +1902,12 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                         style={"fontSize": "12px", "color": "#94a3b8", "fontStyle": "italic",
                                "marginLeft": "4px", "whiteSpace": "nowrap"},
                     ),
-                ],
-                style={"display": "flex", "gap": "8px", "marginBottom": "10px",
-                       "alignItems": "center", "flexWrap": "wrap"},
-            ),
-            html.Div(
-                [
+                        ],
+                        style={"display": "flex", "gap": "8px",
+                               "alignItems": "center", "flexWrap": "wrap"},
+                    ),
+                    html.Div(
+                        [
                     html.Span("One expression per line  ·  results appear on the right",
                               style={"color": "#64748b", "marginRight": "12px"}),
                     *[
@@ -1359,10 +1924,21 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                         )
                         for chip in ["// comment", "x ^ 2  power", "210 * GPa  units", "v = [1,2,3]  arrays"]
                     ],
+                        ],
+                        style={"display": "flex", "alignItems": "center", "flexWrap": "wrap",
+                               "gap": "2px", "fontSize": "12px", "color": "#667085",
+                               "lineHeight": "1"},
+                    ),
                 ],
-                style={"display": "flex", "alignItems": "center", "flexWrap": "wrap",
-                       "gap": "2px", "fontSize": "12px", "color": "#667085",
-                       "marginBottom": "12px", "lineHeight": "1"},
+                style={
+                    "display": "grid",
+                    "gap": "10px",
+                    "padding": "14px 16px 12px 16px",
+                    "marginBottom": "16px",
+                    "background": "#ffffff",
+                    "borderBottom": "1px solid rgba(226,232,240,0.95)",
+                    "boxShadow": "0 1px 0 rgba(15,23,42,0.04)",
+                },
             ),
             # ── AI settings modal ────────────────────────────────────────────
             html.Div(
@@ -1376,12 +1952,9 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                                         "fontWeight": "700", "fontSize": "15px",
                                         "color": "#1e1b4b",
                                     }),
-                                    html.Button("✕", id="nb-settings-close-btn",
+                                    html.Button("", id="nb-settings-close-btn",
                                         n_clicks=0,
-                                        style={"background": "none", "border": "none",
-                                               "fontSize": "18px", "cursor": "pointer",
-                                               "color": "#6b7280", "lineHeight": "1",
-                                               "padding": "0 4px"}),
+                                        className="opview-image-close-btn"),
                                 ],
                                 style={"display": "flex", "justifyContent": "space-between",
                                        "alignItems": "center", "marginBottom": "16px"},
@@ -1453,174 +2026,32 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                     "alignItems": "center",
                 },
             ),
-            # ── main row: notebook sheet + side plot ─────────────────────────
+            # ── hidden inputs kept for backward compat (Monaco sync, var decorations) ──
+            dcc.Textarea(id="notebook-textarea", value=text, style={"display": "none"}),
+            dcc.Textarea(id="notebook-live-text", value=text, style={"display": "none"}),
+            dcc.Textarea(id="notebook-run-text",  value=text, style={"display": "none"}),
+            html.Div(id="notebook-results",       style={"display": "none"}),
+            html.Div(id="notebook-vim-statusbar", style={"display": "none"}),
+            # ── main row: cells + side plot ──────────────────────────────────
             html.Div(
                 [
+            # ── cells column ─────────────────────────────────────────────────
             html.Div(
                 [
-                    # ── Monaco editor container (shown after Monaco loads) ──
-                    # JS sets height dynamically via onDidContentSizeChange so
-                    # the editor grows with content and the browser scrolls.
                     html.Div(
-                        [
-                            html.Div(
-                                id="notebook-monaco-container",
-                                style={
-                                    "flex": "1",
-                                    "minHeight": "400px",
-                                    "display": "none",   # Monaco JS sets this to 'block'
-                                },
-                            ),
-                            # Vim status bar (shown only when Vim mode is active)
-                            html.Div(
-                                id="notebook-vim-statusbar",
-                                style={
-                                    "display": "none",
-                                    "fontFamily": "'JetBrains Mono','Fira Code',monospace",
-                                    "fontSize": "13px",
-                                    "padding": "3px 10px",
-                                    "background": "#1e1e2e",
-                                    "color": "#cdd6f4",
-                                    "borderTop": "1px solid #313244",
-                                    "minHeight": "24px",
-                                    "userSelect": "none",
-                                },
-                            ),
-                        ],
-                        style={"display": "flex", "flexDirection": "column", "flex": "1"},
-                    ),
-                    # ── Plain textarea fallback (hidden once Monaco loads) ──
-                    dcc.Textarea(
-                        id="notebook-textarea",
-                        value=text,
-                        placeholder="# Start typing or load an example from the dropdown above\nx = 5\ny = 3\nz = x^2 + y       // result appears on the right →",
-                        style={
-                            "flex": "1",
-                            "minHeight": "400px",
-                            "height": "auto",
-                            "padding": "18px 18px",
-                            "fontSize": "20px",
-                            "lineHeight": NOTEBOOK_LINE_HEIGHT,
-                            "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-                            "border": "none",
-                            "outline": "none",
-                            "resize": "none",
-                            "backgroundColor": "transparent",
-                            "backgroundImage": (
-                                f"repeating-linear-gradient(to bottom, {NOTEBOOK_ROW_COLOR_A} 0px, {NOTEBOOK_ROW_COLOR_A} 34px, "
-                                f"{NOTEBOOK_ROW_COLOR_B} 34px, {NOTEBOOK_ROW_COLOR_B} 68px), "
-                                "repeating-linear-gradient(to bottom, transparent 0px, transparent 33px, #e5edf5 33px, #e5edf5 34px)"
-                            ),
-                            "backgroundPosition": "0 18px",
-                            "backgroundAttachment": "local",
-                            "color": "#0f172a",
-                            "whiteSpace": "pre",
-                            "overflowY": "hidden",
-                        },
-                    ),
-                    dcc.Textarea(
-                        id="notebook-live-text",
-                        value=text,
-                        style={"display": "none"},
-                    ),
-                    dcc.Textarea(
-                        id="notebook-run-text",
-                        value=text,
-                        style={"display": "none"},
-                    ),
-                    html.Div(
-                        [
-                            html.Div(
-                                [
-                                    html.Div("Expression", style={"padding": "0 8px", "borderRight": "1px solid #e2e8f0"}),
-                                    html.Div("Value", style={"padding": "0 8px", "borderRight": "1px solid #e2e8f0"}),
-                                    html.Div("Size", style={"padding": "0 8px", "textAlign": "right"}),
-                                ],
-                                style={
-                                    "display": "grid",
-                                    "gridTemplateColumns": "160px minmax(0, 1fr) 56px",
-                                    "columnGap": "0",
-                                    "height": "18px",
-                                    "lineHeight": "18px",
-                                    "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-                                    "fontSize": "11px",
-                                    "fontWeight": "600",
-                                    "color": "#94a3b8",
-                                    "background": "#f8fafc",
-                                    "borderTop": "1px solid #e2e8f0",
-                                    "borderLeft": "1px solid #e2e8f0",
-                                    "borderRight": "1px solid #e2e8f0",
-                                    "borderBottom": "2px solid #e2e8f0",
-                                    "borderRadius": "4px 4px 0 0",
-                                    "alignItems": "center",
-                                },
-                            ),
-                            html.Div(
-                                build_notebook_results([]),
-                                id="notebook-results",
-                                style={
-                                    "border": "1px solid #e2e8f0",
-                                    "borderTop": "none",
-                                    "borderRadius": "0 0 4px 4px",
-                                    "overflow": "hidden",
-                                },
-                            ),
-                            html.Pre(
-                                id="notebook-debug",
-                                style={
-                                    "margin": "8px 0 0 0",
-                                    "padding": "8px 10px",
-                                    "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-                                    "fontSize": "11px",
-                                    "lineHeight": "1.45",
-                                    "color": "#475467",
-                                    "background": "rgba(255,255,255,0.85)",
-                                    "border": "1px solid rgba(148,163,184,0.24)",
-                                    "borderRadius": "8px",
-                                    "whiteSpace": "pre-wrap",
-                                },
-                            ),
-                            html.Pre(
-                                id="notebook-client-debug",
-                                style={
-                                    "margin": "8px 0 0 0",
-                                    "padding": "8px 10px",
-                                    "fontFamily": "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-                                    "fontSize": "11px",
-                                    "lineHeight": "1.45",
-                                    "color": "#475467",
-                                    "background": "rgba(248,250,252,0.95)",
-                                    "border": "1px solid rgba(203,213,225,0.8)",
-                                    "borderRadius": "8px",
-                                    "whiteSpace": "pre-wrap",
-                                },
-                            ),
-                        ],
-                        style={
-                            "width": RESULTS_GUTTER_WIDTH,
-                            "minWidth": RESULTS_GUTTER_WIDTH,
-                            "padding": "0 12px 18px 10px",
-                            "borderLeft": "2px solid rgba(29,78,216,0.08)",
-                            "background": "linear-gradient(180deg, #f8faff 0%, #f1f5fb 100%)",
-                            "overflowY": "visible",
-                            "minHeight": "400px",
-                        },
+                        build_cells_container(cells),
+                        id="notebook-cells-container",
+                        style={"width": "100%"},
                     ),
                 ],
                 style={
-                    "display": "flex",
-                    "alignItems": "stretch",
-                    "width": "100%",
+                    "flex": "1 1 auto",
                     "minWidth": f"calc({RESULTS_GUTTER_WIDTH} + 300px)",
                     "maxWidth": NOTEBOOK_SHEET_WIDTH,
-                    "minHeight": "400px",
-                    "background": "#ffffff",
-                    "border": "1px solid rgba(100, 116, 139, 0.18)",
-                    "borderRadius": "14px",
-                    "boxShadow": "0 4px 6px rgba(15,23,42,0.04), 0 10px 28px rgba(15,23,42,0.06)",
-                    "overflow": "visible",
-                    "position": "relative",
-                    "flex": "1 1 auto",
+                    "padding": "14px",
+                    "overflowY": "visible",
+                    "display": "flex",
+                    "flexDirection": "column",
                 },
             ),
             # ── plots panel ──────────────────────────────────────────────────
@@ -1701,6 +2132,7 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
             ),  # end flex row
             # ── floating functions reference overlay ─────────────────────────
             build_fn_overlay(),
+            build_markdown_help_overlay(),
         ],
-        style={"padding": "16px 20px", "width": "100%", "overflowX": "auto"},
+        style={"padding": "16px 20px", "width": "100%", "overflowX": "auto", "background": "#ffffff"},
     )

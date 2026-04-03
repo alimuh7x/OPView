@@ -562,6 +562,7 @@ _ALLOWED_NODE_LIST = [
     ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.Mod,
     ast.USub, ast.UAdd, ast.MatMult,
     ast.List, ast.Subscript, ast.Slice,
+    ast.Dict, ast.ListComp, ast.comprehension,
     # Multi-dim indexing and tuple literals
     ast.Tuple,
     # Comparisons
@@ -632,6 +633,29 @@ class _NotebookValidator(ast.NodeVisitor):
     def visit_Tuple(self, node):
         for elt in node.elts:
             self.visit(elt)
+
+    def visit_Dict(self, node):
+        for key in node.keys:
+            if key is not None:
+                self.visit(key)
+        for value in node.values:
+            self.visit(value)
+
+    def _collect_comprehension_target(self, target):
+        if isinstance(target, ast.Name):
+            self._allowed.add(target.id)
+            return
+        if isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                self._collect_comprehension_target(elt)
+
+    def visit_ListComp(self, node):
+        for gen in node.generators:
+            self.visit(gen.iter)
+            self._collect_comprehension_target(gen.target)
+            for if_clause in gen.ifs:
+                self.visit(if_clause)
+        self.visit(node.elt)
 
     def visit_Compare(self, node):
         self.visit(node.left)
@@ -731,9 +755,34 @@ class _BlockValidator(ast.NodeVisitor):
         for elt in node.elts:
             self.visit(elt)
 
+    def _collect_comprehension_target(self, target):
+        if isinstance(target, ast.Name):
+            if target.id in _RESERVED_NAMES:
+                raise NotebookEvaluationError(f"{target.id!r} is a reserved name")
+            self._allowed.add(target.id)
+            return
+        if isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                self._collect_comprehension_target(elt)
+
     def visit_Tuple(self, node):
         for elt in node.elts:
             self.visit(elt)
+
+    def visit_Dict(self, node):
+        for key in node.keys:
+            if key is not None:
+                self.visit(key)
+        for value in node.values:
+            self.visit(value)
+
+    def visit_ListComp(self, node):
+        for gen in node.generators:
+            self.visit(gen.iter)
+            self._collect_comprehension_target(gen.target)
+            for if_clause in gen.ifs:
+                self.visit(if_clause)
+        self.visit(node.elt)
 
     def visit_Subscript(self, node):
         self.visit(node.value)
@@ -764,16 +813,16 @@ def _format_number(x: float) -> str:
     a = abs(f)
     if a == 0.0:
         return "0"
-    if a >= 1e5 or (a > 0 and a < 1e-3):
-        s = f"{f:.4e}"
-        # Tidy exponent: 1.2300e+03 → 1.23e3
+    if a >= 1e4 or (a > 0 and a < 1e-2):
+        s = f"{f:.2e}"
+        # Tidy exponent: 1.23e+03 → 1.23e3
         mantissa, exp = s.split("e")
         mantissa = mantissa.rstrip("0").rstrip(".")
         exp_i = int(exp)
         return f"{mantissa}e{exp_i}"
     if f == int(f) and a < 1e15:
         return str(int(f))
-    return f"{f:.6g}"
+    return f"{f:.3g}"
 
 
 def _format_value(value) -> str:
@@ -846,6 +895,20 @@ def _normalize_block_line(line: str) -> str:
     return indent + content if content else ""
 
 
+def _needs_expression_continuation(expr_rows: list[dict]) -> bool:
+    """True when a non-block expression has an unclosed bracket and needs more rows."""
+    normalized = "\n".join(
+        _normalize_block_line(str(row.get("expression", "") or ""))
+        for row in expr_rows
+    )
+    try:
+        ast.parse(normalized, mode="exec")
+        return False
+    except SyntaxError as exc:
+        message = str(exc.msg or "")
+        return "was never closed" in message or "unexpected EOF while parsing" in message
+
+
 def _is_block_header(stripped: str) -> bool:
     """True if the line opens a for/if block."""
     return bool(
@@ -883,7 +946,8 @@ def _evaluate_block(block_rows: list[dict], variables: dict) -> tuple[dict, str]
 
     _BlockValidator(set(context.keys())).visit(parsed)
     compiled = compile(parsed, "<notebook_block>", "exec")
-    exec(compiled, {"__builtins__": {}}, context)  # noqa: S102
+    scope = {"__builtins__": {}, **context}
+    exec(compiled, scope, scope)  # noqa: S102
 
     # Build summary label
     header_stripped = lines[0].strip() if lines else ""
@@ -903,14 +967,14 @@ def _evaluate_block(block_rows: list[dict], variables: dict) -> tuple[dict, str]
 
     # Extract updated user variables
     updated = {
-        k: v for k, v in context.items()
+        k: v for k, v in scope.items()
         if k not in _RESERVED_NAMES and k not in {"tau", "deg", "inf"}
     }
     return updated, summary
 
 
 def _group_segments(rows: list[dict]) -> list[tuple[str, list[dict]]]:
-    """Group rows into ('single', [row]) or ('block', [rows]) segments."""
+    """Group rows into ('single', [row]), ('continued', [rows]) or ('block', [rows]) segments."""
     segments: list[tuple[str, list[dict]]] = []
     i = 0
     while i < len(rows):
@@ -944,11 +1008,63 @@ def _group_segments(rows: list[dict]) -> list[tuple[str, list[dict]]]:
 
             segments.append(("block", block_rows))
             i = j
+        elif stripped:
+            expr_rows = [rows[i]]
+            j = i + 1
+            while j < len(rows) and _needs_expression_continuation(expr_rows):
+                expr_rows.append(rows[j])
+                j += 1
+            if len(expr_rows) > 1:
+                segments.append(("continued", expr_rows))
+                i = j
+            else:
+                segments.append(("single", [rows[i]]))
+                i += 1
         else:
             segments.append(("single", [rows[i]]))
             i += 1
 
     return segments
+
+
+def _evaluate_continued_rows(seg_rows: list[dict], variables: dict) -> tuple[Any | None, str, str]:
+    """Evaluate a multi-line literal/expression/assignment."""
+    normalized = "\n".join(
+        _normalize_block_line(str(row.get("expression", "") or ""))
+        for row in seg_rows
+    )
+    try:
+        parsed = ast.parse(normalized, mode="exec")
+    except SyntaxError as exc:
+        return None, "", f"Syntax error: {exc.msg}"
+
+    context = _build_context(variables)
+    try:
+        if len(parsed.body) != 1:
+            raise NotebookEvaluationError("Unsupported multiline expression")
+        stmt = parsed.body[0]
+        if isinstance(stmt, ast.Assign):
+            _BlockValidator(set(context.keys())).visit(parsed)
+            compiled = compile(parsed, "<notebook_continued>", "exec")
+            scope = {"__builtins__": {}, **context}
+            exec(compiled, scope, scope)  # noqa: S102
+            target = stmt.targets[0] if stmt.targets else None
+            if isinstance(target, ast.Name):
+                value = scope.get(target.id)
+                variables[target.id] = value
+                return value, _format_value(value), ""
+            return None, "", ""
+        if isinstance(stmt, ast.Expr):
+            expr_ast = ast.Expression(stmt.value)
+            _NotebookValidator(set(context.keys())).visit(expr_ast)
+            scope = {"__builtins__": {}, **context}
+            value = eval(compile(expr_ast, "<notebook_continued_expr>", "eval"), scope, scope)  # noqa: S307
+            return value, _format_value(value), ""
+        raise NotebookEvaluationError("Unsupported multiline expression")
+    except NotebookEvaluationError as exc:
+        return None, "", str(exc)
+    except Exception as exc:
+        return None, "", f"Error: {exc}"
 
 
 # ── Core evaluator ────────────────────────────────────────────────────────────
@@ -976,7 +1092,8 @@ def _evaluate_expr(expression: str, variables: dict) -> Any:
 
     _NotebookValidator(context.keys()).visit(parsed)
     compiled = compile(parsed, "<notebook>", "eval")
-    return eval(compiled, {"__builtins__": {}}, context)  # noqa: S307
+    scope = {"__builtins__": {}, **context}
+    return eval(compiled, scope, scope)  # noqa: S307
 
 
 def _evaluate_subscript_assign(stmt: str, variables: dict) -> None:
@@ -999,14 +1116,17 @@ def _evaluate_subscript_assign(stmt: str, variables: dict) -> None:
 
 def evaluate_notebook_rows(
     rows: list[dict],
+    initial_context: dict | None = None,
 ) -> tuple[list[dict], dict[str, float], dict[str, list]]:
     """Evaluate notebook rows top-to-bottom.
 
     Variables carrying forward can be scalars, vectors, or matrices.
     The returned *variables* dict contains only scalar floats so that
     formula-panel NB-toggle bindings remain type-safe.
+
+    *initial_context* can be used to seed variables from prior cells.
     """
-    variables: dict[str, Any] = {}   # full (may hold arrays)
+    variables: dict[str, Any] = dict(initial_context or {})   # full (may hold arrays)
     evaluated_rows: list[dict] = []
 
     for seg_type, seg_rows in _group_segments(rows):
@@ -1018,6 +1138,8 @@ def evaluate_notebook_rows(
             header_out = dict(header_row)
             header_out["result"] = ""
             header_out["error"] = ""
+            header_out["raw_result"] = None
+            header_out["source_span"] = len(seg_rows)
 
             try:
                 new_vars, summary = _evaluate_block(seg_rows, variables)
@@ -1033,6 +1155,30 @@ def evaluate_notebook_rows(
                 out = dict(body_row)
                 out["result"] = ""
                 out["error"] = ""
+                out["raw_result"] = None
+                evaluated_rows.append(out)
+
+        elif seg_type == "continued":
+            header_row = seg_rows[0]
+            body_rows = seg_rows[1:]
+
+            header_out = dict(header_row)
+            header_out["result"] = ""
+            header_out["error"] = ""
+            header_out["raw_result"] = None
+            header_out["source_span"] = len(seg_rows)
+
+            value, result, error = _evaluate_continued_rows(seg_rows, variables)
+            header_out["result"] = result
+            header_out["error"] = error
+            header_out["raw_result"] = value
+            evaluated_rows.append(header_out)
+
+            for body_row in body_rows:
+                out = dict(body_row)
+                out["result"] = ""
+                out["error"] = ""
+                out["raw_result"] = None
                 evaluated_rows.append(out)
 
         else:
@@ -1042,6 +1188,7 @@ def evaluate_notebook_rows(
             updated = dict(row)
             updated["result"] = ""
             updated["error"] = ""
+            updated["raw_result"] = None
 
             stripped = _strip_comment(raw)
             if not stripped:
@@ -1071,9 +1218,11 @@ def evaluate_notebook_rows(
                         value = _evaluate_expr(rhs, variables)
                         variables[var_name] = value
                         updated["result"] = _format_value(value)
+                        updated["raw_result"] = value
                 else:
                     value = _evaluate_expr(stripped, variables)
                     updated["result"] = _format_value(value)
+                    updated["raw_result"] = value
 
             except NotebookEvaluationError as exc:
                 updated["error"] = str(exc)
@@ -1112,3 +1261,43 @@ def evaluate_notebook_rows(
                 pass
 
     return evaluated_rows, scalar_vars, array_vars
+
+
+def evaluate_cell(
+    source: str,
+    context: dict | None = None,
+) -> tuple[list[dict], dict[str, float], dict[str, list], dict]:
+    """Evaluate a single notebook cell with an accumulated variable context.
+
+    Returns (result_rows, scalar_vars, array_vars, full_vars) where
+    full_vars includes all variables after evaluating this cell.
+    """
+    rows = [{"id": f"line_{i}", "expression": line} for i, line in enumerate(source.splitlines())]
+    result_rows, scalar_vars, array_vars = evaluate_notebook_rows(rows, initial_context=context)
+
+    # Rebuild full variable dict so caller can pass it as context to the next cell
+    import numpy as np
+    full_vars: dict[str, Any] = dict(context or {})
+    for row in result_rows:
+        expr = str(row.get("expression", "") or "").strip()
+        stripped = expr
+        for marker in ("//", "#"):
+            idx = stripped.find(marker)
+            if idx != -1:
+                stripped = stripped[:idx]
+        stripped = stripped.strip()
+        if "=" in stripped:
+            var_name = stripped.split("=", 1)[0].strip()
+            if var_name.isidentifier() and var_name in scalar_vars:
+                full_vars[var_name] = scalar_vars[var_name]
+            elif var_name.isidentifier() and var_name in array_vars:
+                full_vars[var_name] = np.asarray(array_vars[var_name])
+    # Also copy any array variables that came from initial_context processing
+    for k, v in array_vars.items():
+        if k not in full_vars:
+            full_vars[k] = np.asarray(v)
+    for k, v in scalar_vars.items():
+        if k not in full_vars:
+            full_vars[k] = v
+
+    return result_rows, scalar_vars, array_vars, full_vars
