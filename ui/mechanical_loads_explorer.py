@@ -430,15 +430,15 @@ def build_mechanical_loads_explorer() -> html.Div:
 
         html.Div([
             html.Div([
-                html.Div("Preset", style=SECTION_TITLE_STYLE),
+                # Preset dropdown moved to sidebar — keep hidden for Dash component ID stability
                 dcc.Dropdown(
                     id="ml-preset",
                     options=MECHANICAL_LOAD_PRESET_OPTIONS,
                     value="custom",
                     clearable=False,
-                    style={"fontSize": "13px"},
+                    style={"display": "none"},
                 ),
-            ], style={"flex": "1", "minWidth": "220px"}),
+            ], style={"flex": "0", "minWidth": "0"}),
             html.Div([
                 html.Div("dt (time per timestep)", style=LOAD_HEADER_STYLE),
                 dcc.Input(

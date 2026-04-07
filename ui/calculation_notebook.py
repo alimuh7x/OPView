@@ -1749,6 +1749,101 @@ def _empty_nb_figure() -> go.Figure:
     return fig
 
 
+def build_notebook_sidebar_controls(cells: list) -> html.Div:
+    """
+    Build the notebook sidebar: examples dropdown, action buttons, and all hidden stores.
+    Placed in the left blue sidebar panel when the Calculation Notebook tab is active.
+    """
+    snippet_options = []
+    for group_label, keys in NOTEBOOK_SNIPPET_GROUPS.items():
+        snippet_options.append({"label": f"── {group_label} ──", "value": f"__group__{group_label}", "disabled": True})
+        for k in keys:
+            if k in NOTEBOOK_SNIPPETS:
+                snippet_options.append({"label": f"  {k}", "value": k})
+
+    _divider = html.Hr(style={
+        "border": "none", "borderTop": "1px solid rgba(255,255,255,0.15)", "margin": "10px 0",
+    })
+
+    return html.Div([
+        # ── hidden stores (must always be in DOM) ─────────────────────────────
+        dcc.Download(id=NOTEBOOK_DOWNLOAD_ID),
+        dcc.Store(id="notebook-monaco-sync-dummy"),
+        dcc.Store(id="notebook-var-refresh-dummy"),
+        dcc.Store(id="notebook-markdown-preview-dummy"),
+        dcc.Store(id="notebook-md-panel-dummy"),
+        dcc.Store(id="notebook-external-sync", data=None),
+        dcc.Store(id="notebook-save-sync", data=None),
+        dcc.Store(id="notebook-cells-store", data=cells),
+        dcc.Store(id="nb-op-sync", data=None),
+        dcc.Store(id="nb-cell-run-trigger", data=None),
+        dcc.Store(id="notebook-fn-dummy"),
+        dcc.Input(id="notebook-auto-update-state", type="hidden", value="on"),
+
+        # ── Examples ──────────────────────────────────────────────────────────
+        html.Span("EXAMPLES", className="sidebar-projects-title"),
+        dcc.Dropdown(
+            id="notebook-example-select",
+            options=snippet_options,
+            value=None,
+            placeholder="Select an example…",
+            clearable=True,
+            optionHeight=34,
+            maxHeight=600,
+            style={"fontSize": "13px", "marginTop": "6px", "marginBottom": "6px"},
+        ),
+        html.Button("Insert Example", id="notebook-insert-example-btn", n_clicks=0,
+                    className="sidebar-notebook-btn sidebar-notebook-btn--primary"),
+
+        _divider,
+
+        # ── Run & Auto-update ─────────────────────────────────────────────────
+        html.Span("RUN", className="sidebar-projects-title"),
+        html.Button("▶  Run All  (Ctrl+Enter)", id="notebook-run-btn", n_clicks=0,
+                    className="sidebar-notebook-btn sidebar-notebook-btn--primary"),
+        dcc.Checklist(
+            id="notebook-auto-update",
+            options=[{"label": " Auto update", "value": "auto"}],
+            value=["auto"],
+            inline=True,
+            inputStyle={"marginRight": "6px", "cursor": "pointer"},
+            labelStyle={"display": "inline-flex", "alignItems": "center",
+                        "fontSize": "13px", "color": "rgba(255,255,255,0.85)",
+                        "cursor": "pointer", "marginTop": "6px"},
+        ),
+
+        _divider,
+
+        # ── File actions ──────────────────────────────────────────────────────
+        html.Span("FILE", className="sidebar-projects-title"),
+        dcc.Upload(
+            html.Button("Load (.json / .txt)", className="sidebar-notebook-btn",
+                        style={"width": "100%", "textAlign": "left"}),
+            id="notebook-load-upload",
+            accept=".json,.txt",
+            multiple=False,
+        ),
+        html.Button("Save (.json)", id="notebook-save-btn", n_clicks=0,
+                    className="sidebar-notebook-btn"),
+        dcc.ConfirmDialogProvider(
+            children=html.Button("Clear All", className="sidebar-notebook-btn sidebar-notebook-btn--danger"),
+            id="notebook-clear-confirm-provider",
+            message="Clear all notebook content? This cannot be undone.",
+        ),
+
+        _divider,
+
+        # ── Extras ────────────────────────────────────────────────────────────
+        html.Span("TOOLS", className="sidebar-projects-title"),
+        html.Button("≡  Functions", id="notebook-fn-btn", n_clicks=0,
+                    className="sidebar-notebook-btn"),
+        html.Button("Markdown Help", id="notebook-md-help-btn", n_clicks=0,
+                    className="sidebar-notebook-btn"),
+        html.Button("✦  AI Settings", id="nb-settings-open-btn", n_clicks=0,
+                    className="sidebar-notebook-btn sidebar-notebook-btn--ai"),
+    ])
+
+
 def build_calculation_notebook(state: dict | None = None) -> html.Div:
     """Build the calculation notebook tab content."""
     state = state or default_notebook_state()
@@ -1757,189 +1852,8 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
     arr_options = [{"label": k, "value": k} for k in sorted(array_vars)]
     cells = state.get("cells") or [default_notebook_cell()]
 
-    _BASE_BTN = {
-        "border": "none", "borderRadius": "7px", "cursor": "pointer",
-        "fontFamily": "'Inter','Segoe UI',system-ui,sans-serif",
-        "fontSize": "13px", "fontWeight": "500", "lineHeight": "1",
-        "padding": "7px 13px", "transition": "background 150ms, box-shadow 150ms",
-        "whiteSpace": "nowrap",
-    }
-
-    def _btn(label, id_, variant="secondary"):
-        styles = {
-            "secondary": {**_BASE_BTN, "background": "rgba(15,23,42,0.06)",
-                          "color": "#344054", "border": "1px solid rgba(15,23,42,0.12)"},
-            "danger":    {**_BASE_BTN, "background": "rgba(185,28,28,0.06)",
-                          "color": "#991b1b", "border": "1px solid rgba(185,28,28,0.18)"},
-            "primary":   {**_BASE_BTN, "background": "#001f41", "color": "#ffffff",
-                          "border": "1px solid #001f41",
-                          "boxShadow": "0 1px 4px rgba(0,31,65,0.25)"},
-            "special":   {**_BASE_BTN, "background": "rgba(0,31,65,0.07)",
-                          "color": "#001f41", "border": "1px solid rgba(0,31,65,0.2)"},
-        }
-        return html.Button(label, id=id_, n_clicks=0, style=styles[variant])
-
-    # Build grouped dropdown options with disabled category headers
-    snippet_options = []
-    for group_label, keys in NOTEBOOK_SNIPPET_GROUPS.items():
-        snippet_options.append({"label": f"── {group_label} ──", "value": f"__group__{group_label}", "disabled": True})
-        for k in keys:
-            if k in NOTEBOOK_SNIPPETS:
-                snippet_options.append({"label": f"  {k}", "value": k})
-
     return html.Div(
         [
-            # ── top toolbar ─────────────────────────────────────────────────
-            html.Div(
-                [
-                    html.Div(
-                        [
-                    dcc.ConfirmDialogProvider(
-                        children=_btn("Clear", "notebook-clear-btn", "danger"),
-                        id="notebook-clear-confirm-provider",
-                        message="Clear all notebook content? This cannot be undone.",
-                    ),
-                    _btn("Save (.json)", "notebook-save-btn", "secondary"),
-                    dcc.Upload(
-                        _btn("Load (.json/.txt)", "notebook-load-btn", "secondary"),
-                        id="notebook-load-upload",
-                        accept=".json,.txt",
-                        multiple=False,
-                    ),
-                    dcc.Download(id=NOTEBOOK_DOWNLOAD_ID),
-                    dcc.Store(id="notebook-monaco-sync-dummy"),
-                    dcc.Store(id="notebook-var-refresh-dummy"),
-                    dcc.Store(id="notebook-markdown-preview-dummy"),
-                    dcc.Store(id="notebook-md-panel-dummy"),
-                    dcc.Store(id="notebook-external-sync", data=None),
-                    dcc.Store(id="notebook-save-sync", data=None),
-                    # ── cell management stores ────────────────────────────
-                    dcc.Store(id="notebook-cells-store", data=cells),
-                    dcc.Store(id="nb-op-sync", data=None),
-                    dcc.Store(id="nb-cell-run-trigger", data=None),
-                    # ── example snippet picker ────────────────────────────
-                    html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
-                                    "alignSelf": "stretch", "margin": "0 4px"}),
-                    dcc.Dropdown(
-                        id="notebook-example-select",
-                        options=snippet_options,
-                        value=None,
-                        placeholder="Load example…",
-                        clearable=True,
-                        optionHeight=34,
-                        maxHeight=408,
-                        style={"fontSize": "13px", "minWidth": "220px", "maxWidth": "280px"},
-                    ),
-                    _btn("Insert", "notebook-insert-example-btn", "primary"),
-                    _btn("Markdown Help", "notebook-md-help-btn", "special"),
-                    html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
-                                    "alignSelf": "stretch", "margin": "0 4px"}),
-                    dcc.Checklist(
-                        id="notebook-auto-update",
-                        options=[{"label": "Auto update", "value": "auto"}],
-                        value=["auto"],
-                        inline=True,
-                        style={"margin": "0"},
-                        inputStyle={"marginRight": "6px"},
-                        labelStyle={
-                            "display": "inline-flex",
-                            "alignItems": "center",
-                            "fontSize": "13px",
-                            "fontWeight": "600",
-                            "color": "#475467",
-                            "whiteSpace": "nowrap",
-                            "marginRight": "0",
-                        },
-                    ),
-                    dcc.Input(id="notebook-auto-update-state", type="hidden", value="on"),
-                    _btn("Run All", "notebook-run-btn", "primary"),
-                    html.Div(
-                        [
-                            html.Span(
-                                "Shortcut",
-                                style={
-                                    "fontSize": "11px",
-                                    "fontWeight": "700",
-                                    "color": "#64748b",
-                                    "textTransform": "uppercase",
-                                    "letterSpacing": "0.05em",
-                                },
-                            ),
-                            html.Span(
-                                "Ctrl+Enter",
-                                style={
-                                    "fontFamily": "'JetBrains Mono','Fira Code',monospace",
-                                    "fontSize": "12px",
-                                    "color": "#334155",
-                                    "background": "rgba(15,23,42,0.055)",
-                                    "border": "1px solid rgba(15,23,42,0.12)",
-                                    "borderRadius": "6px",
-                                    "padding": "3px 8px",
-                                    "whiteSpace": "nowrap",
-                                },
-                            ),
-                        ],
-                        style={
-                            "display": "flex",
-                            "alignItems": "center",
-                            "gap": "6px",
-                            "whiteSpace": "nowrap",
-                        },
-                    ),
-                    html.Button("✦ AI ⚙", id="nb-settings-open-btn", n_clicks=0,
-                        title="AI settings",
-                        style={"fontSize": "12px", "padding": "4px 10px",
-                               "borderRadius": "6px", "border": "1px solid #e9d5ff",
-                               "background": "#faf5ff", "color": "#7c3aed",
-                               "cursor": "pointer", "fontWeight": "600",
-                               "whiteSpace": "nowrap"}),
-                    html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
-                                    "alignSelf": "stretch", "margin": "0 4px"}),
-                    _btn("≡ Functions", "notebook-fn-btn", "special"),
-                    dcc.Store(id="notebook-fn-dummy"),
-                    html.Span(
-                        "New? → Quick Start",
-                        style={"fontSize": "12px", "color": "#94a3b8", "fontStyle": "italic",
-                               "marginLeft": "4px", "whiteSpace": "nowrap"},
-                    ),
-                        ],
-                        style={"display": "flex", "gap": "8px",
-                               "alignItems": "center", "flexWrap": "wrap"},
-                    ),
-                    html.Div(
-                        [
-                    html.Span("One expression per line  ·  results appear on the right",
-                              style={"color": "#64748b", "marginRight": "12px"}),
-                    *[
-                        html.Span(
-                            chip,
-                            style={
-                                "fontFamily": "'JetBrains Mono','Fira Code',monospace",
-                                "fontSize": "11px", "color": "#334155",
-                                "background": "rgba(15,23,42,0.055)",
-                                "border": "1px solid rgba(15,23,42,0.09)",
-                                "borderRadius": "5px", "padding": "2px 7px",
-                                "marginRight": "6px", "whiteSpace": "nowrap",
-                            }
-                        )
-                        for chip in ["// comment", "x ^ 2  power", "210 * GPa  units", "v = [1,2,3]  arrays"]
-                    ],
-                        ],
-                        style={"display": "flex", "alignItems": "center", "flexWrap": "wrap",
-                               "gap": "2px", "fontSize": "12px", "color": "#667085",
-                               "lineHeight": "1"},
-                    ),
-                ],
-                style={
-                    "display": "grid",
-                    "gap": "10px",
-                    "padding": "14px 16px 12px 16px",
-                    "marginBottom": "16px",
-                    "background": "#ffffff",
-                    "borderBottom": "1px solid rgba(226,232,240,0.95)",
-                    "boxShadow": "0 1px 0 rgba(15,23,42,0.04)",
-                },
-            ),
             # ── AI settings modal ────────────────────────────────────────────
             html.Div(
                 id="nb-settings-modal",

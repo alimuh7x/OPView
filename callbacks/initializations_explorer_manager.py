@@ -43,7 +43,7 @@ class InitializationsExplorerCallbackManager(BaseCallbackManager):
     def _register_update_method_controls(self) -> None:
         @self.app.callback(
             Output("initializations-controls", "children"),
-            Input("initializations-method-selector", "value"),
+            Input("sidebar-init-method", "value"),
             prevent_initial_call=True,
         )
         def update_method_controls(method):
@@ -58,7 +58,7 @@ class InitializationsExplorerCallbackManager(BaseCallbackManager):
             Output("initializations-figure", "figure"),
             Output("initializations-stats", "children"),
             Output("initializations-explanation", "children"),
-            Input("initializations-method-selector", "value"),
+            Input("sidebar-init-method", "value"),
             Input("initializations-nx", "value"),
             Input("initializations-ny", "value"),
             Input("initializations-offset-x", "value"),

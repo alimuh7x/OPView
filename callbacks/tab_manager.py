@@ -284,6 +284,7 @@ class TabCallbackManager(BaseCallbackManager):
             Output('notebook-content', 'style'),
             Output('initializations-content', 'style'),
             Output('mechanical-loads-content', 'style'),
+            Output('design-showcase-content', 'style'),
             Input('active-tab', 'data'),
             Input('open-tabs', 'data'),
             Input('comparison-active-tab', 'data'),
@@ -329,6 +330,7 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},         # notebook-content style - HIDE notebook
                     {'display': 'none'},         # initializations-content style - HIDE explorer
                     {'display': 'none'},         # mechanical-loads-content style - HIDE
+                    {'display': 'none'},         # design-showcase-content style - HIDE
                 )
 
             # === HANDLE FORMULA PLOT TAB ===
@@ -343,6 +345,7 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},         # notebook-content style - HIDE notebook
                     {'display': 'none'},         # initializations-content style - HIDE explorer
                     {'display': 'none'},         # mechanical-loads-content style - HIDE
+                    {'display': 'none'},         # design-showcase-content style - HIDE
                 )
 
             # === HANDLE CALCULATION NOTEBOOK TAB ===
@@ -357,6 +360,7 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'block'},        # notebook-content style - SHOW notebook
                     {'display': 'none'},         # initializations-content style - HIDE explorer
                     {'display': 'none'},         # mechanical-loads-content style - HIDE
+                    {'display': 'none'},         # design-showcase-content style - HIDE
                 )
 
             # === HANDLE INITIALIZATIONS EXPLORER TAB ===
@@ -371,6 +375,7 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},
                     {'display': 'block'},
                     {'display': 'none'},         # mechanical-loads-content style - HIDE
+                    {'display': 'none'},         # design-showcase-content style - HIDE
                 )
 
             # === HANDLE MECHANICAL LOADS EXPLORER TAB ===
@@ -390,6 +395,26 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},
                     {'display': 'none'},
                     {'display': 'block'},        # mechanical-loads-content style - SHOW
+                    {'display': 'none'},         # design-showcase-content style - HIDE
+                )
+
+            # === HANDLE DESIGN SHOWCASE TAB ===
+            if active_folder == 'design-showcase':
+                print(
+                    f"[debug][design-showcase] render_active_tab: showing showcase tab",
+                    flush=True,
+                )
+                return (
+                    no_update,
+                    {'display': 'none'},
+                    no_update,
+                    {'display': 'none'},
+                    {'display': 'none'},
+                    {'display': 'none'},
+                    {'display': 'none'},
+                    {'display': 'none'},
+                    {'display': 'none'},         # mechanical-loads-content style - HIDE
+                    {'display': 'block'},        # design-showcase-content style - SHOW
                 )
 
             # === HANDLE COMPARISON TAB ===
@@ -406,6 +431,7 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'none'},         # notebook-content - HIDE
                         {'display': 'none'},         # initializations-content - HIDE
                         {'display': 'none'},         # mechanical-loads-content - HIDE
+                        {'display': 'none'},         # design-showcase-content - HIDE
                     )
 
                 # Multi View has its own panels; start empty until user adds one.
@@ -422,6 +448,7 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'none'},         # notebook-content - HIDE
                         {'display': 'none'},         # initializations-content - HIDE
                         {'display': 'none'},         # mechanical-loads-content - HIDE
+                        {'display': 'none'},         # design-showcase-content - HIDE
                     )
 
                 # Check if we need to rebuild comparison panels
@@ -481,6 +508,7 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'none'},         # notebook-content - HIDE
                         {'display': 'none'},         # initializations-content - HIDE
                         {'display': 'none'},         # mechanical-loads-content - HIDE
+                        {'display': 'none'},         # design-showcase-content - HIDE
                     )
                 else:
                     # Pure visibility change - let clientside handle it
@@ -501,6 +529,7 @@ class TabCallbackManager(BaseCallbackManager):
                     {'display': 'none'},          # notebook-content - HIDE
                     {'display': 'none'},          # initializations-content - HIDE
                     {'display': 'none'},          # mechanical-loads-content - HIDE
+                    {'display': 'none'},          # design-showcase-content - HIDE
                 )
 
             # Build VTK tab content for all open panels and hide inactive ones.
@@ -535,6 +564,7 @@ class TabCallbackManager(BaseCallbackManager):
                         {'display': 'none'},         # notebook-content - HIDE
                         {'display': 'none'},         # initializations-content - HIDE
                         {'display': 'none'},         # mechanical-loads-content - HIDE
+                        {'display': 'none'},         # design-showcase-content - HIDE
                     )
                 else:
                     # Structure didn't change, just visibility - let clientside handle it
@@ -900,36 +930,39 @@ class TabCallbackManager(BaseCallbackManager):
 
     def _register_toggle_module_selector(self):
         """Register callback to show/hide panel and graphs selectors based on active top-level tab."""
+        # Tabs where the Projects panel should be hidden (self-contained tools, no project data needed)
+        _PROJECTS_HIDDEN_TABS = {
+            'formula-plot', 'calculation-notebook', 'initializations-explorer',
+            'mechanical-loads-explorer', 'design-showcase',
+        }
+
         @self.app.callback(
-            Output('sidebar-panel-selector', 'style'),  # Single View
-            Output('sidebar-comparison-panel-selector', 'style'),  # Multi View
+            Output('sidebar-panel-selector', 'style'),           # Single View
+            Output('sidebar-comparison-panel-selector', 'style'), # Multi View
             Output('sidebar-graphs-selector', 'style'),
+            Output('sidebar-projects-section', 'style'),          # Projects panel
+            Output('sidebar-initializations-section', 'style'),   # Initializations Explorer methods
+            Output('sidebar-mechanical-loads-section', 'style'),  # Mechanical Loads presets
+            Output('sidebar-notebook-section', 'style'),          # Calculation Notebook examples
             Input('vtk-folder-tabs', 'value'),
             prevent_initial_call=True
         )
         def toggle_sidebar_selectors(active_folder):
             """Show appropriate selector based on active tab."""
+            projects_style = {'display': 'none'} if active_folder in _PROJECTS_HIDDEN_TABS else {'display': 'block'}
+            init_style     = {'display': 'block'} if active_folder == 'initializations-explorer'  else {'display': 'none'}
+            ml_style       = {'display': 'block'} if active_folder == 'mechanical-loads-explorer' else {'display': 'none'}
+            nb_style       = {'display': 'block'} if active_folder == 'calculation-notebook'      else {'display': 'none'}
+
             if active_folder == 'custom-graph':
-                # On Custom Graph tab: hide modules, show custom graph selector.
-                return {'display': 'none'}, {'display': 'none'}, {'display': 'block'}
-            if active_folder == 'formula-plot':
-                # On Formula Plot tab: hide sidebar selectors, panel controls live in the content area.
-                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
-            if active_folder == 'calculation-notebook':
-                # On Calculation Notebook tab: hide sidebar selectors, controls live in the content area.
-                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
-            if active_folder == 'initializations-explorer':
-                # On Initializations Explorer tab: hide sidebar selectors, controls live in the content area.
-                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
-            if active_folder == 'mechanical-loads-explorer':
-                # On Mechanical Loads Explorer tab: hide sidebar selectors, controls live in the content area.
-                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
-            if active_folder == 'comparison':
-                # On Multi View: show comparison panel selector, hide Single View selector.
-                return {'display': 'none'}, {'display': 'block'}, {'display': 'none'}
+                return {'display': 'none'}, {'display': 'none'}, {'display': 'block'}, projects_style, init_style, ml_style, nb_style
+            elif active_folder in _PROJECTS_HIDDEN_TABS:
+                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}, projects_style, init_style, ml_style, nb_style
+            elif active_folder == 'comparison':
+                return {'display': 'none'}, {'display': 'block'}, {'display': 'none'}, projects_style, init_style, ml_style, nb_style
             else:
-                # On Single View: show panel selector, hide others.
-                return {'display': 'block'}, {'display': 'none'}, {'display': 'none'}
+                # Single View (default tab 'current') — projects panel visible
+                return {'display': 'block'}, {'display': 'none'}, {'display': 'none'}, projects_style, init_style, ml_style, nb_style
 
         self._track_callback(toggle_sidebar_selectors)
 

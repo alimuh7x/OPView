@@ -413,16 +413,6 @@ def build_initializations_controls(method: str) -> html.Div:
 
     return html.Div(
         [
-            html.Div("Method", style=SECTION_TITLE_STYLE),
-            dcc.Dropdown(
-                id="initializations-method-selector",
-                options=METHOD_OPTIONS,
-                value=method,
-                clearable=False,
-                maxHeight=320,
-                optionHeight=38,
-                style={"marginBottom": "18px"},
-            ),
             html.Div("Domain", style=SECTION_TITLE_STYLE),
             _slider_block("initializations-nx", "Nx", 8, 100, quasi["nx"]),
             _slider_block("initializations-ny", "Ny", 8, 100, quasi["ny"]),

@@ -7,10 +7,11 @@ Extracted from OPView.py Phase 11 - provides the main application layout.
 from dash import html, dcc
 import dash_mantine_components as dmc
 from config import TAB_CONFIGS
-from ui.calculation_notebook import build_calculation_notebook, default_notebook_state
-from ui.initializations_explorer import build_initializations_explorer
-from ui.mechanical_loads_explorer import build_mechanical_loads_explorer
+from ui.calculation_notebook import build_calculation_notebook, build_notebook_sidebar_controls, default_notebook_state
+from ui.initializations_explorer import build_initializations_explorer, METHOD_OPTIONS
+from ui.mechanical_loads_explorer import build_mechanical_loads_explorer, MECHANICAL_LOAD_PRESET_OPTIONS
 from ui.floating_chat import build_floating_chat
+from ui.design_showcase import build_design_showcase
 
 
 def build_app_layout(
@@ -160,7 +161,13 @@ def build_app_layout(
                                 value='mechanical-loads-explorer',
                                 className='vtk-tab',
                                 selected_className='vtk-tab--selected'
-                            )
+                            ),
+                            dcc.Tab(
+                                label='Design Showcase',
+                                value='design-showcase',
+                                className='vtk-tab',
+                                selected_className='vtk-tab--selected'
+                            ),
                         ]
                     ),
                     html.Div(id='vtk-folder-actions', className='vtk-folder-actions'),
@@ -214,7 +221,7 @@ def build_app_layout(
                                     style={'marginTop': '8px', 'width': '100%'}
                                 ),
                             ], className='sidebar-add-project-container'),
-                        ], className='sidebar-projects-section'),
+                        ], id='sidebar-projects-section', className='sidebar-projects-section'),
 
                         # Panel Selection - Dynamic Tab Selection (Panel-Based Auto-Detection System)
                         html.Div([
@@ -273,6 +280,41 @@ def build_app_layout(
                         # Graphs Section - REMOVED (Phase 18 - Two-column layout) ✅
                         # Controls moved into each graph panel's right column
                         html.Div([], id='sidebar-graphs-selector', style={'display': 'none'}),
+
+                        # Initializations Explorer: method selector (replaces in-panel dropdown)
+                        html.Div([
+                            html.Span("METHOD", className='sidebar-projects-title'),
+                            dcc.RadioItems(
+                                id='sidebar-init-method',
+                                options=METHOD_OPTIONS,
+                                value='quasi-random-nuclei',
+                                className='sidebar-radio-list',
+                                labelStyle={'display': 'flex', 'alignItems': 'center', 'padding': '3px 0', 'cursor': 'pointer'},
+                                inputStyle={'marginRight': '8px', 'cursor': 'pointer'}
+                            ),
+                        ], id='sidebar-initializations-section', className='sidebar-projects-section', style={'display': 'none'}),
+
+                        # Mechanical Loads Explorer: preset selector
+                        html.Div([
+                            html.Span("PRESETS", className='sidebar-projects-title'),
+                            dcc.RadioItems(
+                                id='sidebar-ml-preset',
+                                options=MECHANICAL_LOAD_PRESET_OPTIONS,
+                                value='custom',
+                                className='sidebar-radio-list',
+                                labelStyle={'display': 'flex', 'alignItems': 'center', 'padding': '3px 0', 'cursor': 'pointer'},
+                                inputStyle={'marginRight': '8px', 'cursor': 'pointer'}
+                            ),
+                        ], id='sidebar-mechanical-loads-section', className='sidebar-projects-section', style={'display': 'none'}),
+
+                        # Calculation Notebook: examples dropdown + toolbar (moved from top toolbar)
+                        html.Div(
+                            build_notebook_sidebar_controls(initial_notebook_state.get("cells") or []),
+                            id='sidebar-notebook-section',
+                            className='sidebar-projects-section',
+                            style={'display': 'none'},
+                        ),
+
                     ], className='sidebar'),
                     html.Div([
                         # Tab content area
@@ -346,6 +388,11 @@ def build_app_layout(
                         html.Div(
                             id='mechanical-loads-content',
                             children=[build_mechanical_loads_explorer()],
+                            style={'display': 'none'}
+                        ),
+                        html.Div(
+                            id='design-showcase-content',
+                            children=[build_design_showcase()],
                             style={'display': 'none'}
                         ),
                     ], className='main-panel')

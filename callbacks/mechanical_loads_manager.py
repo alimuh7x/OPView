@@ -110,7 +110,7 @@ class MechanicalLoadsCallbackManager(BaseCallbackManager):
             Output("ml-dt", "value"),
             Output("ml-num-loads", "data", allow_duplicate=True),
             Output("ml-loads-list", "children", allow_duplicate=True),
-            Input("ml-preset", "value"),
+            Input("sidebar-ml-preset", "value"),
             prevent_initial_call=True,
         )
         def apply_preset(preset_value):
