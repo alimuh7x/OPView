@@ -106,6 +106,44 @@ class NotebookManagerSourceTests(unittest.TestCase):
         self.assertIn("mutation attribute ", source)
         self.assertIn("document.getElementById('notebook-auto-update')", source)
 
+    def test_result_grid_uses_compact_readable_typography(self):
+        source = LIVE_SYNC.read_text(encoding="utf-8")
+
+        self.assertIn('row.style.height = "30px";', source)
+        self.assertIn('row.style.lineHeight = "30px";', source)
+        self.assertIn('row.style.fontSize = "12px";', source)
+        self.assertIn('const cellBase = "padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;height:30px;line-height:30px;";', source)
+
+    def test_notebook_ai_prompt_includes_collision_and_runtime_safety_rules(self):
+        source = LIVE_SYNC.read_text(encoding="utf-8")
+
+        self.assertIn("Do not overwrite existing notebook variables unless the user explicitly asks", source)
+        self.assertIn("If you need a new variable, choose a unique descriptive name", source)
+        self.assertIn("If required inputs are missing, say which variables are missing", source)
+        self.assertIn("Current scalar variables:", source)
+        self.assertIn("Current array variables:", source)
+        self.assertIn("var arrayVarsCtx = '';", source)
+        self.assertIn("nbState.array_variables", source)
+
+    def test_notebook_ai_prompt_expands_typed_code_into_runnable_notebook_snippets(self):
+        source = LIVE_SYNC.read_text(encoding="utf-8")
+
+        self.assertIn("If the user gives typed code from C, C++, Java, or similar languages", source)
+        self.assertIn("convert it into notebook syntax", source)
+        self.assertIn("remove type keywords like double, float, int, or const", source)
+        self.assertIn("return a runnable notebook snippet, not just a single rewritten line", source)
+        self.assertIn("add placeholder/default assignments for any referenced variables that are missing from the current notebook context", source)
+
+    def test_notebook_ai_prompt_includes_short_curated_function_defaults(self):
+        source = LIVE_SYNC.read_text(encoding="utf-8")
+
+        self.assertIn("Important defaults:", source)
+        self.assertIn("linspace(start, stop, num=50)", source)
+        self.assertIn("arange(start, stop, step=1)", source)
+        self.assertIn("cfl_dt(dx, u, cfl=1)", source)
+        self.assertIn("diffusion_dt(dx, D, f=0.5)", source)
+        self.assertIn('plot(x, y, type=\\"line\\")', source)
+
     def test_auto_update_state_is_mirrored_for_monaco(self):
         source = NOTEBOOK_MANAGER.read_text(encoding="utf-8")
         self.assertIn('Output("notebook-auto-update-state", "value")', source)

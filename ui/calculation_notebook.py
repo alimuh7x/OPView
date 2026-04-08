@@ -1187,7 +1187,7 @@ def build_cell(cell: dict, cell_index: int, total_cells: int) -> html.Div:
                     "display": "none",
                     "padding": "12px 16px 4px 16px",
                     "flex": "1",
-                    "fontSize": "14px",
+                    "fontSize": "15px",
                     "lineHeight": "1.6",
                     "color": "#0f172a",
                     "fontFamily": "'Nunito','Segoe UI',system-ui,sans-serif",

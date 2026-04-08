@@ -64,6 +64,24 @@
     return JSON.parse(JSON.stringify(value));
   }
 
+  function installNotebookArrayCopyMethod() {
+    if (Array.prototype.copy) {
+      return;
+    }
+    Object.defineProperty(Array.prototype, "copy", {
+      value: function () {
+        return this.map(function (item) {
+          return Array.isArray(item) ? item.copy() : item;
+        });
+      },
+      configurable: true,
+      writable: true,
+      enumerable: false,
+    });
+  }
+
+  installNotebookArrayCopyMethod();
+
   function sameShape(a, b) {
     if (isVector(a) && isVector(b)) {
       return a.length === b.length;
@@ -1992,16 +2010,16 @@
       row.style.display = "grid";
       row.style.gridTemplateColumns = colTemplate;
       row.style.columnGap = "0";
-      row.style.height = "34px";
-      row.style.lineHeight = "34px";
+      row.style.height = "30px";
+      row.style.lineHeight = "30px";
       row.style.fontFamily = "monospace";
-      row.style.fontSize = "13px";
+      row.style.fontSize = "12px";
       row.style.alignItems = "center";
       row.style.borderBottom = "1px solid #e2e8f0";
       const isError = !!entry.error;
       const isPlot  = String(entry.value || "").startsWith("📊");
 
-      const cellBase = "padding:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;height:34px;line-height:34px;";
+      const cellBase = "padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;height:30px;line-height:30px;";
 
       const nameCell = document.createElement("div");
       nameCell.textContent = entry.name || "";
@@ -2381,9 +2399,12 @@
     "Available functions include: linspace, arange, zeros, ones, exp, log, log10, sin, cos, sqrt, abs, " +
     "sum, mean, std, min, max, cumsum, diff, sort, where, clip, interp, gradient, trapz, fft, " +
     "solve, dot, norm, eig, and more. " +
+    "Important defaults: linspace(start, stop, num=50), arange(start, stop, step=1), cfl_dt(dx, u, cfl=1), diffusion_dt(dx, D, f=0.5), plot(x, y, type=\"line\"). " +
     "One expression or assignment per line. Variables carry forward automatically. " +
     "Use plot(x, y) to plot arrays. Use ^ for power (not **).\n" +
     "When suggesting code to insert, wrap it in a fenced code block (```). " +
+    "If the user gives typed code from C, C++, Java, or similar languages, convert it into notebook syntax, remove type keywords like double, float, int, or const, and return a runnable notebook snippet, not just a single rewritten line. " +
+    "If that converted snippet references variables that are missing from the current notebook context, add placeholder/default assignments for those missing variables before the final expression. " +
     "Be concise. Focus on the user's specific notebook context."
   );
 
@@ -2437,18 +2458,46 @@
       var sys = "You are a helpful AI assistant for OPView, a materials science simulation visualization tool. " +
                 "Help with simulation analysis, materials science concepts, and data interpretation. " +
                 "When suggesting code for the OPView notebook, wrap it in a fenced code block (```) " +
-                "and use the notebook's built-in functions (linspace, exp, log, plot, etc.) — no numpy/scipy imports.";
+                "and use the notebook's built-in functions (linspace, exp, log, plot, etc.) — no numpy/scipy imports. " +
+                "Important defaults: linspace(start, stop, num=50), arange(start, stop, step=1), cfl_dt(dx, u, cfl=1), diffusion_dt(dx, D, f=0.5), plot(x, y, type=\"line\"). " +
+                "Do not overwrite existing notebook variables unless the user explicitly asks. " +
+                "Before introducing a new variable, check whether an existing notebook variable already fits. " +
+                "If you need a new variable, choose a unique descriptive name that does not collide with existing notebook variables. " +
+                "Use only notebook-supported syntax and built-in functions so the returned code runs directly in OPView. " +
+                "If required inputs are missing, say which variables are missing instead of inventing unsafe code. " +
+                "If the user gives typed code from C, C++, Java, or similar languages, convert it into notebook syntax, remove type keywords like double, float, int, or const, and return a runnable notebook snippet, not just a single rewritten line. " +
+                "For converted typed-code snippets, add placeholder/default assignments for any referenced variables that are missing from the current notebook context before the final expression.";
       var codeEl = document.getElementById('notebook-live-text');
       var codeCtx = codeEl ? (codeEl.value || '').trim() : '';
       if (!codeCtx && window._monacoEditor) codeCtx = (window._monacoEditor.getValue() || '').trim();
-      var varsCtx = '';
+      var scalarVarsCtx = '';
+      var arrayVarsCtx = '';
+      var existingNamesCtx = '';
       var nbState = readStore('notebook-state');
       if (nbState && nbState.variables) {
-        varsCtx = Object.entries(nbState.variables).slice(0, 20)
+        scalarVarsCtx = Object.entries(nbState.variables).slice(0, 20)
           .map(function(kv) { return '  ' + kv[0] + ' = ' + kv[1]; }).join('\n');
       }
+      if (nbState && nbState.array_variables) {
+        arrayVarsCtx = Object.entries(nbState.array_variables).slice(0, 20)
+          .map(function(kv) {
+            var value = kv[1];
+            var size = Array.isArray(value) ? value.length : '?';
+            return '  ' + kv[0] + ' (len=' + size + ')';
+          }).join('\n');
+      }
+      if (nbState) {
+        var scalarNames = Object.keys(nbState.variables || {});
+        var arrayNames = Object.keys(nbState.array_variables || {});
+        var allNames = scalarNames.concat(arrayNames).filter(function(name, index, list) {
+          return list.indexOf(name) === index;
+        });
+        if (allNames.length) existingNamesCtx = allNames.slice(0, 40).join(', ');
+      }
       if (codeCtx) sys += '\n\nCurrent notebook code:\n```\n' + codeCtx + '\n```';
-      if (varsCtx) sys += '\n\nCurrent variable values:\n' + varsCtx;
+      if (existingNamesCtx) sys += '\n\nExisting notebook variable names (do not reuse unless explicitly asked):\n' + existingNamesCtx;
+      if (scalarVarsCtx) sys += '\n\nCurrent scalar variables:\n' + scalarVarsCtx;
+      if (arrayVarsCtx) sys += '\n\nCurrent array variables:\n' + arrayVarsCtx;
       var msgs = [{ role: 'system', content: sys }];
       (history || []).forEach(function(m) { msgs.push({ role: m.role, content: m.content }); });
       msgs.push({ role: 'user', content: userText });

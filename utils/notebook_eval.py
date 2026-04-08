@@ -545,6 +545,18 @@ def _safe_zip(*iterables):
 def _safe_len(obj):
     return len(obj)
 
+
+def _is_allowed_method_call(node: ast.Call, allowed_names: set[str]) -> bool:
+    """Return True only for the exact safe method form `<name>.copy()`."""
+    if not isinstance(node.func, ast.Attribute):
+        return False
+    if node.func.attr != "copy":
+        return False
+    if node.args or node.keywords:
+        return False
+    base = node.func.value
+    return isinstance(base, ast.Name) and base.id in allowed_names
+
 ALLOWED_NOTEBOOK_FUNCTIONS["range"]     = _safe_range
 ALLOWED_NOTEBOOK_FUNCTIONS["enumerate"] = _safe_enumerate
 ALLOWED_NOTEBOOK_FUNCTIONS["zip"]       = _safe_zip
@@ -557,7 +569,7 @@ ALLOWED_SCALAR_FUNCTIONS = ALLOWED_NOTEBOOK_FUNCTIONS
 # ── AST node allowlist ────────────────────────────────────────────────────────
 
 _ALLOWED_NODE_LIST = [
-    ast.Expression, ast.BinOp, ast.UnaryOp, ast.Call,
+    ast.Expression, ast.BinOp, ast.UnaryOp, ast.Call, ast.Attribute,
     ast.Name, ast.Load, ast.Constant,
     ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.Mod,
     ast.USub, ast.UAdd, ast.MatMult,
@@ -613,7 +625,11 @@ class _NotebookValidator(ast.NodeVisitor):
             raise NotebookEvaluationError(f"Unknown symbol: {node.id!r}")
 
     def visit_Call(self, node):
-        if not isinstance(node.func, ast.Name) or node.func.id not in ALLOWED_NOTEBOOK_FUNCTIONS:
+        if isinstance(node.func, ast.Name) and node.func.id in ALLOWED_NOTEBOOK_FUNCTIONS:
+            pass
+        elif _is_allowed_method_call(node, self._allowed):
+            self.visit(node.func.value)
+        else:
             raise NotebookEvaluationError("Only approved functions are allowed")
         for arg in node.args:
             self.visit(arg)
@@ -621,6 +637,11 @@ class _NotebookValidator(ast.NodeVisitor):
             if kw.arg is None:
                 raise NotebookEvaluationError("**kwargs unpacking is not allowed")
             self.visit(kw.value)
+
+    def visit_Attribute(self, node):
+        if node.attr != "copy" or not isinstance(node.value, ast.Name) or node.value.id not in self._allowed:
+            raise NotebookEvaluationError("Only approved attributes are allowed")
+        self.visit(node.value)
 
     def visit_List(self, node):
         for elt in node.elts:
@@ -699,7 +720,11 @@ class _BlockValidator(ast.NodeVisitor):
             raise NotebookEvaluationError(f"Unknown symbol: {node.id!r}")
 
     def visit_Call(self, node):
-        if not isinstance(node.func, ast.Name) or node.func.id not in ALLOWED_NOTEBOOK_FUNCTIONS:
+        if isinstance(node.func, ast.Name) and node.func.id in ALLOWED_NOTEBOOK_FUNCTIONS:
+            pass
+        elif _is_allowed_method_call(node, self._allowed):
+            self.visit(node.func.value)
+        else:
             raise NotebookEvaluationError("Only approved functions are allowed")
         for arg in node.args:
             self.visit(arg)
@@ -707,6 +732,11 @@ class _BlockValidator(ast.NodeVisitor):
             if kw.arg is None:
                 raise NotebookEvaluationError("**kwargs unpacking is not allowed")
             self.visit(kw.value)
+
+    def visit_Attribute(self, node):
+        if node.attr != "copy" or not isinstance(node.value, ast.Name) or node.value.id not in self._allowed:
+            raise NotebookEvaluationError("Only approved attributes are allowed")
+        self.visit(node.value)
 
     def visit_Assign(self, node):
         # Register assigned names so later statements can reference them

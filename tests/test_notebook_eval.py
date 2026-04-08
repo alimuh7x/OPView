@@ -159,6 +159,16 @@ class TestArrays:
         assert _error(ev, 1) == ""
         assert _result(ev, 1) == "[0, 3, 6, 9]"
 
+    def test_copy_method_creates_independent_vector_copy(self):
+        ev, _, arr_vars = _run(
+            "a = [1, 2, 3]",
+            "b = a.copy()",
+            "b[0] = 99",
+        )
+        assert _error(ev, 1) == ""
+        assert arr_vars["a"] == pytest.approx([1, 2, 3])
+        assert arr_vars["b"] == pytest.approx([99, 2, 3])
+
 
 class TestDictionaries:
     def test_dictionary_literal(self):
@@ -215,6 +225,18 @@ class TestMatrix:
         assert _result(ev, 0) != ""
         assert _error(ev, 1) == ""
         assert ev[0]["source_span"] == 2
+
+    def test_copy_method_creates_independent_matrix_copy(self):
+        ev, _, _ = _run(
+            "A = eye(2)",
+            "B = A.copy()",
+            "B[0][0] = 5",
+            "A",
+            "B",
+        )
+        assert _error(ev, 1) == ""
+        assert _result(ev, 3) == "[[1, 0], [0, 1]]"
+        assert _result(ev, 4) == "[[5, 0], [0, 1]]"
 
 
 class TestBlocks:

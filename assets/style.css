@@ -3205,6 +3205,7 @@ input:focus,
 .nb-markdown-preview {
     font-family: 'Nunito', 'Segoe UI', system-ui, sans-serif;
     font-weight: 600;
+    font-size: 15px;
     color: #0f172a;
     line-height: 1.72;
 }
@@ -3223,10 +3224,10 @@ input:focus,
     line-height: 1.2;
 }
 
-.nb-markdown-preview h1 { font-size: 2rem; }
-.nb-markdown-preview h2 { font-size: 1.7rem; }
-.nb-markdown-preview h3 { font-size: 1.38rem; }
-.nb-markdown-preview h4 { font-size: 1.15rem; }
+.nb-markdown-preview h1 { font-size: 1.55rem; }
+.nb-markdown-preview h2 { font-size: 1.32rem; }
+.nb-markdown-preview h3 { font-size: 1.14rem; }
+.nb-markdown-preview h4 { font-size: 1.02rem; }
 
 .nb-markdown-preview p {
     margin: 0.45em 0 0.9em;

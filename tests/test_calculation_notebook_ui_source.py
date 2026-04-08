@@ -129,6 +129,15 @@ class CalculationNotebookUiSourceTests(unittest.TestCase):
         self.assertIn(".nb-markdown-preview pre code", source)
         self.assertIn(".nb-markdown-preview hr", source)
 
+    def test_markdown_preview_heading_scale_is_balanced_for_notebook_reading(self):
+        source = STYLE_CSS.read_text(encoding="utf-8")
+
+        self.assertIn("font-size: 15px;", source)
+        self.assertIn(".nb-markdown-preview h1 { font-size: 1.55rem; }", source)
+        self.assertIn(".nb-markdown-preview h2 { font-size: 1.32rem; }", source)
+        self.assertIn(".nb-markdown-preview h3 { font-size: 1.14rem; }", source)
+        self.assertIn(".nb-markdown-preview h4 { font-size: 1.02rem; }", source)
+
     def test_build_cell_returns_component_for_code_and_markdown_cells(self):
         module = _load_notebook_ui_module()
 
