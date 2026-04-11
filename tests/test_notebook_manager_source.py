@@ -12,6 +12,7 @@ import numpy as np
 NOTEBOOK_MANAGER = pathlib.Path(__file__).resolve().parents[1] / "callbacks" / "notebook_manager.py"
 MONACO_NOTEBOOK = pathlib.Path(__file__).resolve().parents[1] / "assets" / "monaco_notebook.js"
 LIVE_SYNC = pathlib.Path(__file__).resolve().parents[1] / "assets" / "notebook_live_sync.js"
+PLOT_PANEL_JS = pathlib.Path(__file__).resolve().parents[1] / "assets" / "notebook_plot_panel.js"
 OPVIEW_APP = pathlib.Path(__file__).resolve().parents[1] / "OPView.py"
 NOTEBOOK_PERSISTENCE = pathlib.Path(__file__).resolve().parents[1] / "utils" / "notebook_persistence.py"
 
@@ -35,19 +36,63 @@ class NotebookManagerSourceTests(unittest.TestCase):
 
         payload = persistence.serialize_notebook_cells(cells)
 
-        self.assertEqual(payload["version"], 3)
+        self.assertEqual(payload["version"], 6)
+        self.assertEqual(payload["layout"], {"left_column_width_pct": 50})
         self.assertEqual(
             payload["cells"],
             [
-                {"id": "cell-a", "type": "code", "source": "x = 1"},
-                {"id": "cell-b", "type": "markdown", "source": "# Title"},
+                {"id": "cell-a", "type": "code", "column": "left", "panel_width": None, "source": "x = 1"},
+                {"id": "cell-b", "type": "markdown", "column": "left", "panel_width": None, "source": "# Title"},
             ],
+        )
+
+    def test_notebook_json_save_payload_preserves_plot_item_specs(self):
+        persistence = _load_notebook_persistence_module()
+        cells = [
+            {"id": "cell-a", "type": "code", "source": "x = linspace(0, 1, 5)", "outputs": [], "dirty": False, "column": "left"},
+            {
+                "id": "cell-b",
+                "type": "plot",
+                "source": "",
+                "column": "right",
+                "panel_width": None,
+                "plot_spec": {
+                    "x_var": "x",
+                    "y_vars": ["x"],
+                    "plot_type": "lines",
+                    "title": "x profile",
+                    "x_title": "x",
+                    "y_title": "value",
+                },
+            },
+        ]
+
+        payload = persistence.serialize_notebook_cells(cells)
+
+        self.assertEqual(
+            payload["cells"][1],
+            {
+                "id": "cell-b",
+                "type": "plot",
+                "source": "",
+                "column": "right",
+                "panel_width": None,
+                "plot_spec": {
+                    "x_var": "x",
+                    "y_vars": ["x"],
+                    "plot_type": "lines",
+                    "title": "x profile",
+                    "x_title": "x",
+                    "y_title": "value",
+                },
+            },
         )
 
     def test_notebook_json_load_normalizes_cells_for_rerun(self):
         persistence = _load_notebook_persistence_module()
         payload = {
-            "version": 3,
+            "version": 6,
+            "layout": {"left_column_width_pct": 62},
             "cells": [
                 {"id": "cell-a", "type": "code", "source": "x = 1", "outputs": [{"value": "ignored"}]},
                 {"id": "cell-b", "type": "markdown", "source": "# Heading"},
@@ -59,8 +104,53 @@ class NotebookManagerSourceTests(unittest.TestCase):
         self.assertEqual(
             cells,
             [
-                {"id": "cell-a", "type": "code", "source": "x = 1", "outputs": [], "dirty": False},
-                {"id": "cell-b", "type": "markdown", "source": "# Heading", "outputs": [], "dirty": False},
+                {"id": "cell-a", "type": "code", "column": "left", "panel_width": None, "source": "x = 1", "outputs": [], "dirty": False},
+                {"id": "cell-b", "type": "markdown", "column": "left", "panel_width": None, "source": "# Heading", "outputs": [], "dirty": False},
+            ],
+        )
+
+    def test_notebook_json_load_restores_plot_items_with_default_runtime_fields(self):
+        persistence = _load_notebook_persistence_module()
+        payload = {
+            "version": 6,
+            "layout": {"left_column_width_pct": 40},
+            "cells": [
+                {
+                    "id": "plot-a",
+                    "type": "plot",
+                    "source": "",
+                    "column": "right",
+                    "panel_width": 640,
+                    "plot_spec": {
+                        "x_var": "x",
+                        "y_vars": ["phi"],
+                        "plot_type": "lines",
+                        "title": "phi(x)",
+                    },
+                },
+            ],
+        }
+
+        cells = persistence.deserialize_notebook_cells(payload)
+
+        self.assertEqual(
+            cells,
+            [
+                {
+                    "id": "plot-a",
+                    "type": "plot",
+                    "source": "",
+                    "column": "right",
+                    "panel_width": 640,
+                    "plot_spec": {
+                        "x_var": "x",
+                        "y_vars": ["phi"],
+                        "plot_type": "lines",
+                        "title": "phi(x)",
+                    },
+                    "outputs": [],
+                    "dirty": False,
+                },
             ],
         )
 
@@ -144,6 +234,77 @@ class NotebookManagerSourceTests(unittest.TestCase):
         self.assertIn("diffusion_dt(dx, D, f=0.5)", source)
         self.assertIn('plot(x, y, type=\\"line\\")', source)
 
+    def test_unified_item_stack_supports_drag_reorder_callbacks(self):
+        source = NOTEBOOK_MANAGER.read_text(encoding="utf-8")
+
+        self.assertIn('Input("nb-item-order-input", "value")', source)
+        self.assertIn('def reorder_notebook_items(order_value, cells, notebook_state):', source)
+        self.assertIn('ordered_cells = [lookup[cell_id] for cell_id in order if cell_id in lookup]', source)
+        self.assertIn('nb_state["cells"] = ordered_cells', source)
+
+    def test_unified_item_stack_supports_width_persistence_callbacks(self):
+        source = NOTEBOOK_MANAGER.read_text(encoding="utf-8")
+
+        self.assertIn('Input("nb-item-width-input", "value")', source)
+        self.assertIn('def resize_notebook_item(width_value, cells, notebook_state):', source)
+        self.assertIn('cell["panel_width"] = int(width)', source)
+        self.assertIn('cell.get("id") == cell_id', source)
+
+    def test_two_column_notebook_supports_splitter_persistence_callbacks(self):
+        source = NOTEBOOK_MANAGER.read_text(encoding="utf-8")
+
+        self.assertIn('Input("nb-column-split-input", "value")', source)
+        self.assertIn('def resize_notebook_columns(split_value, notebook_state):', source)
+        self.assertIn('nb_state["layout"]["left_column_width_pct"] = int(left_pct)', source)
+        self.assertIn('Output("notebook-cells-column-left", "style")', source)
+        self.assertIn('Output("notebook-cells-column-right", "style")', source)
+
+    def test_structural_ops_support_plot_items_in_same_stack(self):
+        source = NOTEBOOK_MANAGER.read_text(encoding="utf-8")
+
+        self.assertIn('Input({"type": "nb-add-plot",        "index": ALL}, "n_clicks")', source)
+        self.assertIn('action = "add-plot"', source)
+        self.assertIn('if action in ("add-code", "add-markdown", "add-plot") and target_cell_id == "__start__":', source)
+        self.assertIn('elif action in ("add-code", "add-markdown", "add-plot") and target_cell_id:', source)
+        self.assertIn('else "plot"', source)
+
+    def test_structural_ops_support_move_left_and_move_right(self):
+        source = NOTEBOOK_MANAGER.read_text(encoding="utf-8")
+
+        self.assertIn('Input({"type": "nb-cell-move-left",', source)
+        self.assertIn('Input({"type": "nb-cell-move-right",', source)
+        self.assertIn('action = "move-left"', source)
+        self.assertIn('action = "move-right"', source)
+        self.assertIn('cell["column"] = "left"', source)
+        self.assertIn('cell["column"] = "right"', source)
+
+    def test_plot_panel_client_script_wires_unified_item_drag_events(self):
+        source = PLOT_PANEL_JS.read_text(encoding="utf-8")
+
+        self.assertIn('function wireNotebookItems()', source)
+        self.assertIn('document.getElementById("notebook-cells-column-left")', source)
+        self.assertIn('document.getElementById("notebook-cells-column-right")', source)
+        self.assertIn('setHiddenValue("nb-item-order-input"', source)
+        self.assertIn('.nb-notebook-item[data-item-id]', source)
+        self.assertIn('.nb-item-drag-handle', source)
+        self.assertIn('card.dataset.dragReady', source)
+        self.assertIn('event.target && event.target.closest(".nb-item-drag-handle")', source)
+
+    def test_plot_panel_client_script_wires_layout_aware_resize_updates(self):
+        source = PLOT_PANEL_JS.read_text(encoding="utf-8")
+
+        self.assertIn('setHiddenValue("nb-item-width-input"', source)
+        self.assertIn('.nb-item-resize-handle', source)
+        self.assertIn('card.style.width = width + "px"', source)
+
+    def test_plot_panel_client_script_wires_column_splitter_updates(self):
+        source = PLOT_PANEL_JS.read_text(encoding="utf-8")
+
+        self.assertIn('setHiddenValue("nb-column-split-input"', source)
+        self.assertIn('document.getElementById("notebook-columns-splitter")', source)
+        self.assertIn('leftColumn.style.width = leftPct + "%"', source)
+        self.assertIn('rightColumn.style.width = (100 - leftPct) + "%"', source)
+
     def test_auto_update_state_is_mirrored_for_monaco(self):
         source = NOTEBOOK_MANAGER.read_text(encoding="utf-8")
         self.assertIn('Output("notebook-auto-update-state", "value")', source)
@@ -192,7 +353,7 @@ class NotebookManagerSourceTests(unittest.TestCase):
 
     def test_start_inserter_target_is_handled_as_prepend(self):
         source = NOTEBOOK_MANAGER.read_text(encoding="utf-8")
-        self.assertIn('if action in ("add-code", "add-markdown") and target_cell_id == "__start__":', source)
+        self.assertIn('if action in ("add-code", "add-markdown", "add-plot") and target_cell_id == "__start__":', source)
         self.assertIn('cells.insert(0, new_c)', source)
 
     def test_quick_start_insert_creates_markdown_intro_before_code(self):
@@ -527,15 +688,13 @@ class NotebookManagerSourceTests(unittest.TestCase):
         self.assertIn("@app.server.route('/vendor/<path:filename>')", source)
         self.assertIn('send_from_directory(BASE_DIR / "vendor", filename)', source)
 
-    def test_plot_panel_uses_card_store_and_pattern_callbacks(self):
+    def test_plot_items_use_inline_pattern_callbacks(self):
         source = NOTEBOOK_MANAGER.read_text(encoding="utf-8")
-        self.assertIn('Output("notebook-plots-panel", "children")', source)
-        self.assertIn('Input("nb-plot-new-btn", "n_clicks")', source)
-        self.assertIn('{"type": "nb-plot-card-x", "index": ALL}', source)
-        self.assertIn('{"type": "nb-plot-card-remove-btn", "index": ALL}', source)
-        self.assertNotIn('Input("nb-plot-add-btn", "n_clicks")', source)
-        self.assertNotIn('Input("nb-plot-clear-btn", "n_clicks")', source)
-        self.assertNotIn('Output("nb-plot-selector-cards", "children")', source)
+        self.assertIn('Output({"type": "nb-plot-item-graph", "index": ALL}, "figure")', source)
+        self.assertIn('Input({"type": "nb-plot-item-x", "index": ALL}, "value")', source)
+        self.assertIn('Input({"type": "nb-plot-item-y", "index": ALL}, "value")', source)
+        self.assertIn('Input({"type": "nb-plot-item-title", "index": ALL}, "value")', source)
+        self.assertNotIn('Output("notebook-plots-panel", "children")', source)
 
     def test_insert_example_reads_live_text_not_textarea(self):
         source = NOTEBOOK_MANAGER.read_text(encoding="utf-8")

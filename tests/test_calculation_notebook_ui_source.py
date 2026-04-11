@@ -58,14 +58,14 @@ class CalculationNotebookUiSourceTests(unittest.TestCase):
 
         self.assertNotIn('id="notebook-theme-select"', source)
 
-    def test_plot_panel_uses_card_based_quick_plots(self):
+    def test_unified_notebook_uses_inline_plot_items(self):
         source = NOTEBOOK_UI.read_text(encoding="utf-8")
 
-        self.assertIn('id="nb-plot-new-btn"', source)
-        self.assertNotIn('id="nb-plot-add-btn"', source)
-        self.assertNotIn('id="nb-plot-clear-btn"', source)
-        self.assertNotIn('Quick plots update automatically when you pick X and Y', source)
-        self.assertNotIn('"maxHeight": "calc(100vh - 80px)"', source)
+        self.assertIn('{"type": "nb-plot-item-graph", "index": cell_id}', source)
+        self.assertIn('{"type": "nb-plot-item-x", "index": cell_id}', source)
+        self.assertIn('{"type": "nb-plot-item-y", "index": cell_id}', source)
+        self.assertNotIn('id="nb-plot-new-btn"', source)
+        self.assertNotIn('id="notebook-plots-panel"', source)
 
     def test_quick_start_includes_pythonic_syntax_examples(self):
         source = NOTEBOOK_UI.read_text(encoding="utf-8")
@@ -99,8 +99,8 @@ class CalculationNotebookUiSourceTests(unittest.TestCase):
         source = NOTEBOOK_UI.read_text(encoding="utf-8")
 
         self.assertIn('"background": "#ffffff"', source)
-        self.assertIn('"borderBottom": "1px solid rgba(226,232,240,0.95)"', source)
-        self.assertIn('"boxShadow": "0 1px 0 rgba(15,23,42,0.04)"', source)
+        self.assertIn('"padding": "16px 20px"', source)
+        self.assertIn('"boxShadow": "0 1px 4px rgba(15,23,42,0.04)"', source)
 
     def test_inserter_strip_is_subtle_and_gap_is_tight(self):
         ui_source = NOTEBOOK_UI.read_text(encoding="utf-8")
@@ -112,12 +112,11 @@ class CalculationNotebookUiSourceTests(unittest.TestCase):
         self.assertIn(".nb-cell-inserter:hover { opacity: 0.92;", css_source)
         self.assertIn("color: #001f41;", css_source)
 
-    def test_markdown_toolbar_is_hover_only(self):
+    def test_markdown_toolbar_is_visible_by_default(self):
         source = STYLE_CSS.read_text(encoding="utf-8")
 
         self.assertIn(".nb-markdown-toolbar {", source)
-        self.assertIn("pointer-events: none;", source)
-        self.assertIn(".nb-markdown-cell:hover .nb-markdown-toolbar {", source)
+        self.assertIn("opacity: 1;", source)
         self.assertIn("pointer-events: auto;", source)
 
     def test_markdown_preview_styles_cover_tables_links_and_blockquotes(self):
@@ -156,6 +155,9 @@ class CalculationNotebookUiSourceTests(unittest.TestCase):
         state = module.default_notebook_state()
 
         self.assertEqual(state["cells"][0]["type"], "code")
+        self.assertEqual(state["cells"][0]["column"], "left")
+        self.assertIsNone(state["cells"][0].get("panel_width"))
+        self.assertEqual(state.get("layout", {}).get("left_column_width_pct"), 50)
 
     def test_markdown_cells_render_as_document_blocks_while_code_cells_stay_framed(self):
         module = _load_notebook_ui_module()
@@ -181,7 +183,8 @@ class CalculationNotebookUiSourceTests(unittest.TestCase):
         module = _load_notebook_ui_module()
 
         markdown_component = module.build_cell(module.default_cell(cell_type="markdown", source="# Title"), 1, 2)
-        controls = markdown_component.children[0].children[0].children[3]
+        row = markdown_component.children[1]
+        controls = row.children[0].children[3]
         labels = []
         for child in controls.children:
             labels.append(getattr(child, "children", None))
@@ -191,6 +194,109 @@ class CalculationNotebookUiSourceTests(unittest.TestCase):
         self.assertEqual(labels[2], "✕")
         self.assertNotIn("↑", labels)
         self.assertNotIn("↓", labels)
+
+    def test_notebook_ui_exposes_unified_item_order_state(self):
+        source = NOTEBOOK_UI.read_text(encoding="utf-8")
+
+        self.assertIn('dcc.Store(id="nb-item-order", data=[])', source)
+        self.assertIn('dcc.Input(id="nb-item-order-input", type="hidden", value="")', source)
+        self.assertIn('dcc.Input(id="nb-item-width-input", type="hidden", value="")', source)
+        self.assertIn('dcc.Input(id="nb-column-split-input", type="hidden", value="")', source)
+        self.assertIn('id="notebook-cells-column-left"', source)
+        self.assertIn('id="notebook-cells-column-right"', source)
+        self.assertIn('id="notebook-columns-splitter"', source)
+        self.assertNotIn('id="notebook-plots-shell"', source)
+
+    def test_inserter_strip_offers_plot_items_in_unified_stack(self):
+        source = NOTEBOOK_UI.read_text(encoding="utf-8")
+
+        self.assertIn('{"type": "nb-add-plot", "index": after_cell_id}', source)
+        self.assertIn('"+ Plot"', source)
+
+    def test_build_cell_returns_component_for_plot_items(self):
+        module = _load_notebook_ui_module()
+
+        plot_cell = module.default_cell(cell_type="plot")
+
+        plot_component = module.build_cell(plot_cell, 1, 3)
+
+        self.assertIsNotNone(plot_component)
+        self.assertEqual(plot_component.id, f"nb-cell-wrapper-{plot_cell['id']}")
+
+    def test_notebook_layout_exposes_left_and_right_columns(self):
+        source = NOTEBOOK_UI.read_text(encoding="utf-8")
+
+        self.assertIn('id="notebook-cells-column-left"', source)
+        self.assertIn('id="notebook-cells-column-right"', source)
+        self.assertIn('id="notebook-columns-splitter"', source)
+
+    def test_notebook_layout_uses_saved_column_split_widths(self):
+        source = NOTEBOOK_UI.read_text(encoding="utf-8")
+
+        self.assertIn('left_column_width_pct = max(12, min(88, int((state.get("layout") or {}).get("left_column_width_pct", 50))))', source)
+        self.assertIn('style={"width": f"{left_column_width_pct}%"', source)
+        self.assertIn('style={"width": f"{100 - left_column_width_pct}%"', source)
+
+    def test_notebook_items_expose_move_left_and_move_right_controls(self):
+        source = NOTEBOOK_UI.read_text(encoding="utf-8")
+
+        self.assertIn('"type": "nb-cell-move-left"', source)
+        self.assertIn('"type": "nb-cell-move-right"', source)
+
+    def test_plot_items_render_without_right_results_gutter(self):
+        module = _load_notebook_ui_module()
+
+        plot_component = module.build_cell(module.default_cell(cell_type="plot"), 1, 3)
+        plot_style = plot_component.to_plotly_json()["props"]["style"]
+
+        self.assertEqual(plot_style.get("background"), "#ffffff")
+        self.assertIn("border", plot_style)
+
+    def test_code_and_markdown_items_use_layout_aware_width_clamps(self):
+        module = _load_notebook_ui_module()
+
+        code_component = module.build_cell(module.default_cell(source="x = 1"), 0, 2)
+        markdown_component = module.build_cell(module.default_cell(cell_type="markdown", source="# Title"), 1, 2)
+
+        code_style = code_component.to_plotly_json()["props"]["style"]
+        markdown_style = markdown_component.to_plotly_json()["props"]["style"]
+
+        self.assertEqual(code_style.get("overflow"), "hidden")
+        self.assertEqual(markdown_style.get("overflow"), "hidden")
+        self.assertEqual(code_style.get("width"), "auto")
+        self.assertEqual(markdown_style.get("width"), "auto")
+        self.assertEqual(code_style.get("maxWidth"), "100%")
+        self.assertEqual(markdown_style.get("maxWidth"), "100%")
+        self.assertEqual(code_style.get("boxSizing"), "border-box")
+        self.assertEqual(markdown_style.get("boxSizing"), "border-box")
+
+    def test_plot_items_are_clamped_to_column_width(self):
+        module = _load_notebook_ui_module()
+
+        plot_component = module.build_cell(module.default_cell(cell_type="plot"), 0, 1)
+        plot_style = plot_component.to_plotly_json()["props"]["style"]
+
+        self.assertEqual(plot_style.get("overflow"), "hidden")
+        self.assertIn(plot_style.get("width"), ("auto", "100%"))
+        self.assertEqual(plot_style.get("maxWidth"), "100%")
+        self.assertEqual(plot_style.get("boxSizing"), "border-box")
+
+    def test_notebook_items_render_explicit_width_when_panel_width_is_saved(self):
+        module = _load_notebook_ui_module()
+
+        code_cell = module.default_cell(source="x = 1")
+        code_cell["panel_width"] = 620
+        code_component = module.build_cell(code_cell, 0, 1)
+        code_style = code_component.to_plotly_json()["props"]["style"]
+
+        self.assertEqual(code_style.get("width"), "620px")
+        self.assertEqual(code_style.get("maxWidth"), "100%")
+
+    def test_two_column_notebook_uses_full_available_width(self):
+        source = NOTEBOOK_UI.read_text(encoding="utf-8")
+
+        self.assertIn('NOTEBOOK_SHEET_WIDTH = "100%"', source)
+        self.assertIn('"maxWidth": NOTEBOOK_SHEET_WIDTH', source)
 
     def test_code_cells_do_not_duplicate_markdown_delete_button_ids(self):
         module = _load_notebook_ui_module()
@@ -268,7 +374,7 @@ class CalculationNotebookUiSourceTests(unittest.TestCase):
         ]
 
         code_component = module.build_cell(code_cell, 0, 1)
-        row_component = code_component.children[0]
+        row_component = code_component.children[1]
         results_component = row_component.children[1].children[0]
         rendered = results_component.to_plotly_json()
 

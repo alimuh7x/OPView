@@ -3192,14 +3192,9 @@ input:focus,
 }
 
 .nb-markdown-toolbar {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 140ms ease-in-out;
-}
-
-.nb-markdown-cell:hover .nb-markdown-toolbar {
     opacity: 1;
     pointer-events: auto;
+    transition: opacity 140ms ease-in-out;
 }
 
 .nb-markdown-preview {
@@ -3339,6 +3334,35 @@ input:focus,
     color: #102a43;
     display: block;
     line-height: 1.6;
+}
+
+.nb-item-drag-handle,
+.nb-plot-drag-handle,
+.nb-item-resize-handle {
+    user-select: none;
+}
+
+.nb-notebook-item,
+.nb-plot-draggable-card {
+    transition: box-shadow 120ms ease, transform 120ms ease;
+}
+
+.nb-notebook-item:hover {
+    box-shadow: 0 0 0 1px rgba(0,31,65,0.08), 0 8px 22px rgba(15,23,42,0.06);
+}
+
+.nb-notebook-item::-webkit-resizer {
+    background: linear-gradient(135deg, transparent 0 45%, rgba(0,31,65,0.25) 45% 55%, transparent 55% 100%);
+}
+
+.nb-notebook-item--dragging,
+.nb-plot-card--dragging {
+    opacity: 0.72;
+}
+
+.nb-notebook-item--drop-target,
+.nb-plot-card--drop-target {
+    box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.22), 0 8px 24px rgba(124, 58, 237, 0.10);
 }
 
 /* =============================================================================

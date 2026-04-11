@@ -19,7 +19,7 @@ from ui.calculation_notebook import (
     NOTEBOOK_DOWNLOAD_ID,
     NOTEBOOK_SNIPPETS,
     build_notebook_results,
-    build_cells_container,
+    build_cells_for_column,
     default_notebook_state,
     default_notebook_cell,
     default_cell,
@@ -315,13 +315,14 @@ class NotebookCallbackManager(BaseCallbackManager):
 
         # ── 1. Render cells container from store ─────────────────────────────
         @self.app.callback(
-            Output("notebook-cells-container", "children"),
+            Output("notebook-cells-column-left", "children"),
+            Output("notebook-cells-column-right", "children"),
             Input("notebook-cells-store", "data"),
             prevent_initial_call=True,
         )
         def render_cells(cells_data):
             cells = cells_data or [default_notebook_cell()]
-            return build_cells_container(cells)
+            return build_cells_for_column(cells, "left"), build_cells_for_column(cells, "right")
 
         self._track_callback(render_cells)
 
@@ -353,9 +354,12 @@ class NotebookCallbackManager(BaseCallbackManager):
             Output("nb-op-sync", "data"),
             Input({"type": "nb-add-code",        "index": ALL}, "n_clicks"),
             Input({"type": "nb-add-markdown",    "index": ALL}, "n_clicks"),
+            Input({"type": "nb-add-plot",        "index": ALL}, "n_clicks"),
             Input({"type": "nb-cell-delete",     "index": ALL}, "n_clicks"),
             Input({"type": "nb-cell-up",         "index": ALL}, "n_clicks"),
             Input({"type": "nb-cell-down",       "index": ALL}, "n_clicks"),
+            Input({"type": "nb-cell-move-left",  "index": ALL}, "n_clicks"),
+            Input({"type": "nb-cell-move-right", "index": ALL}, "n_clicks"),
             Input("notebook-clear-confirm-provider", "submit_n_clicks"),
             Input("notebook-insert-example-btn", "n_clicks"),
             prevent_initial_call=True,
@@ -393,12 +397,18 @@ class NotebookCallbackManager(BaseCallbackManager):
                 action = "add-code"
             elif '"type":"nb-add-markdown"' in trigger or '"type": "nb-add-markdown"' in trigger:
                 action = "add-markdown"
+            elif '"type":"nb-add-plot"' in trigger or '"type": "nb-add-plot"' in trigger:
+                action = "add-plot"
             elif '"type":"nb-cell-delete"' in trigger or '"type": "nb-cell-delete"' in trigger:
                 action = "delete"
             elif '"type":"nb-cell-up"' in trigger or '"type": "nb-cell-up"' in trigger:
                 action = "move-up"
             elif '"type":"nb-cell-down"' in trigger or '"type": "nb-cell-down"' in trigger:
                 action = "move-down"
+            elif '"type":"nb-cell-move-left"' in trigger or '"type": "nb-cell-move-left"' in trigger:
+                action = "move-left"
+            elif '"type":"nb-cell-move-right"' in trigger or '"type": "nb-cell-move-right"' in trigger:
+                action = "move-right"
             elif "notebook-clear-confirm-provider" in trigger:
                 action = "clear"
             elif "notebook-insert-example-btn" in trigger:
@@ -443,13 +453,13 @@ class NotebookCallbackManager(BaseCallbackManager):
 
             cell_ids = [c["id"] for c in cells]
 
-            if action in ("add-code", "add-markdown") and target_cell_id == "__start__":
-                cell_type = "code" if action == "add-code" else "markdown"
+            if action in ("add-code", "add-markdown", "add-plot") and target_cell_id == "__start__":
+                cell_type = "code" if action == "add-code" else "markdown" if action == "add-markdown" else "plot"
                 new_c = default_cell(cell_type=cell_type)
                 cells.insert(0, new_c)
 
-            elif action in ("add-code", "add-markdown") and target_cell_id:
-                cell_type = "code" if action == "add-code" else "markdown"
+            elif action in ("add-code", "add-markdown", "add-plot") and target_cell_id:
+                cell_type = "code" if action == "add-code" else "markdown" if action == "add-markdown" else "plot"
                 new_c = default_cell(cell_type=cell_type)
                 try:
                     idx = cell_ids.index(target_cell_id)
@@ -477,6 +487,18 @@ class NotebookCallbackManager(BaseCallbackManager):
                         cells[idx], cells[idx + 1] = cells[idx + 1], cells[idx]
                 except ValueError:
                     pass
+
+            elif action == "move-left" and target_cell_id:
+                for cell in cells:
+                    if cell["id"] == target_cell_id:
+                        cell["column"] = "left"
+                        break
+
+            elif action == "move-right" and target_cell_id:
+                for cell in cells:
+                    if cell["id"] == target_cell_id:
+                        cell["column"] = "right"
+                        break
 
             # Rebuild accumulated state
             nb_state = _copy.deepcopy(notebook_state) if notebook_state else default_notebook_state()
@@ -880,6 +902,25 @@ class NotebookCallbackManager(BaseCallbackManager):
         x_data = array_vars.get(x_var) if x_var and x_var in array_vars else None
 
         fig = go.Figure()
+        if not y_vars:
+            fig.update_layout(
+                xaxis=dict(visible=False),
+                yaxis=dict(visible=False),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                margin=dict(l=20, r=20, t=30, b=20),
+                annotations=[dict(
+                    text="Choose Y variable(s) to render this plot cell",
+                    x=0.5,
+                    y=0.5,
+                    xref="paper",
+                    yref="paper",
+                    showarrow=False,
+                    font=dict(size=13, color="#94a3b8", family="'Inter','Segoe UI',system-ui,sans-serif"),
+                )],
+                title=spec.get("title") or None,
+            )
+            return fig
         for idx, y_name in enumerate(y_vars):
             y_arr = np.asarray(array_vars[y_name])
             color = colors[idx % len(colors)]
@@ -895,6 +936,7 @@ class NotebookCallbackManager(BaseCallbackManager):
                                          marker=dict(color=color, size=marker_sz)))
 
         fig.update_layout(
+            title=spec.get("title") or None,
             xaxis_title=x_title, yaxis_title=y_title,
             barmode="group" if plot_type == "bar" else None,
             font=dict(size=font_sz, family="'Inter','Segoe UI',system-ui,sans-serif"),
@@ -913,377 +955,215 @@ class NotebookCallbackManager(BaseCallbackManager):
         return fig
 
     def _register_plots_panel(self):
-        """Render plot() call results as cards in the plots panel."""
+        """Keep inline plot notebook items in sync and render their figures."""
         @self.app.callback(
-            Output("nb-selector-specs", "data"),
-            Input("nb-plot-new-btn", "n_clicks"),
-            Input({"type": "nb-plot-card-remove-btn", "index": ALL}, "n_clicks"),
-            Input({"type": "nb-plot-card-x", "index": ALL}, "value"),
-            Input({"type": "nb-plot-card-y", "index": ALL}, "value"),
-            Input({"type": "nb-plot-card-type", "index": ALL}, "value"),
-            Input({"type": "nb-plot-card-xlabel", "index": ALL}, "value"),
-            Input({"type": "nb-plot-card-ylabel", "index": ALL}, "value"),
-            State({"type": "nb-plot-card-x", "index": ALL}, "id"),
-            State("nb-selector-specs", "data"),
-            prevent_initial_call=True,
-        )
-        def manage_selector_specs(new_n, remove_clicks, x_values, y_values, type_values, xlabel_values, ylabel_values, x_ids, current_specs):
-            from dash import ctx as _ctx
-
-            specs = list(current_specs or [])
-            triggered = _ctx.triggered_id
-
-            if triggered == "nb-plot-new-btn":
-                next_id = max([spec.get("id", -1) for spec in specs] + [-1]) + 1
-                specs.append(dict(
-                    id=next_id, x_var=None, y_vars=[], plot_type="lines",
-                    title=None, x_title=None, y_title=None,
-                ))
-                return specs
-
-            if isinstance(triggered, dict) and triggered.get("type") == "nb-plot-card-remove-btn":
-                remove_id = triggered.get("index")
-                specs = [spec for spec in specs if spec.get("id") != remove_id]
-                if not specs:
-                    specs = [dict(id=0, x_var=None, y_vars=[], plot_type="lines",
-                                  title=None, x_title=None, y_title=None)]
-                return specs
-
-            if not x_ids:
-                raise PreventUpdate
-
-            rebuilt = []
-            for i, id_dict in enumerate(x_ids):
-                plot_id = id_dict.get("index")
-                rebuilt.append(dict(
-                    id=plot_id,
-                    x_var=x_values[i] if i < len(x_values) else None,
-                    y_vars=(y_values[i] if i < len(y_values) and y_values[i] else []),
-                    plot_type=(type_values[i] if i < len(type_values) and type_values[i] else "lines"),
-                    title=None,
-                    x_title=(xlabel_values[i] or None) if i < len(xlabel_values) else None,
-                    y_title=(ylabel_values[i] or None) if i < len(ylabel_values) else None,
-                ))
-            return rebuilt
-
-        self._track_callback(manage_selector_specs)
-
-        # ── Notebook-driven plots (from plot() calls) — triggered by notebook-state only ──
-        @self.app.callback(
-            Output("notebook-auto-plots", "children"),
-            Input("notebook-state", "data"),
-            State("nb-global-font-size", "value"),
-            State("nb-global-line-width", "value"),
-            prevent_initial_call=False,
-        )
-        def render_notebook_plots(notebook_state, font_size, line_width):
-            from dash import html as _html
-            nb = notebook_state or {}
-            notebook_specs = list(nb.get("plot_specs", []))
-            array_vars = nb.get("array_variables", {})
-            font_sz = int(font_size) if font_size else 14
-            lw = float(line_width) if line_width is not None else 2.0
-
-            valid_specs = [
-                (spec, i) for i, spec in enumerate(notebook_specs)
-                if any(v in array_vars for v in spec.get("y_vars", []))
-            ]
-            cards = []
-            for i, (spec, _orig_i) in enumerate(valid_specs):
-                y_vars = [v for v in spec.get("y_vars", []) if v in array_vars]
-                x_var = spec.get("x_var")
-                display_title = spec.get("title") or f"plot({', '.join(filter(None, ([x_var] if x_var else []) + y_vars))})"
-                fig = self._build_plot_figure(spec, array_vars, font_sz, lw)
-                cards.append(_html.Div(
-                    [
-                        _html.Div(
-                            [
-                                _html.Span("📊 ", style={"color": "#001f41"}),
-                                _html.Span("Notebook",
-                                           style={"fontSize": "10px", "fontWeight": "700",
-                                                  "textTransform": "uppercase", "letterSpacing": "0.07em",
-                                                  "color": "#001f41", "background": "rgba(0,31,65,0.08)",
-                                                  "padding": "2px 6px", "borderRadius": "999px",
-                                                  "marginRight": "8px"}),
-                                _html.Span(display_title,
-                                           style={"fontFamily": "'JetBrains Mono','Fira Code',monospace",
-                                                  "fontSize": "12px", "color": "#334155", "fontWeight": "600"}),
-                            ],
-                            style={"padding": "6px 10px", "background": "rgba(0,31,65,0.04)",
-                                   "borderBottom": "1px solid rgba(0,31,65,0.10)",
-                                   "borderRadius": "8px 8px 0 0"},
-                        ),
-                        dcc.Graph(
-                            id={"type": "nb-plot-card", "index": i},
-                            figure=fig,
-                            config={
-                                "displayModeBar": True, "scrollZoom": True,
-                                "toImageButtonOptions": {"format": "png", "filename": f"plot_{i+1}",
-                                                         "height": 900, "width": 1400, "scale": 3},
-                            },
-                            style={"height": "320px"},
-                        ),
-                    ],
-                    style={"border": "1px solid rgba(0,31,65,0.15)", "borderRadius": "8px",
-                           "marginBottom": "12px", "overflow": "hidden",
-                           "boxShadow": "0 2px 8px rgba(0,31,65,0.06)"},
-                ))
-            return cards
-
-        self._track_callback(render_notebook_plots)
-
-        # ── Quick plots (user-created) — triggered by selector-specs only ──
-        @self.app.callback(
-            Output("notebook-plots-panel", "children"),
-            Input("nb-selector-specs", "data"),
+            Output("notebook-cells-store", "data", allow_duplicate=True),
+            Output("notebook-state", "data", allow_duplicate=True),
+            Input({"type": "nb-plot-item-x", "index": ALL}, "value"),
+            Input({"type": "nb-plot-item-y", "index": ALL}, "value"),
+            Input({"type": "nb-plot-item-type", "index": ALL}, "value"),
+            Input({"type": "nb-plot-item-title", "index": ALL}, "value"),
+            Input({"type": "nb-plot-item-xlabel", "index": ALL}, "value"),
+            Input({"type": "nb-plot-item-ylabel", "index": ALL}, "value"),
+            State({"type": "nb-plot-item-x", "index": ALL}, "id"),
+            State("notebook-cells-store", "data"),
             State("notebook-state", "data"),
-            State("nb-global-font-size", "value"),
-            State("nb-global-line-width", "value"),
-            prevent_initial_call=False,
-        )
-        def render_quick_plots(selector_specs, notebook_state, font_size, line_width):
-            from dash import html as _html
-            import plotly.graph_objects as _go
-            nb = notebook_state or {}
-            selector_specs = list(selector_specs or [])
-            array_vars = nb.get("array_variables", {})
-            options = [{"label": k, "value": k} for k in sorted(array_vars.keys())]
-            font_sz = int(font_size) if font_size else 14
-            lw = float(line_width) if line_width is not None else 2.0
-
-            def quick_placeholder_figure(message: str):
-                fig = _go.Figure()
-                fig.update_layout(
-                    xaxis=dict(visible=False), yaxis=dict(visible=False),
-                    plot_bgcolor="white", paper_bgcolor="white",
-                    margin=dict(l=20, r=20, t=20, b=20),
-                    annotations=[dict(text=message, x=0.5, y=0.5, xref="paper", yref="paper",
-                                      showarrow=False,
-                                      font=dict(size=13, color="#94a3b8",
-                                                family="'Inter','Segoe UI',system-ui,sans-serif"))],
-                )
-                return fig
-
-            cards = []
-            for idx, spec in enumerate(selector_specs, start=1):
-                plot_id = spec.get("id", idx - 1)
-                y_vars = [v for v in spec.get("y_vars", []) if v in array_vars]
-                x_var = spec.get("x_var")
-                has_valid_plot = bool(y_vars)
-                fig = self._build_plot_figure(spec, array_vars, font_sz, lw) if has_valid_plot else \
-                    quick_placeholder_figure("Choose Y to start plotting")
-
-                cards.append(_html.Div(
-                    [
-                        _html.Div(
-                            [
-                                _html.Div(
-                                    [
-                                        _html.Span("📊 ", style={"color": "#7c3aed"}),
-                                        _html.Span("Quick",
-                                                   style={"fontSize": "10px", "fontWeight": "700",
-                                                          "textTransform": "uppercase",
-                                                          "letterSpacing": "0.07em", "color": "#7c3aed",
-                                                          "background": "rgba(124,58,237,0.10)",
-                                                          "padding": "2px 6px", "borderRadius": "999px",
-                                                          "marginRight": "8px"}),
-                                        _html.Span(f"Quick Plot {idx}",
-                                                   style={"fontFamily": "'JetBrains Mono','Fira Code',monospace",
-                                                          "fontSize": "12px", "color": "#334155", "fontWeight": "600"}),
-                                    ],
-                                    style={"display": "flex", "alignItems": "center", "flexWrap": "wrap"},
-                                ),
-                                _html.Button(
-                                    "",
-                                    id={"type": "nb-plot-card-remove-btn", "index": plot_id},
-                                    n_clicks=0,
-                                    title="Remove plot card",
-                                    className="opview-image-close-btn",
-                                    style={
-                                        "width": "20px",
-                                        "height": "20px",
-                                        "padding": "0",
-                                    },
-                                ),
-                            ],
-                            style={
-                                "padding": "6px 10px",
-                                "background": "rgba(124,58,237,0.05)",
-                                "borderBottom": "1px solid rgba(124,58,237,0.12)",
-                                "display": "flex",
-                                "justifyContent": "space-between",
-                                "alignItems": "center",
-                                "gap": "8px",
-                            },
-                        ),
-                        _html.Div(
-                            [
-                                _html.Div("X", style={"fontSize": "11px", "fontWeight": "700",
-                                                      "color": "#475467", "whiteSpace": "nowrap"}),
-                                dcc.Dropdown(
-                                    id={"type": "nb-plot-card-x", "index": plot_id},
-                                    placeholder="x axis (opt.)",
-                                    options=options,
-                                    value=x_var,
-                                    clearable=True,
-                                    style={"fontSize": "12px", "flex": "1 1 90px", "minWidth": "84px"},
-                                ),
-                                _html.Div("Y", style={"fontSize": "11px", "fontWeight": "700",
-                                                      "color": "#475467", "whiteSpace": "nowrap"}),
-                                dcc.Dropdown(
-                                    id={"type": "nb-plot-card-y", "index": plot_id},
-                                    placeholder="y variable(s)",
-                                    options=options,
-                                    value=spec.get("y_vars") or [],
-                                    multi=True,
-                                    style={"fontSize": "12px", "flex": "2 1 120px", "minWidth": "100px"},
-                                ),
-                                dcc.Dropdown(
-                                    id={"type": "nb-plot-card-type", "index": plot_id},
-                                    options=[
-                                        {"label": "Lines", "value": "lines"},
-                                        {"label": "Markers", "value": "markers"},
-                                        {"label": "L+M", "value": "lines+markers"},
-                                        {"label": "Bar", "value": "bar"},
-                                        {"label": "Hist", "value": "histogram"},
-                                    ],
-                                    value=spec.get("plot_type") or "lines",
-                                    clearable=False,
-                                    style={"fontSize": "12px", "flex": "0 0 95px", "minWidth": "90px"},
-                                ),
-                            ],
-                            style={
-                                "display": "flex", "alignItems": "center", "flexWrap": "wrap",
-                                "gap": "6px", "padding": "10px", "borderBottom": "1px solid rgba(124,58,237,0.10)",
-                                "background": "rgba(248,250,252,0.7)",
-                            },
-                        ),
-                        _html.Div(
-                            [
-                                _html.Div("X label", style={"fontSize": "11px", "fontWeight": "700",
-                                                             "color": "#475467", "whiteSpace": "nowrap"}),
-                                dcc.Input(
-                                    id={"type": "nb-plot-card-xlabel", "index": plot_id},
-                                    type="text",
-                                    placeholder="X axis title…",
-                                    value=spec.get("x_title") or "",
-                                    debounce=True,
-                                    style={"fontSize": "12px", "flex": "1 1 100px", "minWidth": "80px",
-                                           "padding": "4px 8px", "borderRadius": "6px",
-                                           "border": "1px solid #e2e8f0", "outline": "none"},
-                                ),
-                                _html.Div("Y label", style={"fontSize": "11px", "fontWeight": "700",
-                                                             "color": "#475467", "whiteSpace": "nowrap",
-                                                             "marginLeft": "10px"}),
-                                dcc.Input(
-                                    id={"type": "nb-plot-card-ylabel", "index": plot_id},
-                                    type="text",
-                                    placeholder="Y axis title…",
-                                    value=spec.get("y_title") or "",
-                                    debounce=True,
-                                    style={"fontSize": "12px", "flex": "1 1 100px", "minWidth": "80px",
-                                           "padding": "4px 8px", "borderRadius": "6px",
-                                           "border": "1px solid #e2e8f0", "outline": "none"},
-                                ),
-                            ],
-                            style={
-                                "display": "flex", "alignItems": "center", "flexWrap": "wrap",
-                                "gap": "6px", "padding": "8px 10px",
-                                "borderBottom": "1px solid rgba(124,58,237,0.10)",
-                                "background": "rgba(248,250,252,0.4)",
-                            },
-                        ),
-                        dcc.Graph(
-                            id={"type": "nb-plot-card", "index": f"quick-{plot_id}"},
-                            figure=fig,
-                            config={
-                                "displayModeBar": True,
-                                "scrollZoom": True,
-                                "toImageButtonOptions": {
-                                    "format": "png", "filename": f"quick_plot_{idx}",
-                                    "height": 900, "width": 1400, "scale": 3,
-                                },
-                            },
-                            style={"height": "320px"},
-                        ),
-                    ],
-                    style={
-                        "border": "1px solid rgba(124,58,237,0.18)",
-                        "borderRadius": "8px",
-                        "marginBottom": "12px",
-                        "overflow": "hidden",
-                        "boxShadow": "0 2px 8px rgba(124,58,237,0.06)",
-                    },
-                ))
-            return cards
-
-        self._track_callback(render_quick_plots)
-
-        # ── Update dropdown options when notebook variables change (no re-render, no value change) ──
-        @self.app.callback(
-            Output({"type": "nb-plot-card-x", "index": ALL}, "options"),
-            Output({"type": "nb-plot-card-y", "index": ALL}, "options"),
-            Input("notebook-state", "data"),
-            State({"type": "nb-plot-card-x", "index": ALL}, "id"),
             prevent_initial_call=True,
         )
-        def update_quick_plot_options(notebook_state, x_ids):
+        def sync_plot_item_specs(x_values, y_values, type_values, title_values, xlabel_values, ylabel_values, x_ids, cells, notebook_state):
+            if not x_ids:
+                raise PreventUpdate
+            updated_cells = copy.deepcopy(cells or [default_notebook_cell()])
+            lookup = {cell.get("id"): cell for cell in updated_cells}
+            for i, id_dict in enumerate(x_ids):
+                cell_id = id_dict.get("index")
+                if cell_id not in lookup:
+                    continue
+                plot_cell = lookup[cell_id]
+                plot_cell["plot_spec"] = {
+                    "x_var": x_values[i] if i < len(x_values) else None,
+                    "y_vars": y_values[i] if i < len(y_values) and y_values[i] else [],
+                    "plot_type": type_values[i] if i < len(type_values) and type_values[i] else "lines",
+                    "title": title_values[i] if i < len(title_values) and title_values[i] else "",
+                    "x_title": xlabel_values[i] if i < len(xlabel_values) and xlabel_values[i] else "",
+                    "y_title": ylabel_values[i] if i < len(ylabel_values) and ylabel_values[i] else "",
+                }
+            nb_state = copy.deepcopy(notebook_state) if notebook_state else default_notebook_state()
+            nb_state["cells"] = updated_cells
+            return updated_cells, nb_state
+
+        self._track_callback(sync_plot_item_specs)
+
+        @self.app.callback(
+            Output({"type": "nb-plot-item-x", "index": ALL}, "options"),
+            Output({"type": "nb-plot-item-y", "index": ALL}, "options"),
+            Input("notebook-state", "data"),
+            State({"type": "nb-plot-item-x", "index": ALL}, "id"),
+            prevent_initial_call=True,
+        )
+        def update_plot_item_options(notebook_state, x_ids):
             if not x_ids:
                 raise PreventUpdate
             nb = notebook_state or {}
             array_vars = nb.get("array_variables", {})
-            options = [{"label": k, "value": k} for k in sorted(array_vars.keys())]
+            options = [{"label": key, "value": key} for key in sorted(array_vars.keys())]
             return [options] * len(x_ids), [options] * len(x_ids)
 
-        self._track_callback(update_quick_plot_options)
+        self._track_callback(update_plot_item_options)
 
-        # ── Update only figures when font/linewidth changes (no structural re-render) ──
         @self.app.callback(
-            Output({"type": "nb-plot-card", "index": ALL}, "figure"),
-            Input("nb-global-font-size", "value"),
-            Input("nb-global-line-width", "value"),
-            State("notebook-state", "data"),
-            State("nb-selector-specs", "data"),
-            State({"type": "nb-plot-card", "index": ALL}, "id"),
-            prevent_initial_call=True,
+            Output({"type": "nb-plot-item-graph", "index": ALL}, "figure"),
+            Input("notebook-state", "data"),
+            State("notebook-cells-store", "data"),
+            State({"type": "nb-plot-item-graph", "index": ALL}, "id"),
+            prevent_initial_call=False,
         )
-        def update_figures_on_settings(font_size, line_width, notebook_state, selector_specs, graph_ids):
+        def update_plot_item_figures(notebook_state, cells, graph_ids):
             if not graph_ids:
                 raise PreventUpdate
             nb = notebook_state or {}
-            notebook_specs = list(nb.get("plot_specs", []))
-            selector_specs = list(selector_specs or [])
             array_vars = nb.get("array_variables", {})
-            font_sz = int(font_size) if font_size else 14
-            lw = float(line_width) if line_width is not None else 2.0
-
-            valid_notebook_specs = [
-                (spec, True) for spec in notebook_specs
-                if any(v in array_vars for v in spec.get("y_vars", []))
-            ]
-            spec_by_quick_id = {spec.get("id"): spec for spec in selector_specs}
-
-            from dash import no_update as _nu
+            cell_lookup = {cell.get("id"): cell for cell in (cells or [])}
             figures = []
             for id_dict in graph_ids:
-                idx = id_dict.get("index")
-                if isinstance(idx, str) and idx.startswith("quick-"):
-                    plot_id = int(idx.split("-")[1])
-                    spec = spec_by_quick_id.get(plot_id)
-                    if spec and any(v in array_vars for v in spec.get("y_vars", [])):
-                        figures.append(self._build_plot_figure(spec, array_vars, font_sz, lw))
-                    else:
-                        figures.append(_nu)
-                else:
-                    i = int(idx) if idx is not None else -1
-                    if 0 <= i < len(valid_notebook_specs):
-                        spec, _ = valid_notebook_specs[i]
-                        figures.append(self._build_plot_figure(spec, array_vars, font_sz, lw))
-                    else:
-                        figures.append(_nu)
+                cell_id = id_dict.get("index")
+                plot_cell = cell_lookup.get(cell_id, {})
+                spec = plot_cell.get("plot_spec", {}) or {}
+                y_vars = [name for name in spec.get("y_vars", []) if name in array_vars]
+                if not y_vars:
+                    figures.append(self._build_plot_figure(
+                        {
+                            "x_var": spec.get("x_var"),
+                            "y_vars": [],
+                            "plot_type": spec.get("plot_type") or "lines",
+                            "title": spec.get("title"),
+                            "x_title": spec.get("x_title"),
+                            "y_title": spec.get("y_title"),
+                        },
+                        {},
+                        14,
+                        2.0,
+                    ))
+                    continue
+                plot_spec = {
+                    "x_var": spec.get("x_var"),
+                    "y_vars": y_vars,
+                    "plot_type": spec.get("plot_type") or "lines",
+                    "title": spec.get("title"),
+                    "x_title": spec.get("x_title"),
+                    "y_title": spec.get("y_title"),
+                }
+                figures.append(self._build_plot_figure(plot_spec, array_vars, 14, 2.0))
             return figures
 
-        self._track_callback(update_figures_on_settings)
+        self._track_callback(update_plot_item_figures)
+
+        @self.app.callback(
+            Output("notebook-cells-store", "data", allow_duplicate=True),
+            Output("notebook-state", "data", allow_duplicate=True),
+            Input("nb-item-order-input", "value"),
+            State("notebook-cells-store", "data"),
+            State("notebook-state", "data"),
+            prevent_initial_call=True,
+        )
+        def reorder_notebook_items(order_value, cells, notebook_state):
+            if not order_value:
+                raise PreventUpdate
+            try:
+                order = json.loads(order_value)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raise PreventUpdate
+            if not isinstance(order, list) or not order:
+                raise PreventUpdate
+            existing = list(cells or [default_notebook_cell()])
+            lookup = {cell.get("id"): cell for cell in existing}
+            ordered_cells = [lookup[cell_id] for cell_id in order if cell_id in lookup]
+            for cell in existing:
+                if cell.get("id") not in order:
+                    ordered_cells.append(cell)
+            nb_state = copy.deepcopy(notebook_state) if notebook_state else default_notebook_state()
+            nb_state["cells"] = ordered_cells
+            return ordered_cells, nb_state
+
+        self._track_callback(reorder_notebook_items)
+
+        @self.app.callback(
+            Output("notebook-cells-store", "data", allow_duplicate=True),
+            Output("notebook-state", "data", allow_duplicate=True),
+            Input("nb-item-width-input", "value"),
+            State("notebook-cells-store", "data"),
+            State("notebook-state", "data"),
+            prevent_initial_call=True,
+        )
+        def resize_notebook_item(width_value, cells, notebook_state):
+            if not width_value:
+                raise PreventUpdate
+            try:
+                payload = json.loads(width_value)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raise PreventUpdate
+            cell_id = payload.get("id")
+            width = payload.get("width")
+            print(f"[debug][notebook-resize] raw payload={payload}")
+            if not cell_id or width is None:
+                print(f"[debug][notebook-resize] skipping invalid payload cell_id={cell_id} width={width}")
+                raise PreventUpdate
+            updated_cells = copy.deepcopy(cells or [default_notebook_cell()])
+            for cell in updated_cells:
+                if cell.get("id") == cell_id:
+                    cell["panel_width"] = int(width)
+                    print(f"[debug][notebook-resize] updated cell={cell_id} panel_width={cell['panel_width']}")
+                    break
+            else:
+                print(f"[debug][notebook-resize] no cell found for cell_id={cell_id}")
+                raise PreventUpdate
+            nb_state = copy.deepcopy(notebook_state) if notebook_state else default_notebook_state()
+            nb_state["cells"] = updated_cells
+            print(f"[debug][notebook-resize] notebook state cell count={len(updated_cells)}")
+            return updated_cells, nb_state
+
+        self._track_callback(resize_notebook_item)
+
+        @self.app.callback(
+            Output("notebook-state", "data", allow_duplicate=True),
+            Input("nb-column-split-input", "value"),
+            State("notebook-state", "data"),
+            prevent_initial_call=True,
+        )
+        def resize_notebook_columns(split_value, notebook_state):
+            if not split_value:
+                raise PreventUpdate
+            try:
+                payload = json.loads(split_value)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raise PreventUpdate
+            left_pct = payload.get("left_pct")
+            print(f"[debug][notebook-column-split] raw payload={payload}")
+            if left_pct is None:
+                print("[debug][notebook-column-split] missing left_pct")
+                raise PreventUpdate
+            nb_state = copy.deepcopy(notebook_state) if notebook_state else default_notebook_state()
+            nb_state.setdefault("layout", {})
+            nb_state["layout"]["left_column_width_pct"] = int(left_pct)
+            print(f"[debug][notebook-column-split] saved left_column_width_pct={nb_state['layout']['left_column_width_pct']}")
+            return nb_state
+
+        self._track_callback(resize_notebook_columns)
+
+        @self.app.callback(
+            Output("notebook-cells-column-left", "style"),
+            Output("notebook-cells-column-right", "style"),
+            Input("notebook-state", "data"),
+            prevent_initial_call=True,
+        )
+        def sync_notebook_column_styles(notebook_state):
+            left_pct = max(12, min(88, int(((notebook_state or {}).get("layout") or {}).get("left_column_width_pct", 50))))
+            left_style = {"width": f"{left_pct}%", "minWidth": "0", "display": "flex", "flexDirection": "column"}
+            right_style = {"width": f"{100 - left_pct}%", "minWidth": "0", "display": "flex", "flexDirection": "column"}
+            print(f"[debug][notebook-column-split] apply left={left_style['width']} right={right_style['width']}")
+            return left_style, right_style
+
+        self._track_callback(sync_notebook_column_styles)
 
     def _register_save_load(self):
         """Save notebook to .json and load from .json or legacy .txt."""
@@ -1324,7 +1204,7 @@ class NotebookCallbackManager(BaseCallbackManager):
             if not save_sync:
                 raise PreventUpdate
             cells = save_sync.get("cells") or (notebook_state or {}).get("cells") or [default_notebook_cell()]
-            payload = serialize_notebook_cells(cells)
+            payload = serialize_notebook_cells(cells, (notebook_state or {}).get("layout"))
             return dcc.send_string(json.dumps(payload, indent=2), filename="notebook.json")
 
         self._track_callback(save_notebook)
@@ -1350,13 +1230,18 @@ class NotebookCallbackManager(BaseCallbackManager):
                     if isinstance(payload, dict) and "cells" in payload:
                         cells = []
                         for c in deserialize_notebook_cells(payload):
-                            cells.append({
+                            restored_cell = {
                                 "id": c.get("id") or new_cell_id(),
                                 "type": c.get("type", "code"),
+                                "column": c.get("column", "left"),
+                                "panel_width": c.get("panel_width"),
                                 "source": c.get("source", ""),
                                 "outputs": [],
                                 "dirty": False,
-                            })
+                            }
+                            if restored_cell["type"] == "plot":
+                                restored_cell["plot_spec"] = dict(c.get("plot_spec") or {})
+                            cells.append(restored_cell)
                     else:
                         cells = [default_cell(source=raw)]
                 except Exception:
@@ -1368,7 +1253,15 @@ class NotebookCallbackManager(BaseCallbackManager):
             if not cells:
                 cells = [default_notebook_cell()]
             new_state = default_notebook_state()
+            if filename and filename.endswith(".json"):
+                try:
+                    payload_layout = (payload or {}).get("layout") if isinstance(payload, dict) else None
+                    if isinstance(payload_layout, dict):
+                        new_state["layout"]["left_column_width_pct"] = int(payload_layout.get("left_column_width_pct", 50))
+                except Exception:
+                    print("[debug][notebook-load] failed to restore layout; using default split")
             new_state["cells"] = cells
+            print(f"[debug][notebook-load] restored left_column_width_pct={new_state['layout']['left_column_width_pct']}")
             return cells, new_state
 
         self._track_callback(load_notebook)

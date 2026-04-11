@@ -18,7 +18,7 @@ NOTEBOOK_ROWS = 4
 NOTEBOOK_LINE_HEIGHT = "34px"
 RESULTS_GUTTER_WIDTH = "440px"
 FUNCTIONS_CARD_WIDTH = "360px"
-NOTEBOOK_SHEET_WIDTH = "1280px"
+NOTEBOOK_SHEET_WIDTH = "100%"
 NOTEBOOK_ROW_COLOR_A = "#fefeff"
 NOTEBOOK_ROW_COLOR_B = "#f8fbfe"
 
@@ -1086,6 +1086,7 @@ def default_notebook_state() -> dict:
         "text": "",
         "variables": {},
         "array_variables": {},
+        "layout": {"left_column_width_pct": 50},
         "cells": [default_notebook_cell()],
     }
 
@@ -1098,14 +1099,26 @@ def new_cell_id() -> str:
 
 def default_cell(cell_type: str = "code", source: str = "") -> dict:
     """Return a new empty cell dict."""
-    return {
+    cell = {
         "id": new_cell_id(),
         "type": cell_type,
+        "column": "left",
+        "panel_width": None,
         "source": source,
         "outputs": [],
         "execution_blocks": [],
         "dirty": False,
     }
+    if cell_type == "plot":
+        cell["plot_spec"] = {
+            "x_var": None,
+            "y_vars": [],
+            "plot_type": "lines",
+            "title": "",
+            "x_title": "",
+            "y_title": "",
+        }
+    return cell
 
 
 def default_notebook_cell(source: str = "") -> dict:
@@ -1158,6 +1171,47 @@ def build_cell(cell: dict, cell_index: int, total_cells: int) -> html.Div:
     outputs = cell.get("outputs", [])
     dirty = cell.get("dirty", False)
     is_code_cell = cell_type == "code"
+    is_plot_cell = cell_type == "plot"
+    plot_spec = cell.get("plot_spec", {}) or {}
+    plot_title = plot_spec.get("title") or "Plot"
+    item_badge = "Plot" if is_plot_cell else "Markdown" if cell_type == "markdown" else "Code"
+    column_name = cell.get("column", "left")
+    panel_width = cell.get("panel_width")
+    def make_drag_handle():
+        return html.Span(
+            "::",
+            className="nb-item-drag-handle",
+            title="Drag to reorder",
+            style={
+                "display": "inline-flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "padding": "2px 6px",
+                "fontSize": "12px",
+                "fontWeight": "800",
+                "letterSpacing": "0.08em",
+                "color": "#64748b",
+                "cursor": "grab",
+                "userSelect": "none",
+            },
+        )
+
+    def make_resize_handle():
+        return html.Div(
+            className="nb-item-resize-handle",
+            title="Drag to resize",
+            style={
+                "position": "absolute",
+                "right": "4px",
+                "bottom": "4px",
+                "width": "14px",
+                "height": "14px",
+                "cursor": "ew-resize",
+                "background": "linear-gradient(135deg, transparent 0 40%, rgba(0,31,65,0.25) 40% 52%, transparent 52% 64%, rgba(0,31,65,0.18) 64% 76%, transparent 76% 100%)",
+                "borderRadius": "3px",
+                "zIndex": "3",
+            },
+        )
 
     # ── Left: editor ─────────────────────────────────────────────────────────
     editor_area = html.Div(
@@ -1270,6 +1324,197 @@ def build_cell(cell: dict, cell_index: int, total_cells: int) -> html.Div:
         style={"flex": "1", "minWidth": "0", "display": "flex", "flexDirection": "column", "position": "relative"},
     )
 
+    if is_plot_cell:
+        plot_controls = html.Div(
+            [
+                html.Div(
+                    [
+                        make_drag_handle(),
+                        html.Span(
+                            item_badge,
+                            style={
+                                "fontSize": "10px",
+                                "fontWeight": "700",
+                                "textTransform": "uppercase",
+                                "letterSpacing": "0.08em",
+                                "color": "#7c3aed",
+                                "background": "rgba(124,58,237,0.10)",
+                                "padding": "2px 6px",
+                                "borderRadius": "999px",
+                                "marginRight": "8px",
+                            },
+                        ),
+                        html.Span(
+                            plot_title,
+                            style={
+                                "fontSize": "12px",
+                                "fontWeight": "700",
+                                "color": "#334155",
+                            },
+                        ),
+                    ],
+                    style={"display": "flex", "alignItems": "center", "gap": "4px", "flexWrap": "wrap"},
+                ),
+                html.Div(
+                    [
+                        _cell_btn("↑", {"type": "nb-cell-up", "index": cell_id}, "secondary",
+                                  disabled=(cell_index == 0), title="Move item up"),
+                        _cell_btn("↓", {"type": "nb-cell-down", "index": cell_id}, "secondary",
+                                  disabled=(cell_index == total_cells - 1), title="Move item down"),
+                        _cell_btn("←", {"type": "nb-cell-move-left", "index": cell_id}, "secondary",
+                                  disabled=(column_name == "left"), title="Move to left column"),
+                        _cell_btn("→", {"type": "nb-cell-move-right", "index": cell_id}, "secondary",
+                                  disabled=(column_name == "right"), title="Move to right column"),
+                        _cell_btn("✕", {"type": "nb-cell-delete", "index": cell_id}, "danger", title="Delete plot"),
+                    ],
+                    style={"display": "flex", "alignItems": "center", "gap": "4px"},
+                ),
+            ],
+            style={
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "space-between",
+                "gap": "8px",
+                "padding": "8px 10px",
+                "borderBottom": "1px solid rgba(124,58,237,0.12)",
+                "background": "rgba(124,58,237,0.05)",
+            },
+        )
+        plot_editor = html.Div(
+            [
+                html.Div(
+                    [
+                        html.Div("Title", style={"fontSize": "11px", "fontWeight": "700", "color": "#475467"}),
+                        dcc.Input(
+                            id={"type": "nb-plot-item-title", "index": cell_id},
+                            type="text",
+                            value=plot_spec.get("title", ""),
+                            placeholder="Plot title",
+                            debounce=True,
+                            style={"fontSize": "12px", "padding": "4px 8px", "borderRadius": "6px", "border": "1px solid #d1dce8", "width": "100%"},
+                        ),
+                    ],
+                    style={"display": "grid", "gap": "4px", "flex": "1 1 180px", "minWidth": "0"},
+                ),
+                html.Div(
+                    [
+                        html.Div("X", style={"fontSize": "11px", "fontWeight": "700", "color": "#475467"}),
+                        dcc.Dropdown(
+                            id={"type": "nb-plot-item-x", "index": cell_id},
+                            options=[],
+                            value=plot_spec.get("x_var"),
+                            placeholder="x variable (optional)",
+                            clearable=True,
+                            style={"fontSize": "12px"},
+                        ),
+                    ],
+                    style={"display": "grid", "gap": "4px", "flex": "1 1 140px", "minWidth": "0"},
+                ),
+                html.Div(
+                    [
+                        html.Div("Y", style={"fontSize": "11px", "fontWeight": "700", "color": "#475467"}),
+                        dcc.Dropdown(
+                            id={"type": "nb-plot-item-y", "index": cell_id},
+                            options=[],
+                            value=plot_spec.get("y_vars") or [],
+                            placeholder="y variable(s)",
+                            multi=True,
+                            style={"fontSize": "12px"},
+                        ),
+                    ],
+                    style={"display": "grid", "gap": "4px", "flex": "2 1 180px", "minWidth": "0"},
+                ),
+                html.Div(
+                    [
+                        html.Div("Type", style={"fontSize": "11px", "fontWeight": "700", "color": "#475467"}),
+                        dcc.Dropdown(
+                            id={"type": "nb-plot-item-type", "index": cell_id},
+                            options=[
+                                {"label": "Lines", "value": "lines"},
+                                {"label": "Markers", "value": "markers"},
+                                {"label": "Lines + Markers", "value": "lines+markers"},
+                                {"label": "Bar", "value": "bar"},
+                                {"label": "Histogram", "value": "histogram"},
+                            ],
+                            value=plot_spec.get("plot_type") or "lines",
+                            clearable=False,
+                            style={"fontSize": "12px"},
+                        ),
+                    ],
+                    style={"display": "grid", "gap": "4px", "flex": "1 1 140px", "minWidth": "0"},
+                ),
+                html.Div(
+                    [
+                        html.Div("X Label", style={"fontSize": "11px", "fontWeight": "700", "color": "#475467"}),
+                        dcc.Input(
+                            id={"type": "nb-plot-item-xlabel", "index": cell_id},
+                            type="text",
+                            value=plot_spec.get("x_title", ""),
+                            placeholder="x axis label",
+                            debounce=True,
+                            style={"fontSize": "12px", "padding": "4px 8px", "borderRadius": "6px", "border": "1px solid #d1dce8", "width": "100%"},
+                        ),
+                    ],
+                    style={"display": "grid", "gap": "4px", "flex": "1 1 150px", "minWidth": "0"},
+                ),
+                html.Div(
+                    [
+                        html.Div("Y Label", style={"fontSize": "11px", "fontWeight": "700", "color": "#475467"}),
+                        dcc.Input(
+                            id={"type": "nb-plot-item-ylabel", "index": cell_id},
+                            type="text",
+                            value=plot_spec.get("y_title", ""),
+                            placeholder="y axis label",
+                            debounce=True,
+                            style={"fontSize": "12px", "padding": "4px 8px", "borderRadius": "6px", "border": "1px solid #d1dce8", "width": "100%"},
+                        ),
+                    ],
+                    style={"display": "grid", "gap": "4px", "flex": "1 1 150px", "minWidth": "0"},
+                ),
+            ],
+            style={
+                "display": "flex",
+                "alignItems": "stretch",
+                "gap": "8px",
+                "flexWrap": "wrap",
+                "minWidth": "0",
+                "padding": "10px",
+                "borderBottom": "1px solid rgba(124,58,237,0.10)",
+                "background": "rgba(248,250,252,0.65)",
+            },
+        )
+        plot_graph = dcc.Graph(
+            id={"type": "nb-plot-item-graph", "index": cell_id},
+            figure=_empty_nb_figure(),
+            config={"displayModeBar": True, "scrollZoom": True},
+            style={"height": "320px"},
+        )
+        return html.Div(
+            [
+                plot_controls,
+                plot_editor,
+                plot_graph,
+                make_resize_handle(),
+            ],
+            id=f"nb-cell-wrapper-{cell_id}",
+            className="nb-notebook-item nb-plot-item-card",
+            draggable="true",
+            **{"data-item-id": cell_id},
+            style={
+                "border": "1px solid rgba(124,58,237,0.18)",
+                "borderRadius": "8px",
+                "marginBottom": "10px",
+                "background": "#ffffff",
+                "boxShadow": "0 1px 4px rgba(15,23,42,0.04)",
+                "overflow": "hidden",
+                "minWidth": "360px",
+                "width": f"{int(panel_width)}px" if panel_width else "auto",
+                "maxWidth": "100%",
+                "boxSizing": "border-box",
+                "position": "relative",
+            },
+        )
+
     # ── Right: results (code cells) or nothing (markdown cells) ──────────────
     if cell_type == "code":
         results_area = html.Div(
@@ -1313,6 +1558,7 @@ def build_cell(cell: dict, cell_index: int, total_cells: int) -> html.Div:
         run_btn = _cell_btn("▶ Run", {"type": "nb-cell-run", "index": cell_id}, "primary", title="Shift+Enter")
         controls = html.Div(
             [
+                make_drag_handle(),
                 stale_badge,
                 html.Div(style={"flex": "1"}),
                 run_btn,
@@ -1320,6 +1566,10 @@ def build_cell(cell: dict, cell_index: int, total_cells: int) -> html.Div:
                           disabled=(cell_index == 0), title="Move cell up"),
                 _cell_btn("↓", {"type": "nb-cell-down", "index": cell_id}, "secondary",
                           disabled=(cell_index == total_cells - 1), title="Move cell down"),
+                _cell_btn("←", {"type": "nb-cell-move-left", "index": cell_id}, "secondary",
+                          disabled=(column_name == "left"), title="Move to left column"),
+                _cell_btn("→", {"type": "nb-cell-move-right", "index": cell_id}, "secondary",
+                          disabled=(column_name == "right"), title="Move to right column"),
                 html.Div(style={"width": "1px", "background": "rgba(148,163,184,0.3)",
                                 "alignSelf": "stretch", "margin": "0 2px"}),
                 _cell_btn("✕", {"type": "nb-cell-delete", "index": cell_id}, "danger", title="Delete cell"),
@@ -1338,13 +1588,30 @@ def build_cell(cell: dict, cell_index: int, total_cells: int) -> html.Div:
     return html.Div(
         [
             html.Div(
+                make_drag_handle(),
+                style={
+                    "display": "flex" if not is_code_cell else "none",
+                    "position": "absolute",
+                    "top": "6px",
+                    "left": "6px",
+                    "zIndex": "2",
+                    "background": "rgba(255,255,255,0.92)",
+                    "border": "1px solid rgba(148,163,184,0.22)",
+                    "borderRadius": "999px",
+                    "boxShadow": "0 2px 10px rgba(15,23,42,0.06)",
+                },
+            ),
+            html.Div(
                 [editor_area, results_area] if is_code_cell else [editor_area],
                 style={"display": "flex", "alignItems": "stretch", "minHeight": "34px"},
             ),
             controls,
+            make_resize_handle(),
         ],
         id=f"nb-cell-wrapper-{cell_id}",
-        className="nb-markdown-cell" if not is_code_cell else None,
+        className="nb-notebook-item nb-markdown-cell" if not is_code_cell else "nb-notebook-item",
+        draggable="true",
+        **{"data-item-id": cell_id},
         style={
             "border": "1px solid rgba(100,116,139,0.18)" if is_code_cell else "none",
             "borderLeft": "none",
@@ -1352,7 +1619,12 @@ def build_cell(cell: dict, cell_index: int, total_cells: int) -> html.Div:
             "marginBottom": "10px" if is_code_cell else "2px",
             "background": "#ffffff" if is_code_cell else "transparent",
             "boxShadow": "0 1px 4px rgba(15,23,42,0.04)" if is_code_cell else "none",
-            "overflow": "visible",
+            "overflow": "hidden",
+            "minWidth": "360px" if is_code_cell else "320px",
+            "width": f"{int(panel_width)}px" if panel_width else "auto",
+            "maxWidth": "100%",
+            "boxSizing": "border-box",
+            "position": "relative",
         },
     )
 
@@ -1454,6 +1726,7 @@ def _build_cell_inserter(after_cell_id: str) -> html.Div:
         [
             _cell_btn("+ Code",     {"type": "nb-add-code",     "index": after_cell_id}, "add",  title="Add code cell below"),
             _cell_btn("+ Markdown", {"type": "nb-add-markdown", "index": after_cell_id}, "md",   title="Add markdown cell below"),
+            _cell_btn("+ Plot", {"type": "nb-add-plot", "index": after_cell_id}, "add", title="Add plot cell below"),
         ],
         className="nb-cell-inserter",
         style={"display": "flex", "alignItems": "center", "justifyContent": "center", "gap": "4px", "padding": "1px 2px"},
@@ -1468,6 +1741,12 @@ def build_cells_container(cells: list) -> list:
         items.append(build_cell(cell, i, total))
         items.append(_build_cell_inserter(cell["id"]))
     return items
+
+
+def build_cells_for_column(cells: list, column: str) -> list:
+    """Build items for a single notebook column."""
+    column_cells = [cell for cell in cells if cell.get("column", "left") == column]
+    return build_cells_container(column_cells)
 
 
 def build_notebook_results(
@@ -1777,8 +2056,12 @@ def build_notebook_sidebar_controls(cells: list) -> html.Div:
         dcc.Store(id="notebook-cells-store", data=cells),
         dcc.Store(id="nb-op-sync", data=None),
         dcc.Store(id="nb-cell-run-trigger", data=None),
+        dcc.Store(id="nb-item-order", data=[]),
         dcc.Store(id="notebook-fn-dummy"),
         dcc.Input(id="notebook-auto-update-state", type="hidden", value="on"),
+        dcc.Input(id="nb-item-order-input", type="hidden", value=""),
+        dcc.Input(id="nb-item-width-input", type="hidden", value=""),
+        dcc.Input(id="nb-column-split-input", type="hidden", value=""),
 
         # ── Examples ──────────────────────────────────────────────────────────
         html.Span("EXAMPLES", className="sidebar-projects-title"),
@@ -1848,9 +2131,8 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
     """Build the calculation notebook tab content."""
     state = state or default_notebook_state()
     text = state.get("text", "")
-    array_vars = state.get("array_variables", {})
-    arr_options = [{"label": k, "value": k} for k in sorted(array_vars)]
     cells = state.get("cells") or [default_notebook_cell()]
+    left_column_width_pct = max(12, min(88, int((state.get("layout") or {}).get("left_column_width_pct", 50))))
 
     return html.Div(
         [
@@ -1946,104 +2228,44 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
             dcc.Textarea(id="notebook-run-text",  value=text, style={"display": "none"}),
             html.Div(id="notebook-results",       style={"display": "none"}),
             html.Div(id="notebook-vim-statusbar", style={"display": "none"}),
-            # ── main row: cells + side plot ──────────────────────────────────
-            html.Div(
-                [
-            # ── cells column ─────────────────────────────────────────────────
+            # ── main notebook stack ──────────────────────────────────────────
             html.Div(
                 [
                     html.Div(
-                        build_cells_container(cells),
-                        id="notebook-cells-container",
-                        style={"width": "100%"},
+                        build_cells_for_column(cells, "left"),
+                        id="notebook-cells-column-left",
+                        style={"width": f"{left_column_width_pct}%", "minWidth": "0", "display": "flex", "flexDirection": "column"},
+                    ),
+                    html.Div(
+                        id="notebook-columns-splitter",
+                        style={
+                            "width": "10px",
+                            "minWidth": "10px",
+                            "alignSelf": "stretch",
+                            "cursor": "col-resize",
+                            "borderRadius": "8px",
+                            "background": "linear-gradient(180deg, rgba(226,232,240,0.2) 0%, rgba(148,163,184,0.5) 45%, rgba(148,163,184,0.5) 55%, rgba(226,232,240,0.2) 100%)",
+                            "boxShadow": "inset 0 0 0 1px rgba(148,163,184,0.22)",
+                        },
+                    ),
+                    html.Div(
+                        build_cells_for_column(cells, "right"),
+                        id="notebook-cells-column-right",
+                        style={"width": f"{100 - left_column_width_pct}%", "minWidth": "0", "display": "flex", "flexDirection": "column"},
                     ),
                 ],
+                id="notebook-columns-layout",
                 style={
-                    "flex": "1 1 auto",
                     "minWidth": f"calc({RESULTS_GUTTER_WIDTH} + 300px)",
                     "maxWidth": NOTEBOOK_SHEET_WIDTH,
                     "padding": "14px",
                     "overflowY": "visible",
                     "display": "flex",
-                    "flexDirection": "column",
-                },
-            ),
-            # ── plots panel ──────────────────────────────────────────────────
-            html.Div(
-                [
-                    # panel header: title + global controls
-                    html.Div(
-                        [
-                            html.Span("Plots", style={"fontSize": "12px", "fontWeight": "700",
-                                                       "textTransform": "uppercase", "letterSpacing": "0.08em",
-                                                       "color": "#475467"}),
-                            html.Span("Call plot(x, y) in the notebook",
-                                      style={"fontSize": "11px", "color": "#94a3b8", "marginLeft": "10px"}),
-                            html.Div(style={"flex": "1"}),
-                            html.Div("Font", style={"fontSize": "11px", "fontWeight": "700",
-                                                     "color": "#475467", "alignSelf": "center",
-                                                     "marginRight": "4px"}),
-                            dcc.Input(
-                                id="nb-global-font-size",
-                                type="number", value=14, min=8, max=28, step=1,
-                                style={"fontSize": "12px", "width": "50px", "padding": "3px 5px",
-                                       "border": "1px solid rgba(100,116,139,0.35)", "borderRadius": "6px",
-                                       "marginRight": "10px",
-                                       "fontFamily": "'Inter','Segoe UI',system-ui,sans-serif"},
-                            ),
-                            html.Div("Line W", style={"fontSize": "11px", "fontWeight": "700",
-                                                       "color": "#475467", "alignSelf": "center",
-                                                       "marginRight": "4px"}),
-                            dcc.Input(
-                                id="nb-global-line-width",
-                                type="number", value=2, min=0.5, max=8, step=0.5,
-                                style={"fontSize": "12px", "width": "50px", "padding": "3px 5px",
-                                       "border": "1px solid rgba(100,116,139,0.35)", "borderRadius": "6px",
-                                       "fontFamily": "'Inter','Segoe UI',system-ui,sans-serif"},
-                            ),
-                        ],
-                        style={"display": "flex", "alignItems": "center", "flexWrap": "wrap",
-                               "gap": "4px", "borderBottom": "1px solid rgba(100,116,139,0.12)",
-                               "paddingBottom": "10px", "marginBottom": "10px"},
-                    ),
-                    # notebook-driven plots (from plot() calls) — updated by notebook-state
-                    html.Div(id="notebook-auto-plots", style={"flex": "0 0 auto"}),
-                    # quick plots (user-created) — updated by selector-specs only
-                    html.Div(id="notebook-plots-panel", style={"overflow": "visible", "flex": "0 0 auto"}),
-                    html.Button(
-                        "+ New Plot",
-                        id="nb-plot-new-btn",
-                        n_clicks=0,
-                        style={
-                            "fontSize": "13px", "padding": "8px 12px",
-                            "background": "rgba(124,58,237,0.08)",
-                            "border": "1px solid rgba(124,58,237,0.24)",
-                            "borderRadius": "8px", "cursor": "pointer",
-                            "color": "#6d28d9", "fontWeight": "700",
-                            "marginTop": "10px", "whiteSpace": "nowrap",
-                        },
-                    ),
-                ],
-                style={
-                    "flex": "1 1 420px",
-                    "minWidth": "420px",
-                    "padding": "14px 16px",
-                    "display": "flex",
-                    "flexDirection": "column",
-                    "background": "#ffffff",
-                    "border": "1px solid rgba(100,116,139,0.18)",
-                    "boxShadow": "0 4px 6px rgba(15,23,42,0.04), 0 10px 28px rgba(15,23,42,0.06)",
-                },
-            ),
-                ],  # end flex row children
-                style={
-                    "display": "flex",
                     "alignItems": "flex-start",
-                    "flexWrap": "wrap",
-                    "gap": "14px",
+                    "gap": "10px",
                     "width": "100%",
                 },
-            ),  # end flex row
+            ),
             # ── floating functions reference overlay ─────────────────────────
             build_fn_overlay(),
             build_markdown_help_overlay(),
