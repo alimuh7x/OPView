@@ -270,6 +270,12 @@ body {
     padding: 0;
     flex: 1;
     min-width: 0;
+    /* Many tabs exist (Single View, Multi View, Custom Graph, etc.).
+       Allow horizontal scrolling so tabs don't become unreachable when they overflow. */
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable both-edges;
 }
 
 .vtk-tab {
