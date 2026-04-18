@@ -11,7 +11,6 @@ from ui.calculation_notebook import build_calculation_notebook, build_notebook_s
 from ui.initializations_explorer import build_initializations_explorer, METHOD_OPTIONS
 from ui.mechanical_loads_explorer import build_mechanical_loads_explorer, MECHANICAL_LOAD_PRESET_OPTIONS
 from ui.floating_chat import build_floating_chat
-from ui.design_showcase import build_design_showcase
 
 
 def build_app_layout(
@@ -159,12 +158,6 @@ def build_app_layout(
                             dcc.Tab(
                                 label='Mechanical Loads Explorer',
                                 value='mechanical-loads-explorer',
-                                className='vtk-tab',
-                                selected_className='vtk-tab--selected'
-                            ),
-                            dcc.Tab(
-                                label='Design Showcase',
-                                value='design-showcase',
                                 className='vtk-tab',
                                 selected_className='vtk-tab--selected'
                             ),
@@ -388,11 +381,6 @@ def build_app_layout(
                         html.Div(
                             id='mechanical-loads-content',
                             children=[build_mechanical_loads_explorer()],
-                            style={'display': 'none'}
-                        ),
-                        html.Div(
-                            id='design-showcase-content',
-                            children=[build_design_showcase()],
                             style={'display': 'none'}
                         ),
                     ], className='main-panel')

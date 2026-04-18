@@ -381,6 +381,8 @@ class NotebookCallbackManager(BaseCallbackManager):
             trigger = op_sync.get("trigger", "") or ""
             sources = op_sync.get("sources", {}) or {}
             cells = _copy.deepcopy(cells or [default_notebook_cell()])
+            print(f"[debug][notebook] handle_structural_op:enter trigger={trigger!r}", flush=True)
+            print(f"[debug][notebook] handle_structural_op:enter cells_in={len(cells)} sources={len(sources)}", flush=True)
 
             # Apply latest Monaco sources to cells
             for cell in cells:
@@ -392,6 +394,7 @@ class NotebookCallbackManager(BaseCallbackManager):
             # trigger format: '{"index":"cell-xxx","type":"nb-add-code"}.n_clicks'
             action = None
             target_cell_id = None
+            target_column = None
 
             if '"type":"nb-add-code"' in trigger or '"type": "nb-add-code"' in trigger:
                 action = "add-code"
@@ -419,6 +422,13 @@ class NotebookCallbackManager(BaseCallbackManager):
             m = _re.search(r'"index"\s*:\s*"([^"]+)"', trigger)
             if m:
                 target_cell_id = m.group(1)
+            print(f"[debug][notebook] handle_structural_op:parsed action={action!r} target_cell_id_raw={target_cell_id!r}", flush=True)
+
+            # Normalise column-scoped start inserters from the UI (e.g. "__start__:left")
+            if target_cell_id and target_cell_id.startswith("__start__:"):
+                target_column = target_cell_id.split(":", 1)[1] or None
+                target_cell_id = "__start__"
+            print(f"[debug][notebook] handle_structural_op:normalised target_cell_id={target_cell_id!r} target_column={target_column!r}", flush=True)
 
             if action == "clear":
                 new_cells = [default_notebook_cell()]
@@ -456,16 +466,27 @@ class NotebookCallbackManager(BaseCallbackManager):
             if action in ("add-code", "add-markdown", "add-plot") and target_cell_id == "__start__":
                 cell_type = "code" if action == "add-code" else "markdown" if action == "add-markdown" else "plot"
                 new_c = default_cell(cell_type=cell_type)
+                if target_column in ("left", "right"):
+                    new_c["column"] = target_column
+                print(f"[debug][notebook] add_at_start column={new_c.get('column')!r}", flush=True)
                 cells.insert(0, new_c)
+                print(f"[debug][notebook] add_at_start cells_out={len(cells)}", flush=True)
 
             elif action in ("add-code", "add-markdown", "add-plot") and target_cell_id:
                 cell_type = "code" if action == "add-code" else "markdown" if action == "add-markdown" else "plot"
                 new_c = default_cell(cell_type=cell_type)
                 try:
                     idx = cell_ids.index(target_cell_id)
+                    try:
+                        new_c["column"] = cells[idx].get("column", "left")
+                    except Exception:
+                        pass
+                    print(f"[debug][notebook] add_after target={target_cell_id!r} idx={idx} column={new_c.get('column')!r}", flush=True)
                     cells.insert(idx + 1, new_c)
                 except ValueError:
+                    print(f"[debug][notebook] add_after:not_found target={target_cell_id!r} appending", flush=True)
                     cells.append(new_c)
+                print(f"[debug][notebook] add_after cells_out={len(cells)}", flush=True)
 
             elif action == "delete" and target_cell_id:
                 cells = [c for c in cells if c["id"] != target_cell_id]

@@ -1733,10 +1733,10 @@ def _build_cell_inserter(after_cell_id: str) -> html.Div:
     )
 
 
-def build_cells_container(cells: list) -> list:
+def build_cells_container(cells: list, start_inserter_index: str = "__start__") -> list:
     """Build the full list of cell HTML elements, with inserter strips between them."""
     total = len(cells)
-    items = [_build_cell_inserter("__start__")]
+    items = [_build_cell_inserter(start_inserter_index)]
     for i, cell in enumerate(cells):
         items.append(build_cell(cell, i, total))
         items.append(_build_cell_inserter(cell["id"]))
@@ -1746,7 +1746,8 @@ def build_cells_container(cells: list) -> list:
 def build_cells_for_column(cells: list, column: str) -> list:
     """Build items for a single notebook column."""
     column_cells = [cell for cell in cells if cell.get("column", "left") == column]
-    return build_cells_container(column_cells)
+    # Avoid DuplicateIdError: each column needs its own unique "__start__" inserter id.
+    return build_cells_container(column_cells, start_inserter_index=f"__start__:{column}")
 
 
 def build_notebook_results(
