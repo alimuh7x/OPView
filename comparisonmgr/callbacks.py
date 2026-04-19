@@ -22,6 +22,7 @@ from .helpers import (
     _comparison_entries,
     list_vtk_files,
     _group_comparison_entries,
+    comparison_handle_range_slider_change,
 )
 from .ui_builders import build_comparison_heatmap_row
 
@@ -487,20 +488,26 @@ def register_comparison_callbacks(app):
     def _update_comparison_range(reset_clicks, clicks, slider_values, selected_paths, field, input_min, input_max, files, store_data, rows_id, full_scale_checked, controls_store):
         """Handle range updates from reset, graph clicks, slider, file selection, or scalar change."""
         group = rows_id.get('group') if isinstance(rows_id, dict) else None
+        print(f"[debug][comparison-range] _update_comparison_range: group={group} triggered_id={ctx.triggered_id} field={field} input_min={input_min} input_max={input_max} slider_values={slider_values} full_scale_checked={full_scale_checked}", flush=True)
         group_entries = _comparison_entries_from_selected(selected_paths)
+        print(f"[debug][comparison-range] group_entries count={len(group_entries or [])}", flush=True)
         panels = get_comparison_panels(group_entries)
+        print(f"[debug][comparison-range] panels keys={list(panels.keys()) if isinstance(panels, dict) else type(panels)}", flush=True)
         panels_for_group = {
             entry.get('path'): panels.get(entry.get('path'))
             for entry in group_entries
             if entry and entry.get('path') in panels
         }
+        print(f"[debug][comparison-range] panels_for_group count={len(panels_for_group)}", flush=True)
         default_lo, default_hi = (None, None)
         if panels_for_group and field:
             default_lo, default_hi = _comparison_range_defaults(panels_for_group, field)
+        print(f"[debug][comparison-range] default_lo={default_lo} default_hi={default_hi}", flush=True)
 
         triggered = ctx.triggered_id
         if isinstance(triggered, dict):
             t_type = triggered.get('type')
+            print(f"[debug][comparison-range] triggered type={t_type}", flush=True)
             if t_type in ('comparison-selected-files-store', 'comparison-heatmap-reset', 'comparison-heatmap-field'):
                 if not panels_for_group:
                     raise PreventUpdate
@@ -591,23 +598,16 @@ def register_comparison_callbacks(app):
             )
 
         if isinstance(triggered, dict) and triggered.get('type') == 'comparison-heatmap-range-slider':
-            if not slider_values or len(slider_values) != 2:
-                raise PreventUpdate
-            try:
-                lo = float(slider_values[0])
-                hi = float(slider_values[1])
-            except (TypeError, ValueError):
-                raise PreventUpdate
-            lo, hi = sorted([lo, hi])
-            return (
-                lo,
-                hi,
-                {'click_count': 0, 'first_click': None},
-                [lo, hi],
-                default_lo if default_lo is not None else lo,
-                default_hi if default_hi is not None else hi,
-                False,
+            out = comparison_handle_range_slider_change(
+                slider_values=slider_values,
+                default_lo=default_lo,
+                default_hi=default_hi,
+                full_scale_checked=full_scale_checked,
             )
+            print(f"[debug][comparison-range] slider branch out={out}", flush=True)
+            if out is None:
+                raise PreventUpdate
+            return out
 
         raise PreventUpdate
 

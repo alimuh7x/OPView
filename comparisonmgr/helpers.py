@@ -63,6 +63,46 @@ def _comparison_group_name(file_name: str) -> str:
     return file_name.split('.', 1)[0]
 
 
+def comparison_handle_range_slider_change(slider_values, default_lo, default_hi, full_scale_checked):
+    """Pure helper for comparison heatmap range slider changes.
+
+    Returns the tuple matching `_update_comparison_range` outputs:
+    (range_min, range_max, range_selection_store, slider_value, slider_min, slider_max, full_scale_checked)
+    """
+    print(f"[debug][comparison-range] slider change inputs: slider_values={slider_values} default_lo={default_lo} default_hi={default_hi} full_scale_checked={full_scale_checked}", flush=True)
+    if not slider_values or len(slider_values) != 2:
+        print(f"[debug][comparison-range] slider change invalid slider_values -> PreventUpdate-like", flush=True)
+        return None
+    try:
+        lo = float(slider_values[0])
+        print(f"[debug][comparison-range] slider change parsed lo={lo}", flush=True)
+        hi = float(slider_values[1])
+        print(f"[debug][comparison-range] slider change parsed hi={hi}", flush=True)
+    except (TypeError, ValueError) as e:
+        print(f"[debug][comparison-range] slider change parse error: {e!r} slider_values={slider_values}", flush=True)
+        return None
+    lo, hi = sorted([lo, hi])
+    print(f"[debug][comparison-range] slider change sorted range: lo={lo} hi={hi}", flush=True)
+    slider_min = default_lo if default_lo is not None else lo
+    print(f"[debug][comparison-range] slider change slider_min={slider_min}", flush=True)
+    slider_max = default_hi if default_hi is not None else hi
+    print(f"[debug][comparison-range] slider change slider_max={slider_max}", flush=True)
+    # IMPORTANT: do not force full_scale off just because the slider moved; preserve last state.
+    full_scale_out = bool(full_scale_checked)
+    print(f"[debug][comparison-range] slider change full_scale_out={full_scale_out}", flush=True)
+    out = (
+        lo,
+        hi,
+        {'click_count': 0, 'first_click': None},
+        [lo, hi],
+        slider_min,
+        slider_max,
+        full_scale_out,
+    )
+    print(f"[debug][comparison-range] slider change outputs: {out}", flush=True)
+    return out
+
+
 def _group_comparison_files(file_names):
     grouped = {}
     for file_name in sorted(set(file_names or [])):
