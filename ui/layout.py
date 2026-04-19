@@ -7,9 +7,6 @@ Extracted from OPView.py Phase 11 - provides the main application layout.
 from dash import html, dcc
 import dash_mantine_components as dmc
 from config import TAB_CONFIGS
-from ui.calculation_notebook import build_calculation_notebook, build_notebook_sidebar_controls, default_notebook_state
-from ui.initializations_explorer import build_initializations_explorer, METHOD_OPTIONS
-from ui.mechanical_loads_explorer import build_mechanical_loads_explorer, MECHANICAL_LOAD_PRESET_OPTIONS
 from ui.floating_chat import build_floating_chat
 
 
@@ -45,7 +42,6 @@ def build_app_layout(
     import time
     _layout_start = time.time()
     print(f"    [layout] Starting layout build...")
-    initial_notebook_state = default_notebook_state()
 
     result = dmc.MantineProvider(
         html.Div(
@@ -74,14 +70,6 @@ def build_app_layout(
                 dcc.Store(id='selected-project-folder', data=None),
                 dcc.Store(id='projects-store', data={'names': [], 'active': None, 'files_by_project': {}}, storage_type='session'),
                 dcc.Store(id='graphs-multifile-panels', data={}),  # Graph panels state (memory - resets on refresh)
-                dcc.Store(id='formula-panels', data={}),  # Formula panels state (memory - resets on refresh)
-                dcc.Store(id='notebook-state', data=initial_notebook_state),
-                dcc.Store(id='nb-selector-specs', data=[{
-                    'id': 0, 'x_var': None, 'y_vars': [], 'plot_type': 'lines',
-                    'title': None, 'x_title': None, 'y_title': None,
-                }]),
-                # Exposes notebook variable names to JS autocomplete
-                dcc.Input(id='notebook-vars-for-js', type='hidden', value=''),
                 dcc.Location(id='url', refresh=False),
                 html.Div([
                     html.Div([
@@ -134,30 +122,6 @@ def build_app_layout(
                             dcc.Tab(
                                 label='Custom Graph',
                                 value='custom-graph',
-                                className='vtk-tab',
-                                selected_className='vtk-tab--selected'
-                            ),
-                            dcc.Tab(
-                                label='Formula Plot',
-                                value='formula-plot',
-                                className='vtk-tab',
-                                selected_className='vtk-tab--selected'
-                            ),
-                            dcc.Tab(
-                                label='Calculation Notebook',
-                                value='calculation-notebook',
-                                className='vtk-tab',
-                                selected_className='vtk-tab--selected'
-                            ),
-                            dcc.Tab(
-                                label='Initializations Explorer',
-                                value='initializations-explorer',
-                                className='vtk-tab',
-                                selected_className='vtk-tab--selected'
-                            ),
-                            dcc.Tab(
-                                label='Mechanical Loads Explorer',
-                                value='mechanical-loads-explorer',
                                 className='vtk-tab',
                                 selected_className='vtk-tab--selected'
                             ),
@@ -216,100 +180,82 @@ def build_app_layout(
                             ], className='sidebar-add-project-container'),
                         ], id='sidebar-projects-section', className='sidebar-projects-section'),
 
-                        # Panel Selection - Dynamic Tab Selection (Panel-Based Auto-Detection System)
-                        html.Div([
-                            html.Span("ADD PANEL", className='sidebar-title'),
-                            dcc.Dropdown(
-                                id='panel-selector-dropdown',  # NEW ID for panel-based system
-                                options=[],  # Populated dynamically by callback based on detected datasets
-                                placeholder="Select a data type",
-                                className='panel-selector-dropdown',
-                                clearable=True,   # Allow clearing selection
-                                searchable=True   # Enable search for many options
-                            ),
-                            # Detection status indicator
-                            html.Div(
-                                id='detection-status',
-                                children=[
-                                    html.Span("No project loaded", className='detection-status-text')
-                                ],
-                                className='detection-status',
-                                style={'marginTop': '8px', 'fontSize': '0.85em', 'color': '#888'}
-                            ),
-                            # Dynamic tab headers (vertical list in sidebar)
-                            html.Div(
-                                id='dynamic-tab-headers',
-                                children=[],  # Empty initially
-                                className='sidebar-tab-headers'
-                            )
-                        ], id='sidebar-panel-selector', className='sidebar-panel-selector'),
-
-                        # Multi View Panel Selection - separate from Single View
-                        html.Div([
-                            html.Span("ADD PANEL", className='sidebar-title'),
-                            dcc.Dropdown(
-                                id='comparison-panel-selector-dropdown',
-                                options=[],  # Populated dynamically by callback based on detected datasets
-                                placeholder="Select a data type to compare...",
-                                className='panel-selector-dropdown',
-                                clearable=True,
-                                searchable=True
-                            ),
-                            html.Div(
-                                id='comparison-detection-status',
-                                children=[
-                                    html.Span("No project loaded", className='detection-status-text')
-                                ],
-                                className='detection-status',
-                                style={'marginTop': '8px', 'fontSize': '0.85em', 'color': '#888'}
-                            ),
-                            html.Div(
-                                id='comparison-tab-headers',
-                                children=[],  # Empty initially
-                                className='sidebar-tab-headers'
-                            )
-                        ], id='sidebar-comparison-panel-selector', className='sidebar-panel-selector', style={'display': 'none'}),
-
                         # Graphs Section - REMOVED (Phase 18 - Two-column layout) ✅
                         # Controls moved into each graph panel's right column
                         html.Div([], id='sidebar-graphs-selector', style={'display': 'none'}),
 
-                        # Initializations Explorer: method selector (replaces in-panel dropdown)
-                        html.Div([
-                            html.Span("METHOD", className='sidebar-projects-title'),
-                            dcc.RadioItems(
-                                id='sidebar-init-method',
-                                options=METHOD_OPTIONS,
-                                value='quasi-random-nuclei',
-                                className='sidebar-radio-list',
-                                labelStyle={'display': 'flex', 'alignItems': 'center', 'padding': '3px 0', 'cursor': 'pointer'},
-                                inputStyle={'marginRight': '8px', 'cursor': 'pointer'}
-                            ),
-                        ], id='sidebar-initializations-section', className='sidebar-projects-section', style={'display': 'none'}),
-
-                        # Mechanical Loads Explorer: preset selector
-                        html.Div([
-                            html.Span("PRESETS", className='sidebar-projects-title'),
-                            dcc.RadioItems(
-                                id='sidebar-ml-preset',
-                                options=MECHANICAL_LOAD_PRESET_OPTIONS,
-                                value='custom',
-                                className='sidebar-radio-list',
-                                labelStyle={'display': 'flex', 'alignItems': 'center', 'padding': '3px 0', 'cursor': 'pointer'},
-                                inputStyle={'marginRight': '8px', 'cursor': 'pointer'}
-                            ),
-                        ], id='sidebar-mechanical-loads-section', className='sidebar-projects-section', style={'display': 'none'}),
-
-                        # Calculation Notebook: examples dropdown + toolbar (moved from top toolbar)
-                        html.Div(
-                            build_notebook_sidebar_controls(initial_notebook_state.get("cells") or []),
-                            id='sidebar-notebook-section',
-                            className='sidebar-projects-section',
-                            style={'display': 'none'},
-                        ),
+                        # Placeholders — analysis/tools are separate apps (calculationNotebook / OPPre).
+                        html.Div([], id='sidebar-initializations-section', style={'display': 'none'}),
+                        html.Div([], id='sidebar-mechanical-loads-section', style={'display': 'none'}),
+                        html.Div([], id='sidebar-notebook-section', style={'display': 'none'}),
 
                     ], className='sidebar'),
                     html.Div([
+                        html.Div(
+                            [
+                                html.Div([
+                                    html.Span("ADD PANEL", className='sidebar-title'),
+                                    dcc.Dropdown(
+                                        id='panel-selector-dropdown',
+                                        options=[],
+                                        placeholder="Select a data type",
+                                        className='panel-selector-dropdown',
+                                        clearable=True,
+                                        searchable=False,
+                                        maxHeight=560
+                                    ),
+                                    html.Div(
+                                        id='detection-status',
+                                        children=[
+                                            html.Span("No project loaded", className='detection-status-text')
+                                        ],
+                                        className='detection-status',
+                                        style={'fontSize': '0.85em', 'color': '#65d36e'}
+                                    )
+                                ], id='sidebar-panel-selector', className='main-panel-selector-card'),
+                                html.Div([
+                                    html.Span("ADD PANEL", className='sidebar-title'),
+                                    dcc.Dropdown(
+                                        id='comparison-panel-selector-dropdown',
+                                        options=[],
+                                        placeholder="Select a data type to compare...",
+                                        className='panel-selector-dropdown',
+                                        clearable=True,
+                                        searchable=False,
+                                        maxHeight=560
+                                    ),
+                                    html.Div(
+                                        id='comparison-detection-status',
+                                        children=[
+                                            html.Span("No project loaded", className='detection-status-text')
+                                        ],
+                                        className='detection-status',
+                                        style={'fontSize': '0.85em', 'color': '#65d36e'}
+                                    )
+                                ], id='sidebar-comparison-panel-selector', className='main-panel-selector-card', style={'display': 'none'}),
+                            ],
+                            className='main-panel-selector-shell'
+                        ),
+                        html.Div(
+                            html.Div(
+                                id='dynamic-tab-headers',
+                                children=[],
+                                className='inner-tab-headers'
+                            ),
+                            id='single-view-inner-tabs-row',
+                            className='inner-tabs-row',
+                            style={'display': 'block'}
+                        ),
+                        html.Div(
+                            html.Div(
+                                id='comparison-tab-headers',
+                                children=[],
+                                className='inner-tab-headers'
+                            ),
+                            id='comparison-inner-tabs-row',
+                            className='inner-tabs-row',
+                            style={'display': 'none'}
+                        ),
                         # Tab content area
                         html.Div(
                             id='tab-content',
@@ -349,38 +295,22 @@ def build_app_layout(
                         ),
                         html.Div(
                             id='formula-content',
-                            children=[
-                                html.Div([
-                                    html.Button(
-                                        "Add Formula Panel 1D",
-                                        id='formula-add-panel-1d-btn',
-                                        className='graphs-add-panel-btn opview-image-add-btn',
-                                        n_clicks=0
-                                    ),
-                                    html.Button(
-                                        "Add Formula Panel 2D",
-                                        id='formula-add-panel-2d-btn',
-                                        className='graphs-add-panel-btn opview-image-add-btn',
-                                        n_clicks=0
-                                    ),
-                                ], style={'display': 'flex', 'gap': '10px', 'flexWrap': 'wrap'}),
-                                html.Div(id='formula-panels-container', className='multifile-panels-container'),
-                            ],
+                            children=[],
                             style={'display': 'none'}
                         ),
                         html.Div(
                             id='notebook-content',
-                            children=[build_calculation_notebook(initial_notebook_state)],
+                            children=[],
                             style={'display': 'none'}
                         ),
                         html.Div(
                             id='initializations-content',
-                            children=[build_initializations_explorer()],
+                            children=[],
                             style={'display': 'none'}
                         ),
                         html.Div(
                             id='mechanical-loads-content',
-                            children=[build_mechanical_loads_explorer()],
+                            children=[],
                             style={'display': 'none'}
                         ),
                     ], className='main-panel')

@@ -2777,9 +2777,89 @@ input:focus,
     margin: 10px 0;
 }
 
+.panel-selector-dropdown .Select-control,
+.panel-selector-dropdown .Select-placeholder,
+.panel-selector-dropdown .Select-input,
+.panel-selector-dropdown .Select-value {
+    min-height: 40px !important;
+    height: 40px !important;
+    line-height: 40px !important;
+}
+
+.main-panel-selector-card .panel-selector-dropdown .Select-menu-outer {
+    max-height: 420px !important;
+}
+
 .sidebar-panel-selector {
     margin-bottom: 20px;
     width: 100%;
+}
+
+.main-panel-selector-shell {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 18px 18px 0 18px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.main-panel-selector-card {
+    margin-bottom: 20px;
+    width: min(100%, 520px);
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid rgba(203, 213, 225, 0.95);
+    border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    padding: 12px 14px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: nowrap;
+}
+
+.main-panel-selector-card .sidebar-title {
+    margin-bottom: 0;
+    color: #355070;
+    letter-spacing: 0.28em;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.main-panel-selector-card .panel-selector-dropdown {
+    flex: 1 1 330px;
+    margin: 0;
+}
+
+.main-panel-selector-card .detection-status {
+    color: #64748b !important;
+    display: none;
+}
+
+.main-panel-selector-card .sidebar-tab-headers {
+    margin-top: 12px;
+}
+
+.inner-tabs-row {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0;
+}
+
+.inner-tab-headers {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    min-height: 54px;
+    width: 100%;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(203, 213, 225, 0.95);
+    border-radius: 0;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+    box-sizing: border-box;
 }
 
 /* Keep old class for backward compatibility */
@@ -2802,32 +2882,35 @@ input:focus,
     display: flex;
     align-items: center;
     gap: 7px;
-    padding: 5px 12px 5px 19px;
-    margin: 0 -12px;
+    padding: 8px 14px 8px 16px;
+    margin: 0;
     box-sizing: border-box;
-    border-radius: 12px;
-    background: transparent;
-    border: none;
-    color: rgba(255, 255, 255, 0.7);
+    border-radius: 6px;
+    background: linear-gradient(180deg, #f5f9ff 0%, #e8f0fa 100%);
+    border: 1px solid rgba(0, 31, 65, 0.18);
+    color: #001f41;
     font-weight: 600;
-    font-size: 1.1rem;
+    font-size: 1rem;
     cursor: pointer;
     transition: var(--transition);
     white-space: nowrap;
-    width: 100%;
+    width: auto;
+    min-width: 220px;
+    max-width: 360px;
 }
 
 .tab-header:hover {
-    background: rgba(255, 255, 255, 0.12);
-    color: #ffffff;
+    background: linear-gradient(180deg, #ffffff 0%, #edf5ff 100%);
+    border-color: rgba(0, 31, 65, 0.38);
+    color: #001f41;
 }
 
 .tab-header.active {
-    background: rgba(0, 0, 0, 0.45);
+    background: #001f41;
     color: #ffffff;
-    box-shadow: inset 5px 0 0 #b60021;
-    /* Red left border - EXACT match */
-    border-radius: 12px;
+    border-color: #001f41;
+    box-shadow: inset 4px 0 0 #b60021, 0 6px 16px rgba(0, 31, 65, 0.18);
+    border-radius: 6px;
 }
 
 .tab-header .tab-icon {
@@ -2838,16 +2921,18 @@ input:focus,
     flex: 1;
     text-align: left;
     padding-right: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Close button on tab */
 .tab-close-btn {
     background: none;
     border: none;
-    color: #666;
-    font-size: 18px;
+    color: #64748b;
+    font-size: 14px;
     line-height: 1;
-    padding: 4px 6px;
+    padding: 2px 4px;
     cursor: pointer;
     transition: all 0.2s;
     opacity: 0.6;
@@ -2857,16 +2942,16 @@ input:focus,
 .tab-close-btn:hover {
     color: #ff4444;
     opacity: 1;
-    transform: scale(1.2);
+    transform: scale(1.12);
 }
 
 .tab-header.active .tab-close-btn {
-    color: #999;
+    color: #b60021;
     opacity: 1;
 }
 
 .tab-header.active .tab-close-btn:hover {
-    color: #ff4444;
+    color: #95041a;
 }
 
 /* Multi-File Graph Panels - Responsive */
@@ -3487,4 +3572,41 @@ input:focus,
 
 .sidebar-notebook-btn--ai:hover {
     background: rgba(139, 92, 246, 0.28);
+}
+
+/* =============================================================================
+   OPPre (Tools App) — vertical tab styling (scoped)
+   ============================================================================= */
+.oppre-tabs-parent {
+    width: 100%;
+}
+
+.oppre-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.oppre-tab {
+    width: 100%;
+    min-width: 0 !important;
+    padding: 10px 12px !important;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #000000 !important;
+    background: #ffffff !important;
+    border: 1px solid #dcdcdc !important;
+    border-radius: 0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    cursor: pointer;
+}
+
+.oppre-tab--selected {
+    color: #ffffff !important;
+    background: #b60021 !important;
+    font-weight: 800;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.2);
 }

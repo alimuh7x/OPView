@@ -17,6 +17,8 @@ from dash.exceptions import PreventUpdate
 from .base import BaseCallbackManager
 from ui.calculation_notebook import (
     NOTEBOOK_DOWNLOAD_ID,
+    NOTEBOOK_COLUMN_BASE_MIN_WIDTH_PX,
+    NOTEBOOK_CODE_PANEL_MIN_WIDTH_PX,
     NOTEBOOK_SNIPPETS,
     build_notebook_results,
     build_cells_for_column,
@@ -914,6 +916,12 @@ class NotebookCallbackManager(BaseCallbackManager):
         x_var = spec.get("x_var")
         y_vars = [v for v in spec.get("y_vars", []) if v in array_vars]
         plot_type = spec.get("plot_type") or "lines"
+        print(
+            f"[debug][notebook-plot] build_figure:enter x_var={x_var!r} "
+            f"requested_y={spec.get('y_vars', [])!r} matched_y={y_vars!r} "
+            f"plot_type={plot_type!r} array_var_names={sorted(array_vars.keys())}",
+            flush=True,
+        )
         x_title = spec.get("x_title") or (x_var or "index")
         y_title = spec.get("y_title") or ("count" if plot_type == "histogram" else
                                            (y_vars[0] if len(y_vars) == 1 else "value"))
@@ -924,6 +932,7 @@ class NotebookCallbackManager(BaseCallbackManager):
 
         fig = go.Figure()
         if not y_vars:
+            print("[debug][notebook-plot] build_figure:no_y_vars returning placeholder", flush=True)
             fig.update_layout(
                 xaxis=dict(visible=False),
                 yaxis=dict(visible=False),
@@ -944,6 +953,13 @@ class NotebookCallbackManager(BaseCallbackManager):
             return fig
         for idx, y_name in enumerate(y_vars):
             y_arr = np.asarray(array_vars[y_name])
+            x_len = len(x_data) if x_data is not None else None
+            y_len = len(y_arr)
+            print(
+                f"[debug][notebook-plot] build_figure:trace idx={idx} y_name={y_name!r} "
+                f"y_len={y_len} x_len={x_len} lengths_match={x_len == y_len if x_len is not None else False}",
+                flush=True,
+            )
             color = colors[idx % len(colors)]
             if plot_type == "histogram":
                 fig.add_trace(go.Histogram(x=y_arr, name=y_name, marker_color=color, opacity=0.75))
@@ -973,6 +989,7 @@ class NotebookCallbackManager(BaseCallbackManager):
             legend=dict(orientation="v", x=0.01, y=0.99, xanchor="left", yanchor="top",
                         font=dict(size=font_sz)),
         )
+        print(f"[debug][notebook-plot] build_figure:exit traces={len(fig.data)}", flush=True)
         return fig
 
     def _register_plots_panel(self):
@@ -994,11 +1011,13 @@ class NotebookCallbackManager(BaseCallbackManager):
         def sync_plot_item_specs(x_values, y_values, type_values, title_values, xlabel_values, ylabel_values, x_ids, cells, notebook_state):
             if not x_ids:
                 raise PreventUpdate
+            print(f"[debug][notebook-plot] sync_specs:enter plot_items={len(x_ids)}", flush=True)
             updated_cells = copy.deepcopy(cells or [default_notebook_cell()])
             lookup = {cell.get("id"): cell for cell in updated_cells}
             for i, id_dict in enumerate(x_ids):
                 cell_id = id_dict.get("index")
                 if cell_id not in lookup:
+                    print(f"[debug][notebook-plot] sync_specs:missing_cell cell_id={cell_id}", flush=True)
                     continue
                 plot_cell = lookup[cell_id]
                 plot_cell["plot_spec"] = {
@@ -1009,8 +1028,19 @@ class NotebookCallbackManager(BaseCallbackManager):
                     "x_title": xlabel_values[i] if i < len(xlabel_values) and xlabel_values[i] else "",
                     "y_title": ylabel_values[i] if i < len(ylabel_values) and ylabel_values[i] else "",
                 }
+                print(
+                    f"[debug][notebook-plot] sync_specs:item cell_id={cell_id} "
+                    f"x={plot_cell['plot_spec']['x_var']!r} y={plot_cell['plot_spec']['y_vars']!r} "
+                    f"type={plot_cell['plot_spec']['plot_type']!r} title={plot_cell['plot_spec']['title']!r}",
+                    flush=True,
+                )
             nb_state = copy.deepcopy(notebook_state) if notebook_state else default_notebook_state()
             nb_state["cells"] = updated_cells
+            print(
+                f"[debug][notebook-plot] sync_specs:exit cells={len(updated_cells)} "
+                f"array_vars={sorted((nb_state.get('array_variables') or {}).keys())}",
+                flush=True,
+            )
             return updated_cells, nb_state
 
         self._track_callback(sync_plot_item_specs)
@@ -1028,6 +1058,11 @@ class NotebookCallbackManager(BaseCallbackManager):
             nb = notebook_state or {}
             array_vars = nb.get("array_variables", {})
             options = [{"label": key, "value": key} for key in sorted(array_vars.keys())]
+            print(
+                f"[debug][notebook-plot] update_options: plot_items={len(x_ids)} "
+                f"option_count={len(options)} option_names={[opt['value'] for opt in options]}",
+                flush=True,
+            )
             return [options] * len(x_ids), [options] * len(x_ids)
 
         self._track_callback(update_plot_item_options)
@@ -1045,12 +1080,31 @@ class NotebookCallbackManager(BaseCallbackManager):
             nb = notebook_state or {}
             array_vars = nb.get("array_variables", {})
             cell_lookup = {cell.get("id"): cell for cell in (cells or [])}
+            state_cells_lookup = {cell.get("id"): cell for cell in (nb.get("cells") or [])}
+            print(
+                f"[debug][notebook-plot] update_figures:enter graphs={len(graph_ids)} "
+                f"cell_store_count={len(cell_lookup)} state_cell_count={len(state_cells_lookup)} "
+                f"array_var_names={sorted(array_vars.keys())}",
+                flush=True,
+            )
             figures = []
             for id_dict in graph_ids:
                 cell_id = id_dict.get("index")
                 plot_cell = cell_lookup.get(cell_id, {})
                 spec = plot_cell.get("plot_spec", {}) or {}
+                state_spec = (state_cells_lookup.get(cell_id, {}) or {}).get("plot_spec", {}) or {}
+                print(
+                    f"[debug][notebook-plot] update_figures:cell cell_id={cell_id} "
+                    f"store_spec={spec} state_spec={state_spec}",
+                    flush=True,
+                )
                 y_vars = [name for name in spec.get("y_vars", []) if name in array_vars]
+                print(
+                    f"[debug][notebook-plot] update_figures:filtered cell_id={cell_id} "
+                    f"requested_y={spec.get('y_vars', [])} matched_y={y_vars} "
+                    f"x_var={spec.get('x_var')!r} x_present={spec.get('x_var') in array_vars if spec.get('x_var') else False}",
+                    flush=True,
+                )
                 if not y_vars:
                     figures.append(self._build_plot_figure(
                         {
@@ -1065,6 +1119,7 @@ class NotebookCallbackManager(BaseCallbackManager):
                         14,
                         2.0,
                     ))
+                    print(f"[debug][notebook-plot] update_figures:blank_figure cell_id={cell_id}", flush=True)
                     continue
                 plot_spec = {
                     "x_var": spec.get("x_var"),
@@ -1074,7 +1129,14 @@ class NotebookCallbackManager(BaseCallbackManager):
                     "x_title": spec.get("x_title"),
                     "y_title": spec.get("y_title"),
                 }
-                figures.append(self._build_plot_figure(plot_spec, array_vars, 14, 2.0))
+                fig = self._build_plot_figure(plot_spec, array_vars, 14, 2.0)
+                print(
+                    f"[debug][notebook-plot] update_figures:built cell_id={cell_id} "
+                    f"traces={len(fig.data)} plot_type={plot_spec.get('plot_type')!r}",
+                    flush=True,
+                )
+                figures.append(fig)
+            print(f"[debug][notebook-plot] update_figures:exit figure_count={len(figures)}", flush=True)
             return figures
 
         self._track_callback(update_plot_item_figures)
@@ -1132,7 +1194,23 @@ class NotebookCallbackManager(BaseCallbackManager):
             updated_cells = copy.deepcopy(cells or [default_notebook_cell()])
             for cell in updated_cells:
                 if cell.get("id") == cell_id:
-                    cell["panel_width"] = int(width)
+                    cell_type = cell.get("type", "code")
+                    min_required = NOTEBOOK_CODE_PANEL_MIN_WIDTH_PX if cell_type == "code" else 360
+                    requested_width = int(width)
+                    clamped_width = max(min_required, requested_width)
+                    print(
+                        f"[debug][notebook-resize] cell_match cell_id={cell_id} type={cell_type} "
+                        f"requested_width={requested_width} recommended_min={min_required} "
+                        f"clamped_width={clamped_width}",
+                        flush=True,
+                    )
+                    if requested_width < min_required:
+                        print(
+                            f"[debug][notebook-resize] clamp_applied cell_id={cell_id} width={requested_width} "
+                            f"-> {clamped_width} to prevent result gutter overlap",
+                            flush=True,
+                        )
+                    cell["panel_width"] = clamped_width
                     print(f"[debug][notebook-resize] updated cell={cell_id} panel_width={cell['panel_width']}")
                     break
             else:
@@ -1179,9 +1257,19 @@ class NotebookCallbackManager(BaseCallbackManager):
         )
         def sync_notebook_column_styles(notebook_state):
             left_pct = max(12, min(88, int(((notebook_state or {}).get("layout") or {}).get("left_column_width_pct", 50))))
-            left_style = {"width": f"{left_pct}%", "minWidth": "0", "display": "flex", "flexDirection": "column"}
-            right_style = {"width": f"{100 - left_pct}%", "minWidth": "0", "display": "flex", "flexDirection": "column"}
-            print(f"[debug][notebook-column-split] apply left={left_style['width']} right={right_style['width']}")
+            cells = ((notebook_state or {}).get("cells") or [])
+            left_has_code = any((cell.get("column", "left") == "left") and (cell.get("type", "code") == "code") for cell in cells)
+            right_has_code = any((cell.get("column", "left") == "right") and (cell.get("type", "code") == "code") for cell in cells)
+            left_min = NOTEBOOK_CODE_PANEL_MIN_WIDTH_PX if left_has_code else NOTEBOOK_COLUMN_BASE_MIN_WIDTH_PX
+            right_min = NOTEBOOK_CODE_PANEL_MIN_WIDTH_PX if right_has_code else NOTEBOOK_COLUMN_BASE_MIN_WIDTH_PX
+            left_style = {"width": f"{left_pct}%", "minWidth": f"{left_min}px", "display": "flex", "flexDirection": "column"}
+            right_style = {"width": f"{100 - left_pct}%", "minWidth": f"{right_min}px", "display": "flex", "flexDirection": "column"}
+            print(
+                f"[debug][notebook-column-split] apply left={left_style['width']} right={right_style['width']} "
+                f"left_has_code={left_has_code} right_has_code={right_has_code} "
+                f"left_min={left_min} right_min={right_min}",
+                flush=True,
+            )
             return left_style, right_style
 
         self._track_callback(sync_notebook_column_styles)

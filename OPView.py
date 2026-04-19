@@ -271,10 +271,6 @@ from callbacks import (
     ProjectCallbackManager,
     TabCallbackManager,
     GraphsCallbackManager,
-    FormulaCallbackManager,
-    NotebookCallbackManager,
-    InitializationsExplorerCallbackManager,
-    MechanicalLoadsCallbackManager,
 )
 project_cb_manager = ProjectCallbackManager(app, app_context)
 project_cb_manager.register()
@@ -291,27 +287,6 @@ graphs_cb_manager = GraphsCallbackManager(app, app_context)
 graphs_cb_manager.register()
 if DEBUG:
     print(f"[{time.time()-_start_time:.2f}s] Graphs callbacks registered: {graphs_cb_manager.count()}")
-
-formula_cb_manager = FormulaCallbackManager(app, app_context)
-formula_cb_manager.register()
-if DEBUG:
-    print(f"[{time.time()-_start_time:.2f}s] Formula callbacks registered: {formula_cb_manager.count()}")
-
-notebook_cb_manager = NotebookCallbackManager(app, app_context)
-notebook_cb_manager.register()
-if DEBUG:
-    print(f"[{time.time()-_start_time:.2f}s] Notebook callbacks registered: {notebook_cb_manager.count()}")
-
-initializations_cb_manager = InitializationsExplorerCallbackManager(app, app_context)
-initializations_cb_manager.register()
-if DEBUG:
-    print(f"[{time.time()-_start_time:.2f}s] Initializations Explorer callbacks registered: {initializations_cb_manager.count()}")
-
-mechanical_loads_cb_manager = MechanicalLoadsCallbackManager(app, app_context)
-mechanical_loads_cb_manager.register()
-print(f"[mechanical-loads] Standalone callbacks registered: {mechanical_loads_cb_manager.count()}", flush=True)
-if DEBUG:
-    print(f"[{time.time()-_start_time:.2f}s] Mechanical Loads Explorer callbacks registered: {mechanical_loads_cb_manager.count()}")
 
 TEXTDATA_DIR = Path("TextData")
 SIZE_DETAILS_FILE   = TEXTDATA_DIR / "SizeDetails.dat"

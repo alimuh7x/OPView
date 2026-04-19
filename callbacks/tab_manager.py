@@ -909,13 +909,15 @@ class TabCallbackManager(BaseCallbackManager):
         @self.app.callback(
             Output('sidebar-panel-selector', 'style'),           # Single View
             Output('sidebar-comparison-panel-selector', 'style'), # Multi View
+            Output('single-view-inner-tabs-row', 'style'),
+            Output('comparison-inner-tabs-row', 'style'),
             Output('sidebar-graphs-selector', 'style'),
             Output('sidebar-projects-section', 'style'),          # Projects panel
             Output('sidebar-initializations-section', 'style'),   # Initializations Explorer methods
             Output('sidebar-mechanical-loads-section', 'style'),  # Mechanical Loads presets
             Output('sidebar-notebook-section', 'style'),          # Calculation Notebook examples
             Input('vtk-folder-tabs', 'value'),
-            prevent_initial_call=True
+            prevent_initial_call=False
         )
         def toggle_sidebar_selectors(active_folder):
             """Show appropriate selector based on active tab."""
@@ -923,16 +925,18 @@ class TabCallbackManager(BaseCallbackManager):
             init_style     = {'display': 'block'} if active_folder == 'initializations-explorer'  else {'display': 'none'}
             ml_style       = {'display': 'block'} if active_folder == 'mechanical-loads-explorer' else {'display': 'none'}
             nb_style       = {'display': 'block'} if active_folder == 'calculation-notebook'      else {'display': 'none'}
+            single_tabs_style = {'display': 'block'} if active_folder == 'current' else {'display': 'none'}
+            comparison_tabs_style = {'display': 'block'} if active_folder == 'comparison' else {'display': 'none'}
 
             if active_folder == 'custom-graph':
-                return {'display': 'none'}, {'display': 'none'}, {'display': 'block'}, projects_style, init_style, ml_style, nb_style
+                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}, {'display': 'none'}, {'display': 'block'}, projects_style, init_style, ml_style, nb_style
             elif active_folder in _PROJECTS_HIDDEN_TABS:
-                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}, projects_style, init_style, ml_style, nb_style
+                return {'display': 'none'}, {'display': 'none'}, {'display': 'none'}, {'display': 'none'}, {'display': 'none'}, projects_style, init_style, ml_style, nb_style
             elif active_folder == 'comparison':
-                return {'display': 'none'}, {'display': 'block'}, {'display': 'none'}, projects_style, init_style, ml_style, nb_style
+                return {'display': 'none'}, {'display': 'block'}, {'display': 'none'}, comparison_tabs_style, {'display': 'none'}, projects_style, init_style, ml_style, nb_style
             else:
                 # Single View (default tab 'current') — projects panel visible
-                return {'display': 'block'}, {'display': 'none'}, {'display': 'none'}, projects_style, init_style, ml_style, nb_style
+                return {'display': 'block'}, {'display': 'none'}, single_tabs_style, {'display': 'none'}, {'display': 'none'}, projects_style, init_style, ml_style, nb_style
 
         self._track_callback(toggle_sidebar_selectors)
 

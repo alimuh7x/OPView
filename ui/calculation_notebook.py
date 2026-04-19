@@ -17,10 +17,27 @@ NOTEBOOK_DOWNLOAD_ID = "notebook-download"
 NOTEBOOK_ROWS = 4
 NOTEBOOK_LINE_HEIGHT = "34px"
 RESULTS_GUTTER_WIDTH = "440px"
+RESULTS_GUTTER_MIN_PX = 440
+NOTEBOOK_CODE_EDITOR_MIN_PX = 360
+NOTEBOOK_CODE_PANEL_MIN_WIDTH_PX = RESULTS_GUTTER_MIN_PX + NOTEBOOK_CODE_EDITOR_MIN_PX + 12
+NOTEBOOK_COLUMN_BASE_MIN_WIDTH_PX = 320
 FUNCTIONS_CARD_WIDTH = "360px"
 NOTEBOOK_SHEET_WIDTH = "100%"
 NOTEBOOK_ROW_COLOR_A = "#fefeff"
 NOTEBOOK_ROW_COLOR_B = "#f8fbfe"
+
+
+def notebook_column_min_width_px(cells: list[dict], column: str) -> int:
+    """Return the minimum safe width for a notebook column."""
+    column_cells = [cell for cell in (cells or []) if cell.get("column", "left") == column]
+    has_code = any((cell.get("type", "code") == "code") for cell in column_cells)
+    min_width = NOTEBOOK_CODE_PANEL_MIN_WIDTH_PX if has_code else NOTEBOOK_COLUMN_BASE_MIN_WIDTH_PX
+    print(
+        f"[debug][notebook-layout] column_min_width column={column} "
+        f"cell_count={len(column_cells)} has_code={has_code} min_width={min_width}",
+        flush=True,
+    )
+    return min_width
 
 NOTEBOOK_HELP = [
     {
@@ -1177,6 +1194,27 @@ def build_cell(cell: dict, cell_index: int, total_cells: int) -> html.Div:
     item_badge = "Plot" if is_plot_cell else "Markdown" if cell_type == "markdown" else "Code"
     column_name = cell.get("column", "left")
     panel_width = cell.get("panel_width")
+    if is_code_cell:
+        requested_width = int(panel_width) if panel_width else None
+        recommended_min_width = NOTEBOOK_CODE_PANEL_MIN_WIDTH_PX
+        print(
+            f"[debug][notebook-layout] build_cell code cell_id={cell_id} column={column_name} "
+            f"panel_width={requested_width} recommended_min_width={recommended_min_width} "
+            f"results_gutter={RESULTS_GUTTER_WIDTH}",
+            flush=True,
+        )
+        if requested_width is not None and requested_width < recommended_min_width:
+            print(
+                f"[debug][notebook-layout] build_cell warning cell_id={cell_id} "
+                f"panel_width={requested_width} is below recommended_min_width={recommended_min_width}",
+                flush=True,
+            )
+    if is_plot_cell:
+        print(
+            f"[debug][notebook-layout] build_cell plot cell_id={cell_id} column={column_name} "
+            f"panel_width={panel_width} plot_spec={plot_spec}",
+            flush=True,
+        )
     def make_drag_handle():
         return html.Span(
             "::",
@@ -1620,7 +1658,7 @@ def build_cell(cell: dict, cell_index: int, total_cells: int) -> html.Div:
             "background": "#ffffff" if is_code_cell else "transparent",
             "boxShadow": "0 1px 4px rgba(15,23,42,0.04)" if is_code_cell else "none",
             "overflow": "hidden",
-            "minWidth": "360px" if is_code_cell else "320px",
+            "minWidth": f"{NOTEBOOK_CODE_PANEL_MIN_WIDTH_PX}px" if is_code_cell else "320px",
             "width": f"{int(panel_width)}px" if panel_width else "auto",
             "maxWidth": "100%",
             "boxSizing": "border-box",
@@ -2235,7 +2273,12 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                     html.Div(
                         build_cells_for_column(cells, "left"),
                         id="notebook-cells-column-left",
-                        style={"width": f"{left_column_width_pct}%", "minWidth": "0", "display": "flex", "flexDirection": "column"},
+                        style={
+                            "width": f"{left_column_width_pct}%",
+                            "minWidth": f"{notebook_column_min_width_px(cells, 'left')}px",
+                            "display": "flex",
+                            "flexDirection": "column",
+                        },
                     ),
                     html.Div(
                         id="notebook-columns-splitter",
@@ -2252,7 +2295,12 @@ def build_calculation_notebook(state: dict | None = None) -> html.Div:
                     html.Div(
                         build_cells_for_column(cells, "right"),
                         id="notebook-cells-column-right",
-                        style={"width": f"{100 - left_column_width_pct}%", "minWidth": "0", "display": "flex", "flexDirection": "column"},
+                        style={
+                            "width": f"{100 - left_column_width_pct}%",
+                            "minWidth": f"{notebook_column_min_width_px(cells, 'right')}px",
+                            "display": "flex",
+                            "flexDirection": "column",
+                        },
                     ),
                 ],
                 id="notebook-columns-layout",
