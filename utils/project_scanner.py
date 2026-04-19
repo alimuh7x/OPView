@@ -32,7 +32,7 @@ def scan_project_folders(base_path: Path = None, quick_scan: bool = True) -> Dic
             ...
         }
     """
-    from config import ALLOWED_VTK_EXTENSIONS, SKIP_FOLDERS
+    from config import ALLOWED_TEXTDATA_EXTENSIONS, ALLOWED_VTK_EXTENSIONS, SKIP_FOLDERS
 
     if base_path is None:
         base_path = Path.cwd()
@@ -80,7 +80,7 @@ def scan_project_folders(base_path: Path = None, quick_scan: bool = True) -> Dic
                 if has_textdata:
                     textdata_count = sum(
                         1 for f in textdata_path.iterdir()
-                        if f.is_file() and f.suffix.lower() in ('.txt', '.dat', '.csv')
+                        if f.is_file() and f.suffix.lower() in ALLOWED_TEXTDATA_EXTENSIONS
                     )
 
             # Add parent folder (loads both VTK and TextData if both exist)

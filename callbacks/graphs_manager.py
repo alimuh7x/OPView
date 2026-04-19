@@ -140,18 +140,23 @@ class GraphsCallbackManager(BaseCallbackManager):
             from ui import get_textdata_files, build_multifile_panel
             import time
 
+            print(f"[debug][custom-graph] add panel inputs: triggered_id={ctx.triggered_id} n_clicks_file={n_clicks_file} n_clicks_data={n_clicks_data} n_clicks_nb={n_clicks_nb}", flush=True)
             if ctx.triggered_id not in {'graphs-add-file-panel-btn', 'graphs-add-data-panel-btn', 'graphs-add-notebook-panel-btn'}:
+                print(f"[debug][custom-graph] add panel ignored trigger: {ctx.triggered_id}", flush=True)
                 raise PreventUpdate
 
             # Get available files
             available_files = get_textdata_files(loaded_projects)
+            print(f"[debug][custom-graph] add panel available_files={len(available_files or [])} loaded_projects={loaded_projects}", flush=True)
 
             # Initialize panels state if None
             if panels_state is None:
                 panels_state = {}
+            print(f"[debug][custom-graph] add panel existing panels={list(panels_state.keys())}", flush=True)
 
             # Generate new panel ID using timestamp to ensure uniqueness
             panel_id = f'panel_{int(time.time() * 1000)}'
+            print(f"[debug][custom-graph] add panel new panel_id={panel_id}", flush=True)
 
             # Calculate sequential panel number for display
             panel_number = len(panels_state) + 1
@@ -161,10 +166,12 @@ class GraphsCallbackManager(BaseCallbackManager):
                 source_mode = 'notebook'
             else:
                 source_mode = 'file'
+            print(f"[debug][custom-graph] add panel source_mode={source_mode} panel_number={panel_number}", flush=True)
 
             nb_state = notebook_state or {}
             nb_arrays = nb_state.get('array_variables', {})
             nb_array_names = sorted(nb_arrays.keys())
+            print(f"[debug][custom-graph] add panel notebook arrays={nb_array_names}", flush=True)
 
             # Add ONLY the new panel to state
             panels_state[panel_id] = {
@@ -203,6 +210,7 @@ class GraphsCallbackManager(BaseCallbackManager):
             for pid in sorted(panels_state.keys()):
                 state = panels_state[pid]
                 panels.append(build_multifile_panel(pid, available_files, state))
+            print(f"[debug][custom-graph] add panel output panels={len(panels)} state_keys={list(panels_state.keys())}", flush=True)
 
             return panels_state, panels
 

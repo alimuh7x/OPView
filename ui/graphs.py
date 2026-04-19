@@ -134,8 +134,8 @@ def build_graph_card(file_path: str, available_columns: List[str], selected_colu
 def get_textdata_files(loaded_project_folders=None) -> List[str]:
     """Get list of all text files from loaded project folders.
 
-    Scans all loaded project folders for text/CSV files in any subdirectory.
-    Looks for .txt, .dat, and .csv files in TextData/ first, then other subdirectories.
+    Scans all loaded project folders for text/CSV/OPD files in any subdirectory.
+    Looks for configured TextData extensions in TextData/ first, then other subdirectories.
 
     Args:
         loaded_project_folders: List of loaded project folder names (e.g., ['Fracture', 'Test1'])
@@ -143,9 +143,11 @@ def get_textdata_files(loaded_project_folders=None) -> List[str]:
     Returns:
         List of absolute file paths
     """
+    print(f"[debug][custom-graph-opd] get_textdata_files inputs: loaded_project_folders={loaded_project_folders}", flush=True)
     text_files = []
 
     if not loaded_project_folders:
+        print("[debug][custom-graph-opd] no loaded folders -> []", flush=True)
         return []
 
     # Get discovered folders dict to resolve full paths
@@ -153,44 +155,60 @@ def get_textdata_files(loaded_project_folders=None) -> List[str]:
     use_context = OPView.app_context is not None
     folders_dict = OPView.app_context.discovered_project_folders if use_context else OPView.discovered_project_folders
 
-    # File patterns to search for
-    patterns = ['*.txt', '*.dat', '*.csv']
+    from config import ALLOWED_TEXTDATA_EXTENSIONS
+    patterns = [f"*{ext}" for ext in ALLOWED_TEXTDATA_EXTENSIONS]
+    print(f"[debug][custom-graph-opd] file patterns={patterns}", flush=True)
 
     # Scan each loaded project folder
     for project_name in loaded_project_folders:
+        print(f"[debug][custom-graph-opd] scanning project_name={project_name}", flush=True)
         # Resolve full path from folder name
         folder_info = folders_dict.get(project_name)
         if not folder_info:
+            print(f"[debug][custom-graph-opd] missing folder_info for project_name={project_name}", flush=True)
             continue
+        print(f"[debug][custom-graph-opd] folder_info={folder_info}", flush=True)
 
         # If the selected entry is already a TextData folder, scan it directly.
         if folder_info.get('has_textdata') and folder_info.get('textdata_path'):
             textdata_dir = Path(folder_info['textdata_path'])
+            print(f"[debug][custom-graph-opd] direct TextData scan path={textdata_dir}", flush=True)
             if textdata_dir.exists() and textdata_dir.is_dir():
                 for pattern in patterns:
-                    text_files.extend(textdata_dir.glob(pattern))
+                    matched = list(textdata_dir.glob(pattern))
+                    print(f"[debug][custom-graph-opd] direct pattern={pattern} matched={len(matched)}", flush=True)
+                    text_files.extend(matched)
             continue
 
         # Fallback (not used with current UI): treat as project root and look for TextData child + other subdirs.
         project_dir = Path(folder_info['path'])
         if not project_dir.exists():
+            print(f"[debug][custom-graph-opd] project_dir missing: {project_dir}", flush=True)
             continue
+        print(f"[debug][custom-graph-opd] fallback project_dir={project_dir}", flush=True)
 
         textdata_dir = project_dir / 'TextData'
         if textdata_dir.exists() and textdata_dir.is_dir():
             for pattern in patterns:
-                text_files.extend(textdata_dir.glob(pattern))
+                matched = list(textdata_dir.glob(pattern))
+                print(f"[debug][custom-graph-opd] fallback TextData pattern={pattern} matched={len(matched)}", flush=True)
+                text_files.extend(matched)
 
         try:
             for subdir in project_dir.iterdir():
                 if subdir.is_dir() and subdir.name not in ['TextData', 'VTK', 'vtk', 'RawData', '.git', '__pycache__']:
                     for pattern in patterns:
-                        text_files.extend(subdir.glob(pattern))
+                        matched = list(subdir.glob(pattern))
+                        print(f"[debug][custom-graph-opd] subdir={subdir} pattern={pattern} matched={len(matched)}", flush=True)
+                        text_files.extend(matched)
         except (OSError, PermissionError):
+            print(f"[debug][custom-graph-opd] scan skipped due to permission/os error project_dir={project_dir}", flush=True)
             continue
 
     # Sort by filename and return as strings (remove duplicates)
-    return sorted(list(set([str(f) for f in text_files])))
+    result = sorted(list(set([str(f) for f in text_files])))
+    print(f"[debug][custom-graph-opd] result count={len(result)} files={result}", flush=True)
+    return result
 
 
 def _build_x_axis_column_options(selected_files: List[str]) -> List[Dict]:

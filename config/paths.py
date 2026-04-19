@@ -17,7 +17,7 @@ TEXTDATA_FOLDER_NAME = "TextData"
 
 # File extensions
 ALLOWED_VTK_EXTENSIONS = ('.vtk', '.vti', '.vtp', '.vtr', '.vts')
-ALLOWED_TEXTDATA_EXTENSIONS = ('.txt', '.dat')
+ALLOWED_TEXTDATA_EXTENSIONS = ('.txt', '.dat', '.csv', '.opd')
 
 
 def get_base_dir() -> Path:

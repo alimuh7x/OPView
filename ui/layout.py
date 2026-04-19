@@ -7,6 +7,7 @@ Extracted from OPView.py Phase 11 - provides the main application layout.
 from dash import html, dcc
 import dash_mantine_components as dmc
 from config import TAB_CONFIGS
+from ui.calculation_notebook import default_notebook_state
 from ui.floating_chat import build_floating_chat
 
 
@@ -70,6 +71,7 @@ def build_app_layout(
                 dcc.Store(id='selected-project-folder', data=None),
                 dcc.Store(id='projects-store', data={'names': [], 'active': None, 'files_by_project': {}}, storage_type='session'),
                 dcc.Store(id='graphs-multifile-panels', data={}),  # Graph panels state (memory - resets on refresh)
+                dcc.Store(id='notebook-state', data=default_notebook_state()),  # Shared notebook state used by graph/formula callbacks
                 dcc.Location(id='url', refresh=False),
                 html.Div([
                     html.Div([
